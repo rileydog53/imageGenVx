@@ -90,6 +90,13 @@ def _add_render_flags(parser: argparse.ArgumentParser) -> None:
         "without overlap, instead of the default relax-and-retry fallback.",
     )
     parser.add_argument(
+        "--legend",
+        action="store_true",
+        help="Render an inset key (top-right) explaining the glyph conventions "
+        "the figure uses (relation arrow types + the 'P' phosphorylation "
+        "badge). Off by default.",
+    )
+    parser.add_argument(
         "--verify",
         action="store_true",
         help="After rendering, run the three verifiers (semantic, legibility, "
@@ -298,6 +305,7 @@ def main(argv: list[str] | None = None) -> int:
         canvas=canvas,
         strict_labels=args.strict_labels,
         autocrop=args.autocrop,
+        legend=args.legend,
     )
     print(out)
 
