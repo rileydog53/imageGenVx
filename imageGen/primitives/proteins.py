@@ -148,6 +148,28 @@ def generic_protein(
     return g
 
 
+def _tint_toward_white(hex_color: str, frac: float) -> str:
+    """Blend ``hex_color`` toward white by ``frac`` (0 = unchanged, 1 = white).
+
+    Used to give the back subunit of a complex a lighter shade so the two
+    overlapping rects read as one layered assembly (front-over-back depth)
+    rather than two equal, separate boxes. Non ``#RRGGBB`` inputs (e.g. named
+    colors) are returned unchanged so the back subunit simply matches the front.
+    """
+    h = hex_color.lstrip("#")
+    if len(h) != 6:
+        return hex_color
+    try:
+        r, g_, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    except ValueError:
+        return hex_color
+    f = max(0.0, min(1.0, frac))
+    r = round(r + (255 - r) * f)
+    g_ = round(g_ + (255 - g_) * f)
+    b = round(b + (255 - b) * f)
+    return f"#{r:02X}{g_:02X}{b:02X}"
+
+
 def protein_complex(
     label: str,
     position: tuple[float, float],
@@ -160,10 +182,12 @@ def protein_complex(
 
     Convention: a bound assembly of subunits. The two diagonally-offset
     rounded rects read as "more than one protein joined together", which
-    distinguishes a complex from a single generic protein (one rect). The two
-    subunits together exactly span ``size``; the label is centered over the
-    union. Reuses the generic-protein fill/stroke so it harmonizes with the
-    protein family across presets.
+    distinguishes a complex from a single generic protein (one rect). The back
+    subunit is drawn in a lighter shade of the fill so the pair reads as one
+    layered object with front-over-back depth (rather than two equal, separate
+    boxes). The two subunits together exactly span ``size``; the label is
+    centered over the union. Reuses the generic-protein fill/stroke so it
+    harmonizes with the protein family across presets.
 
     Args:
         label:    text rendered centered over the assembly
@@ -188,12 +212,20 @@ def protein_complex(
     sub_w, sub_h = w * 0.7, h * 0.74
     off_x = (w - sub_w) / 2
     off_y = (h - sub_h) / 2
-    for ox, oy in ((off_x, off_y), (-off_x, -off_y)):  # back (lower-right), front (upper-left)
+    # Back subunit (lower-right) is lightened for depth; front (upper-left) keeps
+    # the full fill. The shade difference disambiguates "one bound assembly" from
+    # "two separate boxes".
+    back_fill = _tint_toward_white(fill, 0.45)
+    subunits = (
+        (off_x, off_y, back_fill),    # back  (lower-right), lightened
+        (-off_x, -off_y, fill),       # front (upper-left), full color
+    )
+    for ox, oy, sub_fill in subunits:
         rect = svgwrite.shapes.Rect(
             insert=(cx + ox - sub_w / 2, cy + oy - sub_h / 2),
             size=(sub_w, sub_h),
             rx=r, ry=r,
-            fill=fill,
+            fill=sub_fill,
             stroke=s["protein_stroke"],
         )
         rect["stroke-width"] = sw
