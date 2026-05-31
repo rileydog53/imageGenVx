@@ -1858,6 +1858,41 @@ def pathway_label_requests(
 
 _LEADER_DASH = "3,2"            # dash pattern for the external-label connector
 _LEADER_STROKE_WIDTH = 0.5      # px — deliberately hairline so it never competes
+# A relation label normally sits ~15-19 px off its arrow shaft (offset gap +
+# half its own height). When collision avoidance pushes it further than this,
+# the association with its arrow is lost (e.g. "Thr24" floating ~40 px away,
+# beside an unrelated box) — tether it back to the shaft with a hairline leader.
+_RELATION_LEADER_MIN_GAP = 28.0
+
+
+def _nearest_point_on_polyline(
+    p: tuple[float, float],
+    pts: list[tuple[float, float]],
+) -> tuple[tuple[float, float], float]:
+    """Closest point on a polyline to ``p`` and its distance.
+
+    Walks each segment, projecting ``p`` onto it (clamped to the segment), and
+    returns the nearest projection found. ``pts`` must hold at least one point;
+    a single point degenerates to that point.
+    """
+    if len(pts) == 1:
+        q = pts[0]
+        return q, math.hypot(p[0] - q[0], p[1] - q[1])
+    best_q = pts[0]
+    best_d = math.inf
+    px, py = p
+    for (ax, ay), (bx, by) in zip(pts, pts[1:]):
+        dx, dy = bx - ax, by - ay
+        L = dx * dx + dy * dy
+        if L == 0.0:
+            qx, qy = ax, ay
+        else:
+            t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / L))
+            qx, qy = ax + t * dx, ay + t * dy
+        d = math.hypot(px - qx, py - qy)
+        if d < best_d:
+            best_d, best_q = d, (qx, qy)
+    return best_q, best_d
 
 
 def _leader_line(
@@ -1880,12 +1915,21 @@ def pathway_extlabel_leaders(
     entries: list[LayoutEntry],
     style_dict: dict | None = None,
 ) -> list[LayoutEntry]:
-    """Insert a dashed leader line for every externalized entity label.
+    """Insert dashed leader lines that re-associate drifted labels with their owner.
 
-    Operates on the post-`place_labels` entry list. Returns the entries with
-    leader-line LayoutEntry items inserted immediately before the first placed
-    label (so leaders draw over entity boxes but under label text). A no-op
-    (returns the input unchanged) when no `_extlabel` labels are present, so it
+    Operates on the post-`place_labels` entry list. Two kinds of leader are emitted:
+
+    * **External entity label** (`label_{id}_extlabel`): a fit-aware entity whose
+      label can't fit renders an empty box and the label is placed outside it;
+      connect label edge to box edge (edge-to-edge).
+    * **Relation label** (`label_{relation_id}`): when collision avoidance has
+      pushed the label further than ``_RELATION_LEADER_MIN_GAP`` from its arrow
+      shaft, tether the label edge to the nearest point on the shaft. Labels that
+      sit comfortably beside their shaft get no leader (no clutter).
+
+    Returns the entries with leader-line LayoutEntry items inserted immediately
+    before the first placed label (so leaders draw over content but under label
+    text). A no-op (returns the input unchanged) when no leaders are needed, so it
     is safe to call for every archetype.
 
     The split point — the index of the first label entry — equals the count of
@@ -1905,6 +1949,22 @@ def pathway_extlabel_leaders(
             size = e.kwargs.get("size", (60.0, 30.0))
             entity_geom[e.ir_id] = (e.args[1], size)
 
+    # Relation-label leaders need the rendered shaft of each arrow (start, any
+    # waypoints, end) keyed by the relation's ir_id (which the placed label
+    # carries as `label_{relation_id}`).
+    arrow_prims = frozenset(RELATION_TO_ARROW.values())
+    arrow_geom: dict[str, list[tuple[float, float]]] = {}
+    for e in entries:
+        if e.primitive in arrow_prims and e.ir_id is not None and len(e.args) >= 2:
+            start, end = e.args
+            wps = e.kwargs.get("waypoints") or []
+            arrow_geom[e.ir_id] = [start, *wps, end]
+
+    def _font_size(e: LayoutEntry) -> float:
+        return float(
+            (e.kwargs.get("style_dict") or _DEFAULT_LABEL_STYLE)["label_font_size"]
+        )
+
     leaders: list[LayoutEntry] = []
     first_label_idx = len(entries)
     for i, e in enumerate(entries):
@@ -1912,34 +1972,47 @@ def pathway_extlabel_leaders(
             continue
         first_label_idx = min(first_label_idx, i)
         ir_id = e.ir_id or ""
-        if not (ir_id.startswith("label_") and ir_id.endswith("_extlabel")):
+        if not ir_id.startswith("label_"):
             continue
-        entity_id = ir_id[len("label_"):-len("_extlabel")]
-        geom = entity_geom.get(entity_id)
-        if geom is None:
-            continue
-        box_center, box_size = geom
+        key = ir_id[len("label_"):]
         label_center = e.args[1]
-        text = e.args[0]
-        font_size = float(
-            (e.kwargs.get("style_dict") or _DEFAULT_LABEL_STYLE)["label_font_size"]
-        )
-        lw, lh = _estimate_text_bbox(str(text), font_size)
-        # Edge-to-edge: exit the label bbox toward the box, and the box bbox
-        # toward the label, so the connector touches both perimeters cleanly
-        # without crossing the text or the box fill.
-        label_exit = _bbox_exit_point(
-            label_center, lw / 2, lh / 2, box_center, 0.0
-        )
-        box_exit = _bbox_exit_point(
-            box_center, box_size[0] / 2, box_size[1] / 2, label_center, 0.0
-        )
+
+        # (a) Externalized entity label -> connect to its box (edge-to-edge).
+        if key.endswith("_extlabel"):
+            entity_id = key[: -len("_extlabel")]
+            geom = entity_geom.get(entity_id)
+            if geom is None:
+                continue
+            box_center, box_size = geom
+            lw, lh = _estimate_text_bbox(str(e.args[0]), _font_size(e))
+            label_exit = _bbox_exit_point(label_center, lw / 2, lh / 2, box_center, 0.0)
+            box_exit = _bbox_exit_point(
+                box_center, box_size[0] / 2, box_size[1] / 2, label_center, 0.0
+            )
+            leaders.append(LayoutEntry(
+                primitive=_leader_line,
+                args=(label_exit, box_exit),
+                kwargs={"style_dict": style_dict} if style_dict else {},
+                position=(0.0, 0.0),
+                ir_id=f"leader_{entity_id}",
+            ))
+            continue
+
+        # (b) Relation label that drifted far from its shaft -> tether to shaft.
+        shaft = arrow_geom.get(key)
+        if shaft is None:
+            continue
+        nearest_pt, dist = _nearest_point_on_polyline(label_center, shaft)
+        if dist <= _RELATION_LEADER_MIN_GAP:
+            continue
+        lw, lh = _estimate_text_bbox(str(e.args[0]), _font_size(e))
+        label_exit = _bbox_exit_point(label_center, lw / 2, lh / 2, nearest_pt, 0.0)
         leaders.append(LayoutEntry(
             primitive=_leader_line,
-            args=(label_exit, box_exit),
+            args=(label_exit, nearest_pt),
             kwargs={"style_dict": style_dict} if style_dict else {},
             position=(0.0, 0.0),
-            ir_id=f"leader_{entity_id}",
+            ir_id=f"leader_{key}",
         ))
 
     if not leaders:
