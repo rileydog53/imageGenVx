@@ -1166,6 +1166,29 @@ def _route_same_band_arrows(
     return routes
 
 
+def _lift_corridor_off_membrane(
+    corridor_y: float,
+    membrane_keepouts: list[tuple[float, float]] | None,
+) -> float:
+    """Nudge a horizontal corridor out of any membrane bilayer keep-out zone.
+
+    A cross-band corridor placed at the boundary between two contiguous bands
+    can land exactly on a lipid-bilayer stripe (drawn at the membrane band's
+    top edge), so the horizontal leg of the elbow visually rides along the
+    membrane. When ``corridor_y`` falls inside a keep-out interval, lift it to
+    just above the stripe (the interval's top), so the corridor runs in the
+    band above the membrane and only the vertical legs cross the bilayer —
+    perpendicular, as a membrane crossing should read. No-op when there are no
+    membranes or the corridor already clears them.
+    """
+    if not membrane_keepouts:
+        return corridor_y
+    for lo, hi in membrane_keepouts:
+        if lo < corridor_y < hi:
+            corridor_y = lo
+    return corridor_y
+
+
 def _orthogonal_waypoints(
     src_center: tuple[float, float],
     src_bbox: tuple[float, float],
@@ -1174,6 +1197,7 @@ def _orthogonal_waypoints(
     tgt_bbox: tuple[float, float],
     tgt_band: tuple[float, float],
     gap: float,
+    membrane_keepouts: list[tuple[float, float]] | None = None,
 ) -> list[tuple[float, float]]:
     """Compute a 4-point orthogonal (elbow) path from src to tgt.
 
@@ -1184,6 +1208,11 @@ def _orthogonal_waypoints(
     For entities in the same band the path routes through a corridor
     above the band top (outside the band), which may briefly exit the
     canvas for the top-most band but is still rendered correctly by SVG.
+
+    ``membrane_keepouts`` is a list of ``(stripe_top, stripe_bottom)`` y-intervals
+    (one per lipid bilayer, already margin-inflated). A cross-band corridor that
+    would land on a bilayer is lifted just above it so the horizontal leg never
+    rides the membrane.
 
     Returns a 4-element list: [tail_exit, elbow_src, elbow_tgt, head_enter].
     The first and last points land on the bbox perimeters of source and
@@ -1217,6 +1246,7 @@ def _orthogonal_waypoints(
         tail = (sx, sy - shh - gap)
         head = (tx, ty + thh + gap)
 
+    corridor_y = _lift_corridor_off_membrane(corridor_y, membrane_keepouts)
     return [tail, (sx, corridor_y), (tx, corridor_y), head]
 
 
@@ -1494,6 +1524,27 @@ def layout_pathway(
     ox, _ = origin
     arrow_gap = float(params["pathway_arrow_gap"])
 
+    # Lift cross-band corridors off lipid-bilayer stripes. Each MEMBRANE band
+    # draws its bilayer at its top edge, spanning [top - r_head, top + thickness
+    # + r_head]; a corridor routed at the band boundary would ride along it.
+    # Build margin-inflated keep-out intervals so _orthogonal_waypoints can lift
+    # the horizontal leg above the membrane (vertical legs still cross it
+    # perpendicularly). Empty in ring mode (no bands) or membrane-free figures.
+    membrane_keepouts: list[tuple[float, float]] = []
+    if not ring_mode:
+        from imageGen.primitives import membranes as _mem  # noqa: PLC0415
+        _ms = {**_mem.DEFAULT_STYLE, **(style_dict or {})}
+        _thick = float(_ms["bilayer_thickness"])
+        _rhead = float(_ms["bilayer_head_radius"])
+        _keepout_margin = 8.0
+        for c in compartments:
+            if c.type is CompartmentType.MEMBRANE and c.id in bands:
+                _top = bands[c.id][0]
+                membrane_keepouts.append((
+                    _top - _rhead - _keepout_margin,
+                    _top + _thick + _rhead + _keepout_margin,
+                ))
+
     def _entry(
         primitive: Callable, args: tuple, kwargs: dict, ir_id: str | None = None
     ) -> LayoutEntry:
@@ -1593,6 +1644,7 @@ def layout_pathway(
                 positions[r.source], effective_bbox[src.type], bands[location_map[r.source]],
                 positions[r.target], effective_bbox[tgt.type], bands[location_map[r.target]],
                 arrow_gap,
+                membrane_keepouts=membrane_keepouts,
             )
         else:
             wps = same_band_routes.get(idx)  # None → straight arrow
