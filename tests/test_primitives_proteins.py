@@ -71,6 +71,35 @@ def test_protein_complex_draws_two_subunit_rects_spanning_size():
     assert max(ys1) == pytest.approx(cy + h / 2)
 
 
+def _stroked_text_lines(group) -> list[str]:
+    """Text-line contents that carry a stroke (i.e. halo underlays)."""
+    import re
+    xml = group.tostring()
+    out = []
+    for m in re.finditer(r"<text\b([^>]*)>([^<]*)</text>", xml):
+        attrs, body = m.group(1), m.group(2)
+        if "stroke" in attrs:
+            out.append(body)
+    return out
+
+
+def test_protein_complex_label_has_white_halo():
+    """Clarity fix: complex labels render a white-stroked underlay (halo) so the
+    text stays legible where it crosses the two-subunit seam + back border."""
+    g = protein_complex("Cas9 RNP", (100, 70), size=(72, 38))
+    haloed = _stroked_text_lines(g)
+    assert "Cas9 RNP" in haloed, "complex label must have a halo underlay"
+    # The underlay stroke is white.
+    assert 'stroke="#FFFFFF"' in g.tostring() or 'stroke:#FFFFFF' in g.tostring()
+
+
+def test_generic_protein_label_has_no_halo():
+    """Halo is opt-in: a plain protein label stays a single un-stroked text
+    (byte-identical to before, so no golden churn)."""
+    g = generic_protein("ATP", (100, 70))
+    assert _stroked_text_lines(g) == []
+
+
 def test_protein_complex_back_subunit_is_lighter_for_depth():
     """Clarity fix: the back subunit is a lighter shade than the front so the
     two overlapping rects read as one layered assembly, not two equal boxes.

@@ -231,9 +231,11 @@ def protein_complex(
         rect["stroke-width"] = sw
         g.add(rect)
     # Label is centered over the union of both subunits; fit it to the full box.
+    # A wide label crosses the seam between the front and (lighter) back subunit
+    # and that subunit's border, so render it with a white halo for legibility.
     fit = _fit_label(label, w, h, s)
     if not fit.external:
-        g.add(_label_for_fit(fit, cx, cy, s))
+        g.add(_label_for_fit(fit, cx, cy, s, halo=True))
     return g
 
 
