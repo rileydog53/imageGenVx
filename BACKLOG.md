@@ -24,8 +24,19 @@ figures soon; low = polish / advanced use.
 
 ## Open issues
 
-_None._ All tracked defects through v2.2 are resolved. Out-of-scope feature
-ideas live in `V3_FEATURES.md`; wrong-figure reports go in `FEEDBACK.md`.
+Source: live-render review of 10 figures, 2026-06-05 (see plan
+`ok-write-the-plan-jazzy-bee`). Out-of-scope feature ideas live in
+`V3_FEATURES.md`; wrong-figure reports go in `FEEDBACK.md`.
+
+| ID | Priority | Issue |
+|---|---|---|
+| FR4 | medium | **GPCR/transmembrane glyph doesn't span the bilayer.** `primitives/proteins.py:399 gpcr()` anchors at the membrane boundary, not piercing both leaflets. ~30-line primitive change, no schema. |
+| FR5 | medium | **Cyclic graphs render as flat L->R DAGs** (diabetes, action potential, carbon cycle) while rock-cycle rings correctly. Cross-links defeat ring detection; add auto-detect (`layout/`, `_dispatch_layout`); `layout_hint`/`--layout circular` already wired. |
+| FR6 | medium | **`--verify` passed all 10 despite FR1/FR2/FR3.** Add legibility/semantic rules to catch empty-box overflow, off-canvas text, and undrawn annotations (`verify/legibility_check.py`). |
+| FR7 | medium | **`style.primitive` unreachable from tuple shorthand** (blocked the antibody glyph in IgG). Add optional 5th tuple element in `ir/builder.py` `_normalize_entity`; dict-form entities already expose it. |
+| FR8 | medium | **Stacked labels on parallel fwd/back edges** (item 2: subunit dissociation / GTP hydrolysis). Add `label_side: above\|below` to `Relation`; offset in `layout/label_placement.py`. SCHEMA-GATED -- needs approval (CONTRIBUTING rule 5). Cross-ref V3-L2. Short-term: ASCII arrow prefixes in labels. |
+| FR9 | low | **No abbreviation/acronym glossary** (item 4). Add `glossary:[{term,definition}]` to `Figure`, boxed legend via `render/legend.py`, verifier "every acronym defined". SCHEMA-GATED + V3-tier -- candidate for `V3_FEATURES.md`. Short-term: hand-authored `annotations` block (depends on FR1). |
+| FR10 | low | **Domain-canonical idioms missing** (item G): action-potential voltage trace, antibody Y-shape (curved electron-pushing arrows already tracked as V3-C4). New primitives -- V3-tier; candidate for `V3_FEATURES.md`. |
 
 ---
 
