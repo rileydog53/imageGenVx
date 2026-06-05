@@ -216,8 +216,20 @@ def render_figure(
                 ir_id="legend",
             )]
 
+    # FR1: draw figure annotations (label / caption / scale_bar) last so they
+    # sit above figure content. Until this, `figure.annotations` was never read
+    # and these were silent no-ops despite fixtures relying on them.
+    if ir.annotations:
+        from imageGen.render.annotations import annotation_entries  # noqa: PLC0415
+        entries = entries + annotation_entries(ir, final_canvas, style_dict)
+
     svg_path = output_path if fmt == "svg" else output_path.with_suffix(".svg")
     _write_svg(entries, final_canvas, svg_path)
+    # FR3: grow the frame to rescue any label/annotation drawn past the canvas
+    # edge. Always on — a truncated label is never desired — and a no-op when
+    # content fits, so figures without overflow stay byte-identical. Runs before
+    # autocrop so the (now fully-enclosed) content survives any subsequent trim.
+    _expand_svg_to_content(svg_path)
     if autocrop:
         _autocrop_svg(svg_path)
     if fmt == "png":
@@ -551,6 +563,23 @@ def _autocrop_svg(svg_path: Path) -> None:
         return
     box = crop_box(content, canvas, margin_frac=0.05)
     _rewrite_svg_frame(svg_path, box, set_size=True)
+
+
+def _expand_svg_to_content(svg_path: Path) -> None:
+    """Grow the SVG frame in-place to enclose content drawn past its edge (FR3).
+
+    Measures the rendered content bounds (which include label text boxes), and
+    if any label/annotation overflows the canvas, rewrites the ``viewBox`` and
+    ``width``/``height`` so the figure ships without truncation. No-op when
+    everything already fits — golden-image figures stay byte-identical.
+    """
+    from imageGen.render.crop import expand_box, _rewrite_svg_frame  # noqa: PLC0415
+    from imageGen.verify.legibility_check import content_bounds  # noqa: PLC0415
+
+    content, canvas = content_bounds(svg_path)
+    box = expand_box(content, canvas)
+    if box is not None:
+        _rewrite_svg_frame(svg_path, box, set_size=True)
 
 
 def _write_svg(
