@@ -33,11 +33,16 @@ import svgwrite.text
 # ---------------------------------------------------------------------------
 
 AVG_CHAR_RATIO = 0.55     # em/char for the sans default (matches the plan)
-# Smallest shrink size. Set to 7 (not 8) so a long single-break metabolite like
-# "a-Ketoglutarate" (15 chars; only break is "a-"/"Ketoglutarate", 13 chars)
-# still wraps to fit a 60px box at rung 3 instead of escalating to an external
-# leader — keeping rung 4 rare per the plan. Stays above the 6px legibility floor.
-FONT_FLOOR = 7.0
+# Smallest shrink size — set to the 6.0 legibility floor (``legibility_check``
+# uses a strict ``font < 6.0`` test, so 6.0 still passes). FR2: long chemistry
+# names like "Glyceraldehyde-3-phosphate" and "SN2 transition state" overflow a
+# 60px box at the old 7px floor and escalated to an external leader, leaving the
+# node visibly blank. At 6px they wrap to two lines and sit *inside* the box, so
+# rung 4 (external) stays the rare safety net the plan intends. Lowering the
+# floor only rescues labels that previously went external: the shrink loop still
+# finds 7px (and any larger size) first, so every label that already fit at >=7px
+# renders byte-identically.
+FONT_FLOOR = 6.0
 INNER_PAD = 4.0           # px — padding inside the box on each side
 LINE_HEIGHT_RATIO = 1.15  # multiple of font size between stacked tspan baselines
 _BREAK_CHARS = " /-"      # natural wrap points: space, slash, hyphen

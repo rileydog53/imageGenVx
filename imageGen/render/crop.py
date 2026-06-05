@@ -101,6 +101,37 @@ def crop_box(
     return (x0, y0, x1, y1)
 
 
+def expand_box(
+    content: Bbox,
+    canvas: Bbox,
+    *,
+    margin: float = 6.0,
+    epsilon: float = 0.5,
+) -> Bbox | None:
+    """Return a frame that grows `canvas` to enclose any `content` past its edge.
+
+    FR3: external/relation labels (and annotations) can extend beyond the
+    computed canvas, and both the SVG viewport and `crop_box` clamp *into* the
+    canvas — so an off-canvas label is silently truncated at the frame edge.
+    This grows the frame **outward only** on whichever sides content overflows,
+    adding `margin` px of breathing room so the rescued label isn't flush
+    against the new border. Sides without overflow keep the canvas exactly, so a
+    figure whose content fits is unchanged.
+
+    Returns the enlarged box, or `None` when no side overflows (no-op) — the
+    caller can then skip rewriting the SVG and keep golden-identical output.
+    """
+    cx0, cy0, cx1, cy1 = content
+    kx0, ky0, kx1, ky1 = canvas
+    nx0 = cx0 - margin if cx0 < kx0 - epsilon else kx0
+    ny0 = cy0 - margin if cy0 < ky0 - epsilon else ky0
+    nx1 = cx1 + margin if cx1 > kx1 + epsilon else kx1
+    ny1 = cy1 + margin if cy1 > ky1 + epsilon else ky1
+    if (nx0, ny0, nx1, ny1) == (kx0, ky0, kx1, ky1):
+        return None
+    return (nx0, ny0, nx1, ny1)
+
+
 def _rewrite_svg_frame(svg_path: Path, box: Bbox, *, set_size: bool) -> None:
     """Set the SVG's `viewBox` to `box`; optionally also set width/height to it.
 

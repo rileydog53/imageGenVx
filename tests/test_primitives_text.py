@@ -76,11 +76,13 @@ def test_long_no_break_label_shrinks_single_line():
 
 
 def test_hyphenated_label_wraps_to_two_lines_when_shrink_alone_fails():
-    # "alpha-Ketoglutarate" (19) only fits when wrapped at the floor.
+    # "alpha-Ketoglutarate" (19) doesn't fit single-line but wraps in-box.
+    # Rung 3 stops at the largest font that fits (the shrink loop walks down
+    # from the base), so it lands above the floor — not pinned to it.
     fit = fit_label("alpha-Ketoglutarate", *BOX, STYLE)
     assert fit.external is False
     assert fit.lines == ["alpha-", "Ketoglutarate"]
-    assert fit.font_size == FONT_FLOOR
+    assert fit.font_size >= FONT_FLOOR
     # Hyphen stays on the first line (no orphaned delimiter).
     assert fit.lines[0].endswith("-")
 
@@ -92,11 +94,30 @@ def test_pathological_label_goes_external():
     assert fit.font_size == FONT_FLOOR
 
 
+def test_fr2_long_chem_names_wrap_in_box_not_external():
+    # FR2: at the old 7px floor these escalated to an external leader, leaving
+    # the node blank. At the 6px floor they wrap to two lines inside a 60x30 box.
+    for label in ("Glyceraldehyde-3-phosphate", "SN2 transition state"):
+        fit = fit_label(label, *BOX, STYLE)
+        assert fit.external is False, f"{label!r} should stay in-box"
+        assert len(fit.lines) == 2
+        assert fit.font_size >= FONT_FLOOR
+
+
+def test_fr2_unbreakable_long_word_still_external():
+    # A single long word with no break point genuinely can't fit a 60px box;
+    # rung 4 (external) remains the rare safety net.
+    fit = fit_label("Bisphosphoglycerate", *BOX, STYLE)
+    assert fit.external is True
+
+
 def test_external_never_below_legibility_floor():
     # Even a hopeless label reports the floor font, never lower.
     fit = fit_label("x" * 200, *BOX, STYLE)
     assert fit.font_size == FONT_FLOOR
-    assert fit.font_size > 6.0  # the legibility_check minimum
+    # The floor sits at the legibility_check minimum (which uses a strict
+    # ``font < 6.0`` test, so a 6.0 label still passes).
+    assert fit.font_size >= 6.0
 
 
 def test_space_break_drops_the_space():

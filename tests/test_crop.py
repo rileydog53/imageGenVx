@@ -5,11 +5,20 @@ import re
 from pathlib import Path
 
 from imageGen.ir.builder import build
+from imageGen.ir.schema import (
+    Annotation,
+    AnnotationType,
+    Archetype,
+    Entity,
+    EntityType,
+    Figure,
+)
 from imageGen.render.compositor import render_figure
 from imageGen.render.crop import (
     apply_crop,
     crop_box,
     cropped_path,
+    expand_box,
 )
 from imageGen.verify.legibility_check import content_bounds
 
@@ -123,3 +132,58 @@ def test_apply_crop_keep_aspect_preserves_canvas_size(tmp_path):
     # keep-aspect leaves the canvas dimensions so content scales uniformly.
     # L19: single-band canvas is now 800 × 100 (not 800 × 600).
     assert (width, height) == (800.0, 100.0)
+
+
+# ---------------------------------------------------------------------------
+# FR3 — frame expansion to rescue off-canvas labels
+# ---------------------------------------------------------------------------
+
+
+def test_expand_box_grows_only_overflow_sides():
+    canvas = (0.0, 0.0, 800.0, 600.0)
+    # content overflows the right edge by 40px; other sides fit.
+    box = expand_box((10.0, 10.0, 840.0, 500.0), canvas, margin=6.0)
+    assert box is not None
+    x0, y0, x1, y1 = box
+    assert (x0, y0, y1) == (0.0, 0.0, 600.0)  # untouched sides
+    assert x1 == 840.0 + 6.0                  # overflow side + margin
+
+
+def test_expand_box_noop_when_content_fits():
+    canvas = (0.0, 0.0, 800.0, 600.0)
+    assert expand_box((10.0, 10.0, 790.0, 590.0), canvas) is None
+
+
+def test_expand_box_handles_negative_overflow():
+    canvas = (0.0, 0.0, 800.0, 600.0)
+    box = expand_box((-30.0, 10.0, 500.0, 500.0), canvas, margin=6.0)
+    assert box is not None
+    assert box[0] == -36.0  # left edge grows outward (negative)
+
+
+def test_render_grows_frame_to_enclose_offcanvas_label():
+    """FR3: a label drawn past the canvas edge expands the SVG frame in-place."""
+    import tempfile
+    from pathlib import Path as _P
+
+    ir = Figure(
+        archetype=Archetype.PATHWAY,
+        entities=[Entity(id="a", type=EntityType.METABOLITE, label="A")],
+        relations=[],
+        annotations=[
+            Annotation(
+                type=AnnotationType.LABEL,
+                text="lithification and burial",
+                position=(0.97, 0.5),
+            )
+        ],
+    )
+    with tempfile.TemporaryDirectory() as d:
+        out = _P(d) / "fr3.svg"
+        render_figure(ir, out)
+        svg = out.read_text()
+        content, canvas = content_bounds(out)
+    assert "lithification and burial" in svg
+    # the long edge-anchored label is fully enclosed by the (grown) frame.
+    assert content[2] <= canvas[2] + 0.6
+    assert canvas[2] > 800.0  # frame grew past the default 800px width
