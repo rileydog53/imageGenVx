@@ -101,6 +101,7 @@ def render_figure(
     canvas: tuple[float, float] | None = None,
     strict_labels: bool = False,
     autocrop: bool = False,
+    legend: bool = False,
 ) -> Path:
     """Render an IR Figure to a file and return the resolved output Path.
 
@@ -194,6 +195,27 @@ def render_figure(
         entries = _inject_watermark(entries, ir, style_dict)
 
     final_canvas = canvas if canvas is not None else computed_canvas
+
+    # Issue #4: opt-in auto-legend. Detect the glyph conventions the figure uses
+    # and float a key in the top-right corner. Emitted as a normal LayoutEntry so
+    # it draws on top of the figure through the standard write path.
+    if legend:
+        from imageGen.render.legend import (  # noqa: PLC0415 — opt-in import
+            legend as _legend_primitive,
+            legend_glyph_keys_for_figure,
+        )
+        keys = legend_glyph_keys_for_figure(ir)
+        if keys:
+            cw, _ch = final_canvas
+            inset = 12.0
+            entries = entries + [LayoutEntry(
+                _legend_primitive,
+                (keys, (cw - inset, inset)),
+                {"style_dict": style_dict},
+                position=(0.0, 0.0),
+                ir_id="legend",
+            )]
+
     svg_path = output_path if fmt == "svg" else output_path.with_suffix(".svg")
     _write_svg(entries, final_canvas, svg_path)
     if autocrop:

@@ -275,6 +275,7 @@ def label_for_fit(
     *,
     weight: str = "normal",
     color: Optional[str] = None,
+    halo: bool = False,
 ) -> svgwrite.text.Text:
     """Render a ``FitResult`` as a centered label at (``cx``, ``cy``).
 
@@ -283,17 +284,42 @@ def label_for_fit(
     entities stay byte-identical (golden-image safe). A shrunk single line
     passes the reduced size through; multiple lines render as stacked tspans.
 
+    When ``halo=True`` the (single) text element is given a white stroke painted
+    *behind* its fill (``paint-order: stroke``), forming a legibility halo for
+    labels that cross a busy/overlapping background (e.g. a complex's two
+    subunits + their borders). This stays one ``<text>`` element — not a
+    duplicate — so the legibility audit still sees exactly one label. Off by
+    default so every other entity is byte-identical. Halo color/width come from
+    ``label_halo_color`` / ``label_halo_width`` (default white, ~22% of font).
+
     Callers must check ``fit.external`` first — an external result carries no
     in-box text and should not be passed here.
     """
     base = float(style.get("label_font_size", 11))
     if len(fit.lines) == 1:
         override = None if fit.font_size == base else fit.font_size
-        return centered_label(
+        t = centered_label(
             fit.lines[0], cx, cy, style,
             weight=weight, color=color, size_override=override,
         )
-    return multiline_label(
-        fit.lines, cx, cy, style,
-        weight=weight, color=color, size_override=fit.font_size,
-    )
+    else:
+        t = multiline_label(
+            fit.lines, cx, cy, style,
+            weight=weight, color=color, size_override=fit.font_size,
+        )
+    if halo:
+        halo_color = style.get("label_halo_color", "#FFFFFF")
+        halo_width = float(
+            style.get("label_halo_width", max(1.0, fit.font_size * 0.06))
+        )
+        halo_opacity = float(style.get("label_halo_opacity", 0.55))
+        t["stroke"] = halo_color
+        t["stroke-width"] = halo_width
+        t["stroke-opacity"] = halo_opacity
+        t["stroke-linejoin"] = "round"
+        # paint-order isn't in svgwrite's attribute allowlist; disable this
+        # element's validation (it is a valid SVG2 / CSS attribute) and set it so
+        # the stroke renders behind the fill (a halo, not an outline over glyphs).
+        t._parameter.debug = False
+        t.attribs["paint-order"] = "stroke"
+    return t

@@ -14,6 +14,7 @@ import svgwrite.container
 
 from imageGen.primitives.proteins import (
     DEFAULT_STYLE,
+    _tint_toward_white,
     generic_protein,
     gpcr,
     kinase,
@@ -68,6 +69,67 @@ def test_protein_complex_draws_two_subunit_rects_spanning_size():
     assert max(xs1) == pytest.approx(cx + w / 2)
     assert min(ys0) == pytest.approx(cy - h / 2)
     assert max(ys1) == pytest.approx(cy + h / 2)
+
+
+def _stroked_text_lines(group) -> list[str]:
+    """Text-line contents that carry a stroke (i.e. halo underlays)."""
+    import re
+    xml = group.tostring()
+    out = []
+    for m in re.finditer(r"<text\b([^>]*)>([^<]*)</text>", xml):
+        attrs, body = m.group(1), m.group(2)
+        if "stroke" in attrs:
+            out.append(body)
+    return out
+
+
+def test_protein_complex_label_has_white_halo():
+    """Clarity fix: complex labels render a white-stroked underlay (halo) so the
+    text stays legible where it crosses the two-subunit seam + back border."""
+    g = protein_complex("Cas9 RNP", (100, 70), size=(72, 38))
+    haloed = _stroked_text_lines(g)
+    assert "Cas9 RNP" in haloed, "complex label must have a halo underlay"
+    # The underlay stroke is white.
+    assert 'stroke="#FFFFFF"' in g.tostring() or 'stroke:#FFFFFF' in g.tostring()
+
+
+def test_generic_protein_label_has_no_halo():
+    """Halo is opt-in: a plain protein label stays a single un-stroked text
+    (byte-identical to before, so no golden churn)."""
+    g = generic_protein("ATP", (100, 70))
+    assert _stroked_text_lines(g) == []
+
+
+def test_protein_complex_back_subunit_is_lighter_for_depth():
+    """Clarity fix: the back subunit is a lighter shade than the front so the
+    two overlapping rects read as one layered assembly, not two equal boxes.
+
+    Rects are added back-first then front, so elements[0] is the back subunit.
+    """
+    g = protein_complex("Cas9 RNP", (100, 70), size=(72, 38))
+    rects = [el for el in g.elements if isinstance(el, svgwrite.shapes.Rect)]
+    assert len(rects) == 2
+    back, front = rects[0], rects[1]
+    back_fill = str(back["fill"]).upper()
+    front_fill = str(front["fill"]).upper()
+    assert back_fill != front_fill, "back subunit must be a distinct (lighter) shade"
+    # Front fill is the base protein fill; back is the same hue tinted toward white.
+    assert front_fill == _tint_toward_white(DEFAULT_STYLE["protein_fill"], 0.0).upper()
+    assert back_fill == _tint_toward_white(DEFAULT_STYLE["protein_fill"], 0.45).upper()
+
+
+def test_tint_toward_white_endpoints_and_clamp():
+    """Helper: 0 is identity, 1 is white, out-of-range clamps, non-hex passes through."""
+    assert _tint_toward_white("#7BB6E0", 0.0).upper() == "#7BB6E0"
+    assert _tint_toward_white("#000000", 1.0).upper() == "#FFFFFF"
+    # A mid blend lands strictly between the endpoints (lighter than original).
+    mid = _tint_toward_white("#000000", 0.5).upper()
+    assert mid == "#808080"
+    # Out-of-range fractions clamp rather than overshoot.
+    assert _tint_toward_white("#123456", 2.0).upper() == "#FFFFFF"
+    assert _tint_toward_white("#123456", -1.0).upper() == "#123456"
+    # Named / malformed colors pass through untouched.
+    assert _tint_toward_white("rebeccapurple", 0.5) == "rebeccapurple"
 
 
 def test_kinase_returns_group():
