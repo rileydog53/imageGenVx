@@ -132,6 +132,13 @@ PATHWAY_DEFAULT_PARAMS: dict[str, Any] = {
     "pathway_ring_node_gap":     28.0,
     "pathway_ring_min_radius":   120.0,
     "pathway_ring_label_margin": 72.0,
+    # Port-based arrow routing. When one entity drives several targets in the
+    # same general direction the arrows share a single trunk before forking at a
+    # Y-junction (`fanout_trunk_length` px from the source edge). When several
+    # arrows enter/leave the same entity side they are spread to distinct ports
+    # inset `port_corner_inset` px from each bbox corner so they never stack.
+    "pathway_fanout_trunk_length": 28.0,  # px — shared trunk before Y-fork
+    "pathway_port_corner_inset":    8.0,  # px — min port distance from bbox corner
 }
 
 
@@ -987,6 +994,265 @@ def _arrow_endpoints(
     return start, end
 
 
+# ---------------------------------------------------------------------------
+# Port-based arrow routing + fan-out branching.
+#
+# Center-to-center routing exits every arrow at the same edge midpoint, so two
+# arrows leaving one entity toward the same side stack on top of each other and
+# 1→{A,B} is indistinguishable from the chain 1→A→B. Ports spread co-sided
+# arrows to distinct edge points; fan-out draws one shared trunk that branches
+# at a Y-junction so a single source driving N targets reads as one fork.
+# ---------------------------------------------------------------------------
+
+_FANOUT_DIRS = {"right": (1.0, 0.0), "left": (-1.0, 0.0),
+                "bottom": (0.0, 1.0), "top": (0.0, -1.0)}
+
+
+def _natural_side(
+    src_center: tuple[float, float], tgt_center: tuple[float, float]
+) -> str:
+    """Which bbox side the vector src→tgt exits, by dominant axis.
+
+    Ties (``|dx| == |dy|``) break to the horizontal axis, the more common case
+    in left-to-right band layouts. Coincident points return ``'right'`` (the
+    self-loop default), so the caller's elbow code routes the loop normally.
+    """
+    dx = tgt_center[0] - src_center[0]
+    dy = tgt_center[1] - src_center[1]
+    if abs(dx) >= abs(dy):
+        return "right" if dx >= 0 else "left"
+    return "bottom" if dy >= 0 else "top"
+
+
+def _diverging_fanouts(
+    relations: list,
+    positions: dict[str, tuple[float, float]],
+    effective_bbox: dict,
+    entity_by_id: dict,
+    location_map: dict[str, str],
+) -> dict[tuple[str, str], list[int]]:
+    """Map ``(source_id, side)`` → relation indices that form a true fan-out.
+
+    A source driving several targets on one side is only a fork when those
+    targets actually diverge *perpendicular* to the exit direction. Co-sided
+    targets strung out along the exit axis (same row → a chain with a skip
+    link) are excluded — they keep their straight/arch routing. Only groups of
+    size ≥ 2 that clear the divergence test are returned.
+
+    Cross-band relations are excluded: they route through the inter-band
+    corridor (a vertical exit), so a perpendicular-side trunk doesn't apply.
+    """
+    groups: dict[tuple[str, str], list[int]] = {}
+    for idx, r in enumerate(relations):
+        if location_map[r.source] != location_map[r.target]:
+            continue
+        side = _natural_side(positions[r.source], positions[r.target])
+        groups.setdefault((r.source, side), []).append(idx)
+
+    forks: dict[tuple[str, str], list[int]] = {}
+    for (eid, side), group in groups.items():
+        if len(group) < 2:
+            continue
+        perp_axis = 1 if side in ("left", "right") else 0
+        perp = [positions[relations[i].target][perp_axis] for i in group]
+        tgt_extent = min(
+            effective_bbox[entity_by_id[relations[i].target].type][perp_axis]
+            for i in group
+        )
+        if max(perp) - min(perp) >= tgt_extent:
+            forks[(eid, side)] = group
+    return forks
+
+
+def _assign_ports(
+    relations: list,
+    positions: dict[str, tuple[float, float]],
+    effective_bbox: dict,
+    entity_by_id: dict,
+    location_map: dict[str, str],
+    arrow_gap: float,
+    corner_inset: float,
+) -> tuple[dict, set, list]:
+    """Assign an exit/entry point to every relation endpoint.
+
+    Returns ``(ports, reassigned, fanout_groups)``:
+
+    * ``ports`` maps every ``(rel_idx, 'src')`` / ``(rel_idx, 'tgt')`` to
+      ``(x, y)``.
+    * ``reassigned`` is the subset of keys whose port was moved off the default
+      exit, so the caller knows when to pull an elbow path's terminal waypoint
+      onto the port.
+    * ``fanout_groups`` is a list of ``(group_indices, side, src_port)`` for
+      each true fan-out, so the caller can build the shared Y-trunk.
+
+    **Port exclusivity.** Endpoints are bucketed per ``(entity, side)`` —
+    *both* exits and entries on the same side share a bucket, plus one slot per
+    fan-out trunk. A bucket with a single occupant keeps the exact
+    ``_arrow_endpoints`` exit (single arrows stay byte-identical). A bucket with
+    several occupants spreads them to evenly-spaced ports inset ``corner_inset``
+    px from each corner, ordered by the perpendicular coordinate of their far
+    endpoint to minimise crossing. This covers fan-in (many entries), the
+    bidirectional pair (one exit + one entry colliding on a side), and any
+    mixed case — not just fan-out, which the trunk routing also distinguishes.
+
+    Only **same-band** endpoints are bucketed. Cross-band arrows route through
+    the inter-band corridor (vertical exit/entry), so their ``natural_side`` is
+    not a real edge — reassigning them to a perpendicular port would fight the
+    corridor. They keep their default exits untouched.
+    """
+    forks = _diverging_fanouts(
+        relations, positions, effective_bbox, entity_by_id, location_map
+    )
+    fork_members = {i for group in forks.values() for i in group}
+
+    ports: dict[tuple[int, str], tuple[float, float]] = {}
+    # Default every endpoint to its center-to-center exit.
+    for idx, r in enumerate(relations):
+        s_center = positions[r.source]
+        t_center = positions[r.target]
+        src = entity_by_id[r.source]
+        tgt = entity_by_id[r.target]
+        s_bbox = _arrow_bbox_for_entity(src, effective_bbox[src.type])
+        t_bbox = _arrow_bbox_for_entity(tgt, effective_bbox[tgt.type])
+        ports[(idx, "src")] = _bbox_exit_point(
+            s_center, s_bbox[0] / 2.0, s_bbox[1] / 2.0, t_center, arrow_gap
+        )
+        ports[(idx, "tgt")] = _bbox_exit_point(
+            t_center, t_bbox[0] / 2.0, t_bbox[1] / 2.0, s_center, arrow_gap
+        )
+
+    # Bucket occupants per (entity, side). An occupant is a fan-out trunk, a
+    # single source exit, or a target entry. ``anchor`` is the perpendicular
+    # coordinate used to order the bucket so arrows don't cross.
+    buckets: dict[tuple[str, str], list[dict]] = {}
+
+    def _perp(side: str, pt: tuple[float, float]) -> float:
+        return pt[1] if side in ("left", "right") else pt[0]
+
+    for (eid, side), group in forks.items():
+        anchor = sum(_perp(side, positions[relations[i].target]) for i in group) / len(group)
+        buckets.setdefault((eid, side), []).append(
+            {"kind": "fanout", "group": group, "anchor": anchor}
+        )
+    for idx, r in enumerate(relations):
+        if location_map[r.source] != location_map[r.target]:
+            continue  # cross-band: keep corridor routing, no port reassignment
+        if idx not in fork_members:
+            s_side = _natural_side(positions[r.source], positions[r.target])
+            buckets.setdefault((r.source, s_side), []).append(
+                {"kind": "src", "idx": idx,
+                 "anchor": _perp(s_side, positions[r.target])}
+            )
+        t_side = _natural_side(positions[r.target], positions[r.source])
+        buckets.setdefault((r.target, t_side), []).append(
+            {"kind": "tgt", "idx": idx,
+             "anchor": _perp(t_side, positions[r.source])}
+        )
+
+    reassigned: set[tuple[int, str]] = set()
+    fanout_groups: list[tuple[list[int], str, tuple[float, float]]] = []
+
+    for (eid, side), occ in buckets.items():
+        entity = entity_by_id[eid]
+        bw, bh = _arrow_bbox_for_entity(entity, effective_bbox[entity.type])
+        hw, hh = bw / 2.0, bh / 2.0
+        cx, cy = positions[eid]
+        horizontal_edge = side in ("left", "right")
+        occ.sort(key=lambda o: o["anchor"])
+        m = len(occ)
+        has_entry = any(o["kind"] == "tgt" for o in occ)
+
+        # Spread only when an entry shares the side — this covers fan-in (many
+        # entries) and the bidirectional collision (one exit + one entry). A
+        # pure-exit bucket (a chain's straight link plus its skip links) is left
+        # to arch routing, which separates the skips vertically; spreading those
+        # exits horizontally would fight the arch geometry.
+        if m == 1 or not has_entry:
+            for o in occ:
+                if o["kind"] == "fanout":
+                    src_port = _edge_point(cx, cy, hw, hh, side, 0.5, arrow_gap)
+                    for i in o["group"]:
+                        ports[(i, "src")] = src_port
+                    fanout_groups.append((o["group"], side, src_port))
+            # Lone / pure-exit occupants keep their default exits.
+            continue
+
+        span = (2.0 * hh if horizontal_edge else 2.0 * hw) - 2.0 * corner_inset
+        if span <= 0 or span / (m - 1) < corner_inset:
+            warnings.warn(
+                f"pathway port routing: {m} arrows on the {side} side of "
+                f"'{eid}' exceed edge capacity; ports cluster near the corners.",
+                UserWarning,
+                stacklevel=2,
+            )
+        for k, o in enumerate(occ):
+            pos = _edge_point(cx, cy, hw, hh, side, k / (m - 1), arrow_gap,
+                              inset=corner_inset)
+            if o["kind"] == "fanout":
+                for i in o["group"]:
+                    ports[(i, "src")] = pos
+                fanout_groups.append((o["group"], side, pos))
+            else:
+                key = (o["idx"], "src" if o["kind"] == "src" else "tgt")
+                ports[key] = pos
+                reassigned.add(key)
+
+    return ports, reassigned, fanout_groups
+
+
+def _edge_point(
+    cx: float,
+    cy: float,
+    hw: float,
+    hh: float,
+    side: str,
+    frac: float,
+    gap: float,
+    inset: float = 0.0,
+) -> tuple[float, float]:
+    """A point on a bbox side, ``frac`` (0→1) of the way along the usable edge.
+
+    The edge runs corner-to-corner; ``inset`` trims that span symmetrically so
+    ports keep clear of the corners. ``gap`` pushes the point perpendicularly
+    off the edge (matching the arrow-tip gap used elsewhere). ``frac == 0.5``
+    with ``inset == 0`` is the plain edge midpoint.
+    """
+    if side in ("left", "right"):
+        lo, hi = cy - hh + inset, cy + hh - inset
+        y = lo + frac * (hi - lo)
+        x = cx + (hw + gap) * (1.0 if side == "right" else -1.0)
+        return (x, y)
+    lo, hi = cx - hw + inset, cx + hw - inset
+    x = lo + frac * (hi - lo)
+    y = cy + (hh + gap) * (1.0 if side == "bottom" else -1.0)
+    return (x, y)
+
+
+def _route_fanout(
+    src_port: tuple[float, float],
+    exit_side: str,
+    branch_entries: list[tuple[tuple[float, float], Any]],
+    trunk_length: float,
+) -> list[list[tuple[float, float]]]:
+    """Y-fork waypoints for a fan-out group sharing ``src_port``.
+
+    ``branch_entries`` is ``[(tgt_port, _unused), ...]``. Every branch shares
+    the trunk ``src_port → trunk_end`` (``trunk_length`` px along ``exit_side``)
+    then turns orthogonally to its target. Returns one waypoint list
+    ``[src_port, trunk_end, turn_corner, tgt_port]`` per branch, in input order.
+    """
+    dx, dy = _FANOUT_DIRS[exit_side]
+    trunk_end = (src_port[0] + dx * trunk_length, src_port[1] + dy * trunk_length)
+    branches: list[list[tuple[float, float]]] = []
+    for tgt_port, _ in branch_entries:
+        if exit_side in ("left", "right"):
+            turn_corner = (trunk_end[0], tgt_port[1])
+        else:
+            turn_corner = (tgt_port[0], trunk_end[1])
+        branches.append([src_port, trunk_end, turn_corner, tgt_port])
+    return branches
+
+
 def _segment_hits_rect(
     p0: tuple[float, float],
     p1: tuple[float, float],
@@ -1631,6 +1897,26 @@ def layout_pathway(
         lane_gap=float(params["pathway_arch_lane_gap"]),
     )
 
+    # Port-based exit/entry points so co-sided arrows don't stack, plus
+    # Y-fork trunks for fan-out groups. Suppressed in ring mode, where arrows
+    # are straight chords between adjacent ring nodes (no trunk insertion).
+    ports: dict[tuple[int, str], tuple[float, float]] = {}
+    reassigned: set[tuple[int, str]] = set()
+    fanout_waypoints: dict[int, list[tuple[float, float]]] = {}
+    if not ring_mode:
+        ports, reassigned, fanout_groups = _assign_ports(
+            figure.relations, positions, effective_bbox, entity_by_id,
+            location_map, arrow_gap, float(params["pathway_port_corner_inset"]),
+        )
+        for group, side, src_port in fanout_groups:
+            branch_entries = [(ports[(i, "tgt")], None) for i in group]
+            branches = _route_fanout(
+                src_port, side, branch_entries,
+                float(params["pathway_fanout_trunk_length"]),
+            )
+            for i, wps in zip(group, branches):
+                fanout_waypoints[i] = wps
+
     for idx, r in enumerate(figure.relations):
         src = entity_by_id[r.source]
         tgt = entity_by_id[r.target]
@@ -1639,15 +1925,31 @@ def layout_pathway(
             positions[r.target], _arrow_bbox_for_entity(tgt, effective_bbox[tgt.type]),
             arrow_gap,
         )
-        if location_map[r.source] != location_map[r.target]:
+        # Override the center-to-center endpoints with the assigned ports.
+        start = ports.get((idx, "src"), start)
+        end = ports.get((idx, "tgt"), end)
+        if idx in fanout_waypoints:
+            wps = fanout_waypoints[idx]
+        elif location_map[r.source] != location_map[r.target]:
             wps = _orthogonal_waypoints(
                 positions[r.source], effective_bbox[src.type], bands[location_map[r.source]],
                 positions[r.target], effective_bbox[tgt.type], bands[location_map[r.target]],
                 arrow_gap,
                 membrane_keepouts=membrane_keepouts,
             )
+            # Only pull the elbow's terminals onto the ports when those ports
+            # were actually moved (multi-arrow group); single arrows keep the
+            # clean vertical exit _orthogonal_waypoints already computed.
+            if wps and (idx, "src") in reassigned:
+                wps[0] = start
+            if wps and (idx, "tgt") in reassigned:
+                wps[-1] = end
         else:
             wps = same_band_routes.get(idx)  # None → straight arrow
+            if wps and (idx, "src") in reassigned:
+                wps[0] = start
+            if wps and (idx, "tgt") in reassigned:
+                wps[-1] = end
         arrow_kwargs: dict = {**style_kwargs, "waypoints": wps}
         entries.append(_entry(
             RELATION_TO_ARROW[r.type],
