@@ -125,3 +125,29 @@ def test_relation_ir_id_format():
     """Pins the synthetic relation-id format that layout + verify share."""
     r = Relation(source="a", target="b", type=RelationType.ACTIVATES)
     assert r.ir_id == "rel_a_activates_b"
+
+
+# ---------------------------------------------------------------------------
+# FR6 — undrawn-annotation guard (the FR1 symptom)
+# ---------------------------------------------------------------------------
+
+CELLULAR = "cellular_schematic.json"
+
+
+def test_annotation_present_passes(tmp_path):
+    """A figure whose annotation is drawn passes semantic_check (FR1 fixed)."""
+    svg = tmp_path / "fig.svg"
+    ir = _render(CELLULAR, svg)
+    assert ir.annotations  # fixture really has an annotation
+    semantic_check(ir, svg)  # no exception
+
+
+def test_undrawn_annotation_raises(tmp_path):
+    """Simulate the FR1 regression: an annotation that never rendered is caught."""
+    svg = tmp_path / "fig.svg"
+    ir = _render(CELLULAR, svg)
+    _break_id(svg, "annotation_0", "annotation_X")
+    with pytest.raises(SemanticCheckError) as ei:
+        semantic_check(ir, svg)
+    assert ei.value.kind == "annotation"
+    assert ei.value.ir_id == "annotation_0"

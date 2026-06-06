@@ -295,6 +295,7 @@ def legibility_check(
     min_font_size: float = DEFAULT_MIN_FONT_SIZE,
     overlap_margin: float = 0.0,
     crop_whitespace_fraction: float = DEFAULT_CROP_WHITESPACE_FRACTION,
+    off_canvas_margin: float = 1.0,
 ) -> LegibilityResult:
     """Audit a rendered SVG's text legibility and report a crop signal.
 
@@ -304,24 +305,42 @@ def legibility_check(
         overlap_margin: Slack passed to ``_overlaps``; 0 flags any touch.
         crop_whitespace_fraction: An edge with more than this fraction of
             the canvas as whitespace sets ``needs_crop``.
+        off_canvas_margin: Slack (user units) a label box may exceed the
+            canvas before it is flagged. FR6: catches text truncated past the
+            frame edge (the FR3 symptom) — after frame-expansion every label
+            should sit inside the viewport, so any overflow is a regression.
 
     Returns:
         LegibilityResult: When every label is legible.
 
     Raises:
-        LegibilityCheckError: On the first undersized font or label overlap.
+        LegibilityCheckError: On the first undersized font, label overlap, or
+            label drawn past the canvas edge.
     """
     root = ET.parse(str(svg_path)).getroot()
     labels: list[tuple[str, float, Bbox, bool]] = []
     boxes: list[Bbox] = []
     _walk(root, 0.0, 0.0, labels, boxes)
+    canvas = _canvas_box(root)
 
-    for text, font_size, _box, _intentional in labels:
+    for text, font_size, box, _intentional in labels:
         if font_size < min_font_size:
             raise LegibilityCheckError(
                 "font_size",
                 (text,),
                 f"label {text!r} font-size {font_size} below minimum {min_font_size}",
+            )
+        if (
+            box[0] < canvas[0] - off_canvas_margin
+            or box[1] < canvas[1] - off_canvas_margin
+            or box[2] > canvas[2] + off_canvas_margin
+            or box[3] > canvas[3] + off_canvas_margin
+        ):
+            raise LegibilityCheckError(
+                "off_canvas",
+                (text,),
+                f"label {text!r} box {tuple(round(v, 1) for v in box)} extends "
+                f"past the canvas {tuple(round(v, 1) for v in canvas)}",
             )
 
     for i in range(len(labels)):
@@ -339,7 +358,6 @@ def legibility_check(
                     f"{labels[j][0]!r} {labels[j][2]} overlap",
                 )
 
-    canvas = _canvas_box(root)
     content = _union(boxes) if boxes else canvas
     return LegibilityResult(
         needs_crop=_needs_crop(content, canvas, crop_whitespace_fraction),

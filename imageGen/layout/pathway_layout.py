@@ -258,19 +258,62 @@ def _split_dangling(dg: nx.DiGraph) -> tuple[nx.DiGraph, list[str]]:
     return working, dangling
 
 
+# FR5: upper bound on the simple-cycle scan used to find a Hamiltonian backbone.
+# Bounds the worst case on a dense strongly-connected graph; beyond it the figure
+# falls back to the DAG/band layout rather than hanging.
+_MAX_CYCLE_SCAN = 20000
+
+
+def _ranked_ring_order(dag: nx.DiGraph) -> list[str]:
+    """Order a (feedback-stripped) cycle DAG into a stable ring sequence."""
+    ranks = rank_nodes(dag)
+    order_idx = order_within_ranks(dag, ranks)
+    return sorted(ranks, key=lambda n: (ranks[n], order_idx.get(n, 0), n))
+
+
+def _hamiltonian_cycle_order(dg: nx.DiGraph) -> list[str] | None:
+    """Return a node order forming a cycle through *every* node, or None (FR5).
+
+    Unlike ``_is_pure_single_cycle`` (which forbids any extra edge), this finds a
+    backbone cycle visiting all nodes even when **cross-link chords** exist — the
+    case that previously defeated ring detection and flattened a real cyclic
+    pathway (carbon cycle, action potential) into an L→R DAG. The chords simply
+    render as straight lines across the ring.
+
+    The graph must be strongly connected (a necessary condition for a covering
+    cycle). The simple-cycle enumeration is bounded by ``_MAX_CYCLE_SCAN`` so a
+    dense graph can't blow up; if no covering cycle is found in the budget the
+    caller falls back to the band/DAG layout.
+    """
+    n = dg.number_of_nodes()
+    if n < 3 or not nx.is_strongly_connected(dg):
+        return None
+    for i, cyc in enumerate(nx.simple_cycles(dg)):
+        if len(cyc) == n:
+            return cyc  # nodes already in cycle order
+        if i >= _MAX_CYCLE_SCAN:
+            break
+    return None
+
+
 def _ring_order(figure: Figure) -> tuple[list[str], list[str]] | None:
     """Return (ring_order, dangling_nodes) if this figure should use ring layout.
 
-    Ring layout applies to compartment-free pathways when either:
-    - The full relation graph is a pure single cycle (auto-detected). All nodes
-      must have in/out-degree exactly 1 — no dandling entry nodes. This is the
-      strict unambiguous case (e.g. an 8-node Krebs cycle with no inputs shown).
-    - `layout_hint == "circular"` forces ring mode. In this case dangling entry
-      nodes (in-degree 0) are stripped from the cycle graph and placed outside
-      the ring near their ring target. Use this mode when you need to show
-      metabolic inputs (e.g. Acetyl-CoA feeding into Citrate).
+    Ring layout applies to compartment-free pathways in three cases:
+    - **Pure single cycle** (auto): every node has in/out-degree exactly 1 and
+      the graph is one strongly-connected cycle (e.g. an 8-node Krebs cycle with
+      no inputs shown). Ordered by the canonical rank pass.
+    - **Cyclic with cross-links** (auto, FR5): every node lies on a covering
+      (Hamiltonian) backbone cycle, but extra **cross-link chords** exist that
+      defeated the strict degree-1 check. This rings real cyclic pathways the
+      strict check missed; the chords draw as straight lines across the ring.
+      Auto mode still requires the cycle to cover *all* nodes — a graph with
+      dangling entry/exit nodes needs the explicit hint (avoids false rings).
+    - **Forced** (`layout_hint == "circular"`): dangling entry nodes (in-degree
+      0) are stripped and placed off-ring, and the remaining core only needs a
+      covering cycle — used to show metabolic inputs feeding the ring.
 
-    Returns None if ring layout does not apply or the cycle has <3 nodes.
+    Returns None if ring layout does not apply or the core cycle has <3 nodes.
     """
     if figure.compartments:  # real compartments → keep band layout
         if figure.layout_hint == "circular":
@@ -288,29 +331,21 @@ def _ring_order(figure: Figure) -> tuple[list[str], list[str]] | None:
     for r in figure.relations:
         DG.add_edge(r.source, r.target)
 
-    forced = figure.layout_hint == "circular"
+    if figure.layout_hint == "circular":
+        # Forced: strip dangling entry nodes, ring the core on its backbone cycle.
+        core, dangling = _split_dangling(DG)
+        if core.number_of_nodes() < 3:
+            return None
+        order = _hamiltonian_cycle_order(core)
+        return (order, dangling) if order is not None else None
 
-    if forced:
-        # Strip dangling entry nodes so the cycle subgraph can be detected.
-        cycle_dg, dangling = _split_dangling(DG)
-        if not _is_pure_single_cycle(cycle_dg):
-            return None
-        if cycle_dg.number_of_nodes() < 3:
-            return None
-        dag = _feedback_arc_dag(cycle_dg)
-    else:
-        # Strict auto-detect: all nodes must be on the cycle.
-        if not _is_pure_single_cycle(DG):
-            return None
-        if DG.number_of_nodes() < 3:
-            return None
-        dangling = []
-        dag = _feedback_arc_dag(DG)
-
-    ranks = rank_nodes(dag)
-    order_idx = order_within_ranks(dag, ranks)
-    order = sorted(ranks, key=lambda n: (ranks[n], order_idx.get(n, 0), n))
-    return order, dangling
+    # Auto: strict pure single cycle first (preserves the exact Krebs ordering)…
+    if _is_pure_single_cycle(DG) and DG.number_of_nodes() >= 3:
+        return _ranked_ring_order(_feedback_arc_dag(DG)), []
+    # …then the FR5 cross-link case: a covering cycle over *all* nodes, chords
+    # allowed. No dangling-strip in auto mode — entry/exit nodes need the hint.
+    order = _hamiltonian_cycle_order(DG)
+    return (order, []) if order is not None else None
 
 
 def _ring_geometry(
@@ -909,7 +944,43 @@ def _graph_positions(
                 min(raw_y, band_bottom - edge_margin - eh / 2),
             )
             pos[e.id] = (x, y)
+
+    _snap_membrane_entities_to_bilayer(figure, location_map, bands, pos)
     return pos
+
+
+def _snap_membrane_entities_to_bilayer(
+    figure: Figure,
+    location_map: dict[str, str],
+    bands: dict[str, tuple[float, float]],
+    pos: dict[str, tuple[float, float]],
+) -> None:
+    """Snap each entity in a MEMBRANE band onto the lipid-bilayer plane (FR4).
+
+    The bilayer stripe is drawn at the *top* of a MEMBRANE band
+    (``band_top`` .. ``band_top + thickness``), but entities are otherwise
+    placed at the band's vertical *center* — so a transmembrane glyph
+    (receptor / gpcr / ion_channel / transporter / pump) floats well below the
+    membrane and pierces neither leaflet. Re-pin each membrane-band entity's
+    y to the bilayer center so the glyph straddles the bilayer, its
+    extracellular half in the band above and its intracellular half below.
+
+    In-place mutation of ``pos``; x is preserved. Uses the membrane primitive's
+    default bilayer thickness, matching ``_draw_bilayer_border``.
+    """
+    membrane_ids = {
+        c.id for c in figure.compartments if c.type is CompartmentType.MEMBRANE
+    }
+    if not membrane_ids:
+        return
+    from imageGen.primitives import membranes as _mem  # noqa: PLC0415
+    half = float(_mem.DEFAULT_STYLE["bilayer_thickness"]) / 2.0
+    for e in figure.entities:
+        band_id = location_map.get(e.id)
+        if band_id in membrane_ids and e.id in pos:
+            x, _y = pos[e.id]
+            band_top, _band_bottom = bands[band_id]
+            pos[e.id] = (x, band_top + half)
 
 
 _RECEPTOR_LABEL_GAP = 6.0      # px — matches the hard-coded gap in receptor() primitive

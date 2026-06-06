@@ -35,7 +35,7 @@ from imageGen.ir.schema import Archetype, Figure
 from imageGen.layout.reaction_layout import REACTION_GROUP_IR_ID
 from imageGen.render.compositor import scoped_id
 
-_Kind = Literal["entity", "compartment", "relation", "reaction"]
+_Kind = Literal["entity", "compartment", "relation", "reaction", "annotation"]
 
 
 class SemanticCheckError(RuntimeError):
@@ -84,6 +84,15 @@ def _expected_ids(
             expected.append(
                 (scoped_id(relation.ir_id, panel_chain), "relation", relation.ir_id)
             )
+    # FR6/FR1: annotations are drawn once at the top level (the compositor reads
+    # only ``ir.annotations``), tagged ``annotation_0``, ``annotation_1``, …
+    # Verifying each guards against the FR1 regression where annotations were a
+    # silent no-op. Gated on the top-level call so panel-content annotations —
+    # which the compositor does not draw — aren't falsely required.
+    if not panel_chain:
+        for i, _annotation in enumerate(figure.annotations):
+            aid = f"annotation_{i}"
+            expected.append((aid, "annotation", aid))
     for panel in figure.panels:
         expected.extend(_expected_ids(panel.content, (*panel_chain, panel.id)))
     return expected

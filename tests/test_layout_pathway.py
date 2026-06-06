@@ -968,3 +968,41 @@ def test_unfittable_entity_label_emits_external_request():
     # The external request carries the full, untruncated label text.
     big_req = next(r for r in reqs if r.ir_id == "big_extlabel")
     assert big_req.text == "Supercalifragilisticexpialidocious"
+
+
+# ---------------------------------------------------------------------------
+# FR4 — transmembrane glyphs snap onto the lipid bilayer
+# ---------------------------------------------------------------------------
+
+
+def test_membrane_entity_snaps_to_bilayer_plane():
+    """A receptor in a MEMBRANE band is pinned to the bilayer center, not the
+    band center — so the transmembrane glyph straddles both leaflets (FR4)."""
+    from imageGen.primitives.membranes import DEFAULT_STYLE as _MEM
+
+    fig = Figure(
+        archetype=Archetype.PATHWAY,
+        compartments=[
+            Compartment(id="ext", type=CompartmentType.EXTRACELLULAR, label="Extracellular"),
+            Compartment(id="mem", type=CompartmentType.MEMBRANE, label="Plasma membrane"),
+            Compartment(id="cyto", type=CompartmentType.CYTOPLASM, label="Cytoplasm"),
+        ],
+        entities=[
+            Entity(id="lig", type=EntityType.LIGAND, label="L", location="ext"),
+            Entity(id="r", type=EntityType.RECEPTOR, label="R", location="mem"),
+            Entity(id="g", type=EntityType.PROTEIN, label="G", location="cyto"),
+        ],
+        relations=[
+            Relation(source="lig", target="r", type=RelationType.BINDS),
+            Relation(source="r", target="g", type=RelationType.ACTIVATES),
+        ],
+    )
+    entries = layout_pathway(fig)
+    bands = {label: (y, h) for label, _, y, _, h in map(_band_geom, _band_entries(entries))}
+    mem_top, mem_h = bands["Plasma membrane"]
+    expected_y = mem_top + float(_MEM["bilayer_thickness"]) / 2.0
+
+    pos = {e.ir_id: e.args[1] for e in _entity_entries(entries)}
+    # Receptor sits on the bilayer plane, NOT the band center.
+    assert abs(pos["r"][1] - expected_y) < 0.01
+    assert abs(pos["r"][1] - (mem_top + mem_h / 2)) > 1.0

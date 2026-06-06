@@ -84,6 +84,36 @@ def test_entity_tuple_4_arity():
     assert fig.entities[0].location == 'cyto'
 
 
+def test_entity_tuple_5_arity_sets_primitive_override():
+    """FR7: a 5th tuple element wires a primitive override via style.primitive."""
+    fig = build(
+        'pathway',
+        entities=[('igg', 'protein', 'IgG', None, 'antibody')],
+    )
+    e = fig.entities[0]
+    assert e.location is None
+    assert e.style == {'primitive': 'antibody'}
+
+
+def test_entity_tuple_5_arity_with_location_and_primitive():
+    """FR7: location and primitive override coexist in a 5-tuple."""
+    fig = build(
+        'pathway',
+        entities=[('gpcr', 'receptor', 'GPCR', 'mem', 'gpcr')],
+        compartments=[('mem', 'membrane', 'Plasma membrane')],
+    )
+    e = fig.entities[0]
+    assert e.location == 'mem'
+    assert e.style == {'primitive': 'gpcr'}
+
+
+def test_entity_tuple_bad_arity_rejected():
+    """A 6-element entity tuple is rejected with a helpful message."""
+    import pytest
+    with pytest.raises(ValueError, match="3 to 5 elements"):
+        build('pathway', entities=[('a', 'protein', 'A', 'c', 'gpcr', 'x')])
+
+
 def test_relation_tuple_3_arity():
     """Tests a 3-element relation tuple correctly sets source, target, type, with no label."""
     fig = build(
@@ -145,7 +175,7 @@ def test_compartment_helper_returns_dict():
 
 def test_bad_entity_tuple_arity_raises():
     """Tests that a 2-element entity tuple raises a ValueError."""
-    with pytest.raises(ValueError, match="entity tuple must have 3 or 4 elements"):
+    with pytest.raises(ValueError, match="entity tuple must have 3 to 5 elements"):
         build('pathway', entities=[('e1', 'protein')])
 
 
