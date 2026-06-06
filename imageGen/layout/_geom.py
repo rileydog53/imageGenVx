@@ -92,6 +92,8 @@ PRIMITIVE_REGISTRY: dict[str, Callable[..., svgwrite.container.Group]] = {
     # v2.x expansion glyphs — nucleic acids
     "mrna_helix":            nucleic_acids.mrna_helix,
     "primer_helix":          nucleic_acids.primer_helix,
+    # domain-canonical idioms (FR10)
+    "voltage_trace":         glyphs.voltage_trace,
 }
 
 # Explicit (w, h) for registry primitives that have no ENTITY_TO_PRIMITIVE
@@ -113,6 +115,7 @@ _PRIMITIVE_BBOX_OVERRIDE: dict[Callable[..., svgwrite.container.Group], tuple[fl
     glyphs.syringe:         (76.0, 30.0),
     nucleic_acids.mrna_helix:   (90.0, 40.0),
     nucleic_acids.primer_helix: (60.0, 36.0),
+    glyphs.voltage_trace:       (150.0, 90.0),
 }
 
 # Canonical (w, h) for each registered primitive — used when a primitive

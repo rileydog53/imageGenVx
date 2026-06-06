@@ -68,8 +68,5 @@
         ]
       }
     }
-  ],
-  "annotations": [
-    {"type": "caption", "text": "Illustrative — not real data", "position": "bottom"}
   ]
 }

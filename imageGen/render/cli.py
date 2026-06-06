@@ -227,6 +227,15 @@ def _run_verification(ir: Figure, svg_path: Path) -> bool:
         parts.append(f"convention=FAIL({e})")
         ok = False
 
+    # FR9: advisory only — never flips `ok`. Reports acronyms in labels that the
+    # figure's glossary doesn't define (no-op when the figure has no glossary).
+    from imageGen.verify.glossary_check import glossary_check
+    undefined = glossary_check(ir)
+    if undefined:
+        parts.append(f"glossary=WARN(undefined: {', '.join(undefined)})")
+    elif ir.glossary:
+        parts.append("glossary=OK")
+
     print("VERIFY:", " ".join(parts))
     return ok
 

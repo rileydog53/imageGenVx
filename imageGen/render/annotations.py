@@ -9,8 +9,8 @@ as every other primitive, drawn last so it sits above figure content.
 Three annotation types (``AnnotationType``):
   - ``label``     — free-text callout placed at a point; given a semi-opaque
     white halo box so it stays legible over dense figure content.
-  - ``caption``   — figure-level note (e.g. the "Illustrative — not real data"
-    watermark caption); italic, centered on its slot, no box.
+  - ``caption``   — figure-level note (e.g. a method note or data disclaimer);
+    italic, centered on its slot, no box.
   - ``scale_bar`` — a fixed-length rule with the text as its magnitude label
     below it. The schema carries no physical length, so the bar is a fixed
     drawn width and the text (e.g. "10 µm") is the caller-supplied magnitude.
@@ -22,10 +22,6 @@ Position resolution (``_resolve_position``):
     are in ``[0, 1]``, else **absolute** canvas pixels. Fixtures author
     fractional points (e.g. ``[0.7, 0.55]``); absolute points are supported for
     precise placement. Anchored centered.
-
-Future coupling: when a real watermark path lands (compositor ``_needs_watermark``
-is a v1 stub), it can emit a ``caption`` annotation through this same module
-instead of a bespoke primitive.
 """
 from __future__ import annotations
 

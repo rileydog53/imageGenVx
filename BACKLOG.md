@@ -24,14 +24,9 @@ figures soon; low = polish / advanced use.
 
 ## Open issues
 
-Source: live-render review of 10 figures, 2026-06-05 (see plan
-`ok-write-the-plan-jazzy-bee`). Out-of-scope feature ideas live in
-`V3_FEATURES.md`; wrong-figure reports go in `FEEDBACK.md`.
-
-| ID | Priority | Issue |
-|---|---|---|
-| FR9 | low | **No abbreviation/acronym glossary** (item 4). Add `glossary:[{term,definition}]` to `Figure`, boxed legend via `render/legend.py`, verifier "every acronym defined". SCHEMA-GATED + V3-tier -- candidate for `V3_FEATURES.md`. Short-term: hand-authored `annotations` block (depends on FR1). |
-| FR10 | low | **Domain-canonical idioms missing** (item G): action-potential voltage trace, antibody Y-shape (curved electron-pushing arrows already tracked as V3-C4). New primitives -- V3-tier; candidate for `V3_FEATURES.md`. |
+_None._ All tracked defects from the 2026-06-05 live-render review (FR1–FR10)
+are resolved. Out-of-scope feature ideas live in `V3_FEATURES.md`; wrong-figure
+reports go in `FEEDBACK.md`.
 
 ---
 

@@ -9,11 +9,9 @@ Pipeline per call to `render_figure`:
   2. Dispatch IR archetype → layout engine → list[LayoutEntry].
   3. Auto-invoke label placement if the dispatched engine has a sibling
      `*_label_requests` helper and `labels=True` (D3).
-  4. Inject a demonstrative-data watermark if `_needs_watermark` returns
-     True — stub for v1 (D2).
-  5. Compose into a single `svgwrite.Drawing` with IR-id tagging (D1)
+  4. Compose into a single `svgwrite.Drawing` with IR-id tagging (D1)
      and write to disk.
-  6. For non-SVG formats, convert the on-disk SVG into PNG/PDF via
+  5. For non-SVG formats, convert the on-disk SVG into PNG/PDF via
      `render/export.py`. The SVG is persisted at
      `output_path.with_suffix(".svg")` next to the requested output so
      callers can inspect / debug it.
@@ -191,9 +189,6 @@ def render_figure(
                 # its empty box with a dashed leader (no-op when none exist).
                 entries = pathway_extlabel_leaders(entries, style_dict)
 
-    if _needs_watermark(ir):
-        entries = _inject_watermark(entries, ir, style_dict)
-
     final_canvas = canvas if canvas is not None else computed_canvas
 
     # Issue #4: opt-in auto-legend. Detect the glyph conventions the figure uses
@@ -222,6 +217,26 @@ def render_figure(
     if ir.annotations:
         from imageGen.render.annotations import annotation_entries  # noqa: PLC0415
         entries = entries + annotation_entries(ir, final_canvas, style_dict)
+
+    # FR9: abbreviation glossary. Drawn in a strip *below* the figure (canvas
+    # grows downward) so the key never overlaps figure content. Auto-drawn when
+    # `figure.glossary` is non-empty; emitted as a tagged LayoutEntry.
+    if ir.glossary:
+        from imageGen.render.glossary import (  # noqa: PLC0415
+            glossary_box,
+            glossary_box_size,
+        )
+        gw, gh = glossary_box_size(ir.glossary, style_dict)
+        cw, ch = final_canvas
+        gpad = 12.0
+        entries = entries + [LayoutEntry(
+            glossary_box,
+            (ir.glossary, (gpad, ch + gpad)),
+            {"style_dict": style_dict},
+            position=(0.0, 0.0),
+            ir_id="glossary",
+        )]
+        final_canvas = (max(cw, gw + 2 * gpad), ch + gh + 2 * gpad)
 
     svg_path = output_path if fmt == "svg" else output_path.with_suffix(".svg")
     _write_svg(entries, final_canvas, svg_path)
@@ -467,25 +482,6 @@ def _label_requests_fn(archetype: Archetype) -> Any | None:
     if archetype == Archetype.REACTION_SCHEME:
         return reaction_label_requests
     return None
-
-
-def _needs_watermark(ir: Figure) -> bool:
-    """Return True when the figure requires a demonstrative-data watermark.
-
-    Stub for v1 (D2): no current archetype is chart-like, so this always
-    returns False. Replace with a real check when a CHART archetype or
-    quantitative-value field is added to the IR.
-    """
-    # TODO: trigger when Archetype.CHART is added or entity gains quantitative_value
-    return False
-
-
-def _inject_watermark(
-    entries: list[LayoutEntry], ir: Figure, style_dict: dict[str, Any]
-) -> list[LayoutEntry]:
-    """Append a demonstrative-data watermark entry (placeholder, never reached in v1)."""
-    # Reached only when _needs_watermark returns True — always False in v1.
-    raise NotImplementedError("Watermark injection not yet implemented.")
 
 
 def _canvas_size(ir: Figure, entries: list[LayoutEntry]) -> tuple[float, float]:

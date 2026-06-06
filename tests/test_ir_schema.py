@@ -179,3 +179,21 @@ def test_reaction_relation_keeps_typed_conditions_after_roundtrip():
     rel2 = Relation.from_dict(payload)
     assert isinstance(rel2.conditions, ReactionConditions)
     assert rel2.conditions.reagents == ["AcOH"]
+
+
+def test_glossary_roundtrips_and_defaults_empty():
+    """FR9: Figure.glossary defaults to [] and round-trips through JSON."""
+    from imageGen.ir import GlossaryEntry
+
+    plain = Figure(archetype=Archetype.PATHWAY,
+                   entities=[Entity(id="a", type=EntityType.PROTEIN, label="A")])
+    assert plain.glossary == []
+
+    fig = Figure(
+        archetype=Archetype.PATHWAY,
+        entities=[Entity(id="a", type=EntityType.KINASE, label="PI3K")],
+        glossary=[GlossaryEntry(term="PI3K", definition="phosphoinositide 3-kinase")],
+    )
+    back = Figure.from_dict(json.loads(fig.to_json()))
+    assert back.glossary[0].term == "PI3K"
+    assert back.glossary[0].definition == "phosphoinositide 3-kinase"
