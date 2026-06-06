@@ -2086,6 +2086,47 @@ def _fan_apart_ring_labels(ring_label_data: list[tuple]) -> list[tuple]:
     return out
 
 
+# FR8: candidate-side order for a relation label, keyed by the preferred side.
+# Each tuple leads with the requested side, then a sensible fallback sweep, so
+# place_labels still resolves when the preferred side is occupied.
+_SIDE_PRIORITY: dict[str, tuple[str, ...]] = {
+    "above": ("above", "below", "right", "left", "center"),
+    "below": ("below", "above", "right", "left", "center"),
+    "left":  ("left", "right", "above", "below", "center"),
+    "right": ("right", "left", "above", "below", "center"),
+}
+
+
+def _relation_label_priority(
+    relation: "Relation", dx: float, dy: float, has_reciprocal: bool
+) -> tuple[str, ...]:
+    """Candidate-side order for a relation label (FR8).
+
+    Resolution order:
+      1. Explicit ``relation.label_side`` wins — leads the priority with that side.
+      2. Otherwise, a relation that is half of a labeled reciprocal pair
+         (``A→B`` and ``B→A`` both labeled) is auto-assigned the side
+         *perpendicular* to the edge, opposite to its twin: for a mostly-
+         horizontal pair one label goes above and the other below; for a
+         mostly-vertical pair, left/right. Which twin gets the primary side is
+         decided deterministically by endpoint ordering.
+      3. Otherwise, the orientation default (unchanged pre-FR8 behavior).
+    """
+    if relation.label_side is not None:
+        return _SIDE_PRIORITY[relation.label_side.value]
+    if has_reciprocal:
+        horizontal = abs(dx) >= abs(dy)
+        primary = (relation.source, relation.target) < (relation.target, relation.source)
+        if horizontal:
+            side = "above" if primary else "below"
+        else:
+            side = "left" if primary else "right"
+        return _SIDE_PRIORITY[side]
+    if abs(dx) >= abs(dy):
+        return ("above", "below", "right", "left", "center")
+    return ("right", "left", "above", "below", "center")
+
+
 def pathway_label_requests(
     figure: Figure,
     entries: list[LayoutEntry],
@@ -2154,6 +2195,11 @@ def pathway_label_requests(
     # priority, text, ir_id) and emitted after the loop so a divergence pass can
     # fan apart any co-located pair before requests are built.
     ring_label_data: list[tuple] = []
+    # FR8: directed endpoint pairs that carry a label, so a relation can tell
+    # whether it is half of a labeled reciprocal (A→B + B→A) pair.
+    _labeled_pairs = {
+        (r.source, r.target) for r in figure.relations if r.label
+    }
     for relation, arrow in zip(figure.relations, arrow_entries):
         text = relation.label
         if not text:
@@ -2187,15 +2233,13 @@ def pathway_label_requests(
             continue
         else:
             # Place the label perpendicular to the arrow shaft so it doesn't
-            # render directly on top of the line. For a mostly-horizontal arrow
-            # try above/below first; for a mostly-vertical arrow try right/left
-            # first. The default priority ("right", "below", ...) would put a
-            # horizontal-arrow label at the same y as the arrow itself.
+            # render directly on top of the line. FR8: an explicit
+            # ``relation.label_side`` (or auto-detected reciprocal pair) leads
+            # the priority so parallel forward/back labels separate onto opposite
+            # sides; otherwise the orientation default applies.
             dx, dy = ex - sx, ey - sy
-            if abs(dx) >= abs(dy):
-                priority = ("above", "below", "right", "left", "center")
-            else:
-                priority = ("right", "left", "above", "below", "center")
+            has_reciprocal = (relation.target, relation.source) in _labeled_pairs
+            priority = _relation_label_priority(relation, dx, dy, has_reciprocal)
         # Anchor is a notional point on the arrow shaft; small bbox so
         # label_placement's gap dominates spacing.
         relation_requests.append(LabelRequest(
