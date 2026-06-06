@@ -11,8 +11,5 @@
     {"source": "sample", "target": "gel", "type": "generic", "label": "load"},
     {"source": "ladder", "target": "gel", "type": "generic", "label": "load"},
     {"source": "gel", "target": "membrane", "type": "generic", "label": "transfer"}
-  ],
-  "annotations": [
-    {"type": "caption", "text": "Illustrative — not real data", "position": "bottom"}
   ]
 }

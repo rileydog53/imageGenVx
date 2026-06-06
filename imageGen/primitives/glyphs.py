@@ -52,6 +52,9 @@ DEFAULT_STYLE: dict = {
     "ribosome_stroke": "#4A4070",
     "vesicle_fill": "#FFE0B2",
     "vesicle_stroke": "#E08A2E",
+    # Domain-canonical idioms (FR10)
+    "voltage_trace_stroke": "#1F4E79",
+    "voltage_trace_axis": "#888888",
     # Lab-equipment glyphs
     "equip_fill": "#CFD8DC",
     "equip_stroke": "#37474F",
@@ -510,5 +513,110 @@ def syringe(
     )
     needle["stroke-width"] = _sw(s)
     g.add(needle)
+    _label_below(g, label, cx, cy, h, s)
+    return g
+
+
+# ---------------------------------------------------------------------------
+# Domain-canonical idioms (FR10)
+# ---------------------------------------------------------------------------
+
+# Canonical neuronal action-potential waveform as (time_frac, voltage_frac)
+# control points: resting → threshold → depolarization spike → repolarization →
+# hyperpolarization undershoot → recovery. voltage_frac 0 = most negative, 1 =
+# peak. Kept module-level so tests and styling can reference the shape.
+_AP_WAVEFORM: tuple[tuple[float, float], ...] = (
+    (0.00, 0.18), (0.20, 0.18), (0.27, 0.30), (0.34, 1.00),
+    (0.42, 0.52), (0.50, 0.04), (0.64, 0.13), (1.00, 0.18),
+)
+_AP_THRESHOLD_FRAC = 0.30  # voltage_frac of the dashed threshold guide
+
+
+def voltage_trace(
+    label: str,
+    position: tuple[float, float],
+    size: tuple[float, float] = (150, 90),
+    color: Optional[str] = None,
+    style_dict: Optional[dict] = None,
+    *,
+    phases: bool = True,
+) -> svgwrite.container.Group:
+    """Action-potential voltage trace — a canonical V-vs-time waveform (FR10).
+
+    Draws the textbook neuronal action potential (resting → threshold → spike →
+    repolarization → hyperpolarization → recovery) inside the bounding box, with
+    V/t axes, a dashed threshold guide, and mV/ms unit labels. With ``phases``
+    (default), the threshold guide is labelled in the clear resting region.
+
+    Calling convention matches the other entity glyphs. The trace ``<path>`` is
+    the first shape child (``convention_check`` keys an entity's shape off it).
+    """
+    s = {**DEFAULT_STYLE, **(style_dict or {})}
+    g = svgwrite.container.Group()
+    cx, cy = position
+    w, h = size
+    stroke = color or s.get("voltage_trace_stroke", s["antibody_stroke"])
+    axis_color = s.get("voltage_trace_axis", "#888888")
+
+    # Plot rectangle inside the box: leave a left gutter for the y-axis label and
+    # a bottom strip for the entity label (mirrors _label_below at cy + 0.40h).
+    x0 = cx - w / 2 + w * 0.16
+    x1 = cx + w / 2 - w * 0.04
+    y_top = cy - h * 0.34
+    y_bot = cy + h * 0.16
+
+    def _px(t: float) -> float:
+        return x0 + t * (x1 - x0)
+
+    def _py(v: float) -> float:
+        return y_bot - v * (y_bot - y_top)
+
+    # Trace path FIRST (defining shape).
+    pts = [(_px(t), _py(v)) for t, v in _AP_WAVEFORM]
+    d = "M " + " L ".join(f"{x:.2f},{y:.2f}" for x, y in pts)
+    trace = svgwrite.path.Path(d=d, fill="none", stroke=stroke)
+    trace["stroke-width"] = _sw(s) * 1.6
+    trace["stroke-linejoin"] = "round"
+    trace["stroke-linecap"] = "round"
+    g.add(trace)
+
+    # Axes (y then x).
+    for start, end in (((x0, y_top), (x0, y_bot)), ((x0, y_bot), (x1, y_bot))):
+        ax = svgwrite.shapes.Line(start=start, end=end, stroke=axis_color)
+        ax["stroke-width"] = _sw(s) * 0.8
+        g.add(ax)
+
+    # Dashed threshold guide.
+    thr_y = _py(_AP_THRESHOLD_FRAC)
+    thr = svgwrite.shapes.Line(start=(x0, thr_y), end=(x1, thr_y), stroke=axis_color)
+    thr["stroke-width"] = _sw(s) * 0.6
+    thr["stroke-dasharray"] = "3,3"
+    g.add(thr)
+
+    # Axis unit labels.
+    def _unit(text, x, y, anchor):
+        t = svgwrite.text.Text(text, insert=(round(x, 2), round(y, 2)),
+                               font_family=str(s["label_font_family"]),
+                               fill=axis_color)
+        t["font-size"] = 8.0
+        t["text-anchor"] = anchor
+        return t
+
+    g.add(_unit("mV", x0 - 3, y_top + 2, "end"))
+    g.add(_unit("ms", x1, y_bot + 9, "end"))
+
+    if phases:
+        # Label the threshold guide in the clear resting region at the left. The
+        # AP's three events (depolarization/repolarization/hyperpolarization)
+        # cluster in x near the spike, so inline phase captions there collide in
+        # a small glyph; the single threshold label reads cleanly instead.
+        thr_label = svgwrite.text.Text(
+            "threshold", insert=(round(x0 + 2, 2), round(thr_y - 3, 2)),
+            font_family=str(s["label_font_family"]), fill=axis_color,
+        )
+        thr_label["font-size"] = 7.0
+        thr_label["text-anchor"] = "start"
+        g.add(thr_label)
+
     _label_below(g, label, cx, cy, h, s)
     return g

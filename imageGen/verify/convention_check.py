@@ -15,12 +15,6 @@ Conventions enforced:
     ``EntityType → primitive`` — so this catches both an inconsistency
     *and* a whole type rendered with the wrong shape.
 
-Not yet enforced:
-  * Watermark presence for data-like figures. ``compositor._needs_watermark``
-    is a v1 stub that always returns ``False`` (no ``CHART`` archetype, no
-    quantitative entity field), so "data-like elements" are unreachable.
-    TODO: add this check once watermarks are wired up.
-
 Scope:
   Mirrors ``semantic_check``'s dispatch — REACTION_SCHEME (sub-)figures
   render as one composite ``reaction_0`` group with no per-entity or
@@ -82,6 +76,7 @@ _PRIMITIVE_SHAPE = {
     glyphs.syringe: "rect",
     nucleic_acids.mrna_helix: "polyline",
     nucleic_acids.primer_helix: "polyline",
+    glyphs.voltage_trace: "path",
 }
 
 

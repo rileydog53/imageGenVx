@@ -92,6 +92,11 @@ def compartment(id: str, type: str, label: str) -> dict[str, Any]:
     return {"id": id, "type": type, "label": label}
 
 
+def glossary_entry(term: str, definition: str) -> dict[str, Any]:
+    """Build a glossary entry dict (FR9): an abbreviation and its expansion."""
+    return {"term": term, "definition": definition}
+
+
 # ---------------------------------------------------------------------------
 # Tuple normalisers — accept either a tuple (most common LLM/CLI shape), a
 # dict (when the caller already has one), or a Pydantic model (passthrough).
@@ -161,6 +166,20 @@ def _normalize_compartment(item: Any) -> dict[str, Any] | Any:
     return item
 
 
+def _normalize_glossary(item: Any) -> dict[str, Any] | Any:
+    """Coerce `item` into a glossary-entry dict. Tuples: (term, definition)."""
+    if isinstance(item, dict):
+        return item
+    if isinstance(item, tuple):
+        if len(item) == 2:
+            return glossary_entry(*item)
+        raise ValueError(
+            f"glossary tuple must have 2 elements (term, definition); "
+            f"got {len(item)}: {item!r}"
+        )
+    return item
+
+
 # ---------------------------------------------------------------------------
 # Top-level builder
 # ---------------------------------------------------------------------------
@@ -174,6 +193,7 @@ def build(
     compartments: list[Any] | None = None,
     panels: list[Any] | None = None,
     annotations: list[Any] | None = None,
+    glossary: list[Any] | None = None,
     style: str | None = None,
     title: str | None = None,
     caption: str | None = None,
@@ -225,4 +245,6 @@ def build(
         data["panels"] = list(panels)
     if annotations:
         data["annotations"] = list(annotations)
+    if glossary:
+        data["glossary"] = [_normalize_glossary(g) for g in glossary]
     return Figure.model_validate(data)

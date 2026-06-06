@@ -2,7 +2,7 @@
 
 Covers: render_figure return value, SVG file validity, style resolution,
 format inference/rejection, archetype dispatch (PATHWAY + REACTION_SCHEME),
-IR-id tagging (D1), label auto-invoke (D3), watermark stub (D2), and
+IR-id tagging (D1), label auto-invoke (D3), and
 golden-SVG structure checks for mapk_cascade and oxidation_reaction.
 """
 from __future__ import annotations
@@ -24,7 +24,6 @@ from imageGen.ir.schema import (
 from imageGen.render.compositor import (
     _build_panel_styles,
     _is_multistep_reaction,
-    _needs_watermark,
     _resolve_format,
     _resolve_style,
     render_figure,
@@ -447,26 +446,6 @@ def test_labels_false_suppresses_label_elements(tmp_path):
     tagged = _svg_elements_with_attr(out, "data-ir-id")
     label_tags = [t for t in tagged if t.startswith("label_")]
     assert not label_tags, "expected no label_ data-ir-id entries with labels=False"
-
-
-# ---------------------------------------------------------------------------
-# Watermark stub (D2)
-# ---------------------------------------------------------------------------
-
-
-def test_needs_watermark_returns_false_for_pathway():
-    ir = load_fixture(MAPK)
-    assert _needs_watermark(ir) is False
-
-
-def test_needs_watermark_returns_false_for_all_fixtures():
-    fixtures = [
-        "mapk_cascade.json", "simple_activation.json",
-        "gpcr_signaling.json", "multi_compartment_translocation.json",
-    ]
-    for name in fixtures:
-        ir = load_fixture(name)
-        assert _needs_watermark(ir) is False, f"unexpected True for {name}"
 
 
 # ---------------------------------------------------------------------------

@@ -146,6 +146,17 @@ class Annotation(_IRBase):
     position: tuple[float, float] | NamedSlot
 
 
+class GlossaryEntry(_IRBase):
+    """One abbreviation → expansion pair for a figure's glossary box (FR9).
+
+    Rendered as a bordered key (``render/glossary.py``); a non-empty
+    ``Figure.glossary`` draws the box automatically. ``glossary_check`` (advisory)
+    can flag acronyms in labels that lack a matching ``term``.
+    """
+    term: str
+    definition: str
+
+
 class Panel(_IRBase):
     id: str
     title: str | None = None
@@ -179,6 +190,7 @@ class Figure(_IRBase):
     relations: list[Relation] = Field(default_factory=list)
     panels: list[Panel] = Field(default_factory=list)
     annotations: list[Annotation] = Field(default_factory=list)
+    glossary: list[GlossaryEntry] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _validate_structure(self) -> Self:
