@@ -45,6 +45,21 @@ class RelationType(str, Enum):
     GENERIC = "generic"
 
 
+class RelationLabelSide(str, Enum):
+    """Which side of its arrow a relation label should prefer (FR8).
+
+    A *hint* that leads the label-placement priority — the greedy placer can
+    still fall back to another side when the preferred one is occupied. Lets an
+    author separate the two labels on a parallel forward/back edge pair (e.g.
+    "subunit dissociation" above, "GTP hydrolysis" below). ``above``/``below``
+    suit mostly-horizontal edges; ``left``/``right`` suit mostly-vertical ones.
+    """
+    ABOVE = "above"
+    BELOW = "below"
+    LEFT = "left"
+    RIGHT = "right"
+
+
 class Archetype(str, Enum):
     PATHWAY = "pathway"
     REACTION_SCHEME = "reaction_scheme"
@@ -115,6 +130,7 @@ class Relation(_IRBase):
     target: str
     type: RelationType
     label: str | None = None
+    label_side: RelationLabelSide | None = None
     conditions: ReactionConditions | dict[str, Any] | None = None
 
     @property
