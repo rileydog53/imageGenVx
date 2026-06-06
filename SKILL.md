@@ -310,6 +310,7 @@ Example: `{"id": "igg", "type": "protein", "label": "IgG", "style":
 | `target` | string | yes | an entity `id` (must exist) |
 | `type` | relation type | yes | see below |
 | `label` | string | no | ASCII only; omit if panel already has 3 labels |
+| `label_side` | `above` \| `below` \| `left` \| `right` | no | which side of the arrow the label prefers; use to split the two labels on a parallel forward/back edge pair. Reciprocal `A→B`+`B→A` labeled pairs auto-separate even without it. |
 | `conditions` | `ReactionConditions` or object | no | reaction context |
 
 `type` ∈ `activates`, `inhibits`, `binds`, `translocates`, `phosphorylates`,
