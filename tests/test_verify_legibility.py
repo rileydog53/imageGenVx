@@ -183,3 +183,43 @@ def test_panel_labels_do_not_spill_into_neighbor(tmp_path):
     _render("scrnaseq_workflow.json", svg)
     result = legibility_check(svg)  # must not raise on cross-panel overlap
     assert isinstance(result, LegibilityResult)
+
+
+# ---------------------------------------------------------------------------
+# FR6 — off-canvas text guard (the FR3 symptom)
+# ---------------------------------------------------------------------------
+
+
+def test_off_canvas_text_raises(tmp_path):
+    """A label whose box spills past the viewport is flagged (FR6/FR3)."""
+    svg = tmp_path / "off.svg"
+    _write_svg(svg, 100, 50, '<text x="80" y="25" font-size="12">overflowing label</text>')
+    with pytest.raises(LegibilityCheckError) as ei:
+        legibility_check(svg)
+    assert ei.value.kind == "off_canvas"
+
+
+def test_text_within_canvas_passes(tmp_path):
+    """A label comfortably inside the viewport does not trip the guard."""
+    svg = tmp_path / "ok.svg"
+    _write_svg(svg, 400, 100, '<text x="20" y="50" font-size="12">fits fine</text>')
+    assert isinstance(legibility_check(svg), LegibilityResult)
+
+
+def test_rendered_annotation_figure_stays_on_canvas(tmp_path):
+    """A real figure with an edge annotation expands its frame, so legibility
+    sees every label on-canvas (FR3 + FR6 working together)."""
+    from imageGen.ir.schema import (
+        Annotation, AnnotationType, Archetype, Entity, EntityType, Figure,
+    )
+    ir = Figure(
+        archetype=Archetype.PATHWAY,
+        entities=[Entity(id="a", type=EntityType.METABOLITE, label="A")],
+        relations=[],
+        annotations=[Annotation(type=AnnotationType.LABEL,
+                                text="far right edge label",
+                                position=(0.97, 0.5))],
+    )
+    svg = tmp_path / "ann.svg"
+    render_figure(ir, svg)
+    assert isinstance(legibility_check(svg), LegibilityResult)
