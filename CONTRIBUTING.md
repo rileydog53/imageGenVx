@@ -10,7 +10,8 @@ for anyone extending the project. For *using* imageGen, see
 Before writing code, read in order:
 
 1. **[DECISIONS.md](DECISIONS.md)** — cross-phase architectural decisions
-   (D1–D4: IR-id tagging, watermarking, label auto-invoke, `smiles_map`).
+   (D1/D3/D4: IR-id tagging, label auto-invoke, `smiles_map`; D2 watermarking
+   was retired).
 2. **[BACKLOG.md](BACKLOG.md)** — open, in-scope defects.
 3. **[V3_FEATURES.md](V3_FEATURES.md)** — larger features parked for a
    possible v3.
@@ -27,8 +28,6 @@ Before writing code, read in order:
    load-bearing.
 6. **All project files live in `~/Desktop/imageGen-v2.1/`.** Throwaway
    scripts go in `~/Desktop/scratch/`.
-7. **No fake data without watermarks.** Chart-of-real-measurements look →
-   automatic "Illustrative" caption. No override flag.
 
 ## Code conventions
 

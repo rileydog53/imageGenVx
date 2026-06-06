@@ -53,33 +53,17 @@ attributes:
 
 ---
 
-## D2 — Demonstrative-data watermark is a stub for v1
+## D2 — Demonstrative-data watermark — RETIRED (2026-06-06)
 
-**Decided:** 2026-05-11 (Phase 5 planning)
-**Where enforced:** `render/compositor.py::_needs_watermark`
+**Decided:** 2026-05-11 (Phase 5 planning) · **Retired:** 2026-06-06
 
-`render/compositor.py` defines `_needs_watermark(figure: Figure) ->
-bool` and always returns `False` in v1. A TODO comment names the trigger
-condition once it becomes real.
-
-**Why a stub, not a real trigger:**
-
-None of the current five archetypes carry quantitative data — pathway,
-reaction_scheme, workflow, cellular_schematic, mechanism_cartoon are
-all schematic. The Hard Rule (CLAUDE.md: "demonstrative data must be
-visibly labeled") has no trigger condition to fire on in v1.
-
-**When to revisit:**
-
-- A CHART archetype is added to the IR (most likely trigger).
-- An entity gains a `quantitative_value` field.
-- Phase 7 (LLM frontend) sees prompts asking for bar charts / dose-
-  response curves / kinetic plots.
-
-When that happens, replace the stub with the actual check. The
-compositor calls `_needs_watermark` exactly once per `render_figure`
-invocation — the watermark is non-overrideable (no caller-controlled
-flag), per the Hard Rule.
+Originally a v1 stub (`_needs_watermark` always `False`); briefly wired for
+the FR10 `voltage_trace` glyph to auto-caption "Illustrative — not real data".
+**Removed entirely** — the watermark mechanism (`_needs_watermark`,
+`_inject_watermark`, the chart-like-primitive set) is gone from
+`render/compositor.py`. Schematic figures don't plot real measurements, so the
+caption was friction with no benefit; authors who want such a note can add a
+plain `caption` annotation themselves.
 
 ---
 

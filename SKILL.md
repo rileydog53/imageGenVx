@@ -261,6 +261,7 @@ Pydantic model. Unknown fields are rejected. Build it as JSON.
 | `relations` | list of `Relation` | no* | |
 | `panels` | list of `Panel` | no* | |
 | `annotations` | list of `Annotation` | no | |
+| `glossary` | list of `GlossaryEntry` | no | abbreviation key; draws a boxed "Abbreviations" strip below the figure when non-empty |
 
 **\*Leaf-XOR-panel rule:** a figure is *either* a leaf (has
 `entities`/`compartments`/`relations`) *or* multi-panel (has `panels`) —
@@ -293,6 +294,7 @@ names warn and fall back to the type default.
 | Subcellular | `ribosome`, `vesicle` |
 | Nucleic acids | `gene_helix` (DNA), `rna_helix` (RNA), `mrna_helix` (5' cap + polyA), `primer_helix` (3' arrow) |
 | Lab equipment | `flask`, `centrifuge`, `flow_cytometer`, `sequencer`, `petri_dish`, `syringe` |
+| Domain idioms | `voltage_trace` (action-potential V-vs-t plot) |
 
 Example: `{"id": "igg", "type": "protein", "label": "IgG", "style":
 {"primitive": "antibody"}}`.
@@ -337,6 +339,13 @@ must not overlap).
 `position` — either `[x, y]` coordinates or a named slot ∈ `top`, `bottom`,
 `left`, `right`, `top-left`, `top-right`, `bottom-left`, `bottom-right`,
 `center`.
+
+### `GlossaryEntry` (for `figure.glossary`)
+
+`term` (the abbreviation) and `definition` (its expansion). A non-empty
+`glossary` auto-draws a boxed "Abbreviations" key in a strip below the figure.
+`--verify` advisory-warns about acronyms in labels with no matching `term`
+(only when a glossary is present).
 
 ### Validators (will reject the IR if violated)
 
