@@ -253,3 +253,58 @@ def test_tca_8node_with_acetylcoa():
     avg_ring_r = sum(ring_radii) / len(ring_radii)
     acoa_r = math.hypot(pos["acoa"][0] - cx, pos["acoa"][1] - cy)
     assert acoa_r > avg_ring_r * 1.1, "Acetyl-CoA should sit outside the ring"
+
+
+# ---------------------------------------------------------------------------
+# FR5 — cross-link (chord) cycles auto-detect as rings
+# ---------------------------------------------------------------------------
+
+
+def test_ring_autodetect_cycle_with_cross_link_chord():
+    """A covering cycle with an extra cross-link chord still auto-rings (FR5).
+
+    Previously the strict degree-1 check rejected any cycle with an extra edge,
+    so a real cyclic pathway with cross-links flattened to an L→R DAG."""
+    ents = [Entity(id=f"e{i}", type=EntityType.METABOLITE, label=f"E{i}") for i in range(4)]
+    rels = [
+        Relation(source=f"e{i}", target=f"e{(i + 1) % 4}", type=RelationType.GENERIC)
+        for i in range(4)
+    ]
+    # cross-link chord between two non-adjacent ring nodes
+    rels.append(Relation(source="e1", target="e3", type=RelationType.GENERIC))
+    fig = Figure(archetype=Archetype.PATHWAY, entities=ents, relations=rels)
+
+    result = _ring_order(fig)
+    assert result is not None, "cross-link cycle should auto-ring"
+    order, dangling = result
+    assert set(order) == {"e0", "e1", "e2", "e3"}
+    assert dangling == []
+
+
+def test_ring_no_autodetect_for_acyclic_cascade():
+    """A linear cascade (no covering cycle) must NOT ring."""
+    ents = [Entity(id=f"e{i}", type=EntityType.PROTEIN, label=f"E{i}") for i in range(4)]
+    rels = [
+        Relation(source=f"e{i}", target=f"e{i + 1}", type=RelationType.ACTIVATES)
+        for i in range(3)
+    ]
+    fig = Figure(archetype=Archetype.PATHWAY, entities=ents, relations=rels)
+    assert _ring_order(fig) is None
+
+
+def test_ring_no_autodetect_when_cycle_misses_a_node():
+    """A 3-cycle plus a dead-end branch node has no covering cycle → no ring."""
+    ents = [Entity(id=f"e{i}", type=EntityType.METABOLITE, label=f"E{i}") for i in range(3)]
+    ents.append(Entity(id="side", type=EntityType.METABOLITE, label="Side"))
+    rels = [
+        Relation(source=f"e{i}", target=f"e{(i + 1) % 3}", type=RelationType.GENERIC)
+        for i in range(3)
+    ]
+    rels.append(Relation(source="e0", target="side", type=RelationType.GENERIC))
+    rels.append(Relation(source="side", target="e1", type=RelationType.GENERIC))
+    fig = Figure(archetype=Archetype.PATHWAY, entities=ents, relations=rels)
+    # 'side' lies on a cycle e0->side->e1->e2->e0 — that IS a covering cycle, so
+    # this should ring. Assert the broadened detector finds it.
+    result = _ring_order(fig)
+    assert result is not None
+    assert set(result[0]) == {"e0", "e1", "e2", "side"}
