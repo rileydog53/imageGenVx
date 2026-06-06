@@ -2,7 +2,7 @@
 
 ## Where things stand (read this first)
 
-- **Repo:** `~/Desktop/imageGen-v2.1/`  • **venv:** `~/Desktop/.venv` (Python 3.12)
+- **Repo:** `~/Desktop/imageGen-v2.5/`  • **venv:** `~/Desktop/.venv` (Python 3.12)
 - **Branch:** `fix/layout-overlaps-bug1-bug2` (NOT pushed — local only, no PR yet)
 - **Last commit:** `9f18253` fix(layout): stop entity-box overlap and labels-on-arrow-shafts
 - **Working tree:** clean

@@ -27,9 +27,9 @@ hop. Use:
 - **`Write`/`Edit`** to create the spec or IR file.
 
 Paths: use the venv Python `~/Desktop/.venv/bin/python` (the `imageGen`
-package is installed there). The repo root is `~/Desktop/imageGen-v2.1/`;
+package is installed there). The repo root is `~/Desktop/imageGen-v2.5/`;
 fixtures cited as `tests/fixtures/<file>` live at
-`~/Desktop/imageGen-v2.1/tests/fixtures/<file>`. Write throwaway specs and
+`~/Desktop/imageGen-v2.5/tests/fixtures/<file>`. Write throwaway specs and
 output to `~/Desktop/scratch/`. `~` works fine in the Bash tool.
 
 > **If you are a chat assistant *without* a shell** (e.g. claude.ai with no
@@ -112,7 +112,7 @@ Archetype → required fixture file:
 | multi-panel figure | `three_panel_workflow.json` **AND** `graphical_abstract_mrna_vaccine.json` |
 
 Read it with the **`Read`** tool:
-`~/Desktop/imageGen-v2.1/tests/fixtures/<file>`.
+`~/Desktop/imageGen-v2.5/tests/fixtures/<file>`.
 
 ### Step 2 — Plan and output confirmation block
 
@@ -478,7 +478,7 @@ The fixture is the ground truth for IR structure — do not write JSON from
 memory.
 
 Worked examples — each `tests/fixtures/<file>` is a complete, validated IR.
-**Read** them at `~/Desktop/imageGen-v2.1/tests/fixtures/<file>`.
+**Read** them at `~/Desktop/imageGen-v2.5/tests/fixtures/<file>`.
 
 1. **"Show the MAPK kinase cascade."** → `pathway`. Entities Ras (protein),
    Raf/MEK/ERK (kinases); relations `activates` then `phosphorylates`.
