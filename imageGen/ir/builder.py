@@ -92,7 +92,17 @@ def compartment(id: str, type: str, label: str) -> dict[str, Any]:
 
 
 def _normalize_entity(item: Any) -> dict[str, Any] | Any:
-    """Coerce `item` into an entity dict. Tuples: (id, type, label[, location])."""
+    """Coerce `item` into an entity dict.
+
+    Tuple shapes: ``(id, type, label[, location[, primitive]])``.
+
+    FR7: the optional 5th element is a primitive-override name (e.g. ``"antibody"``,
+    ``"gpcr"``), wired through as ``style={"primitive": <name>}`` — the same hook
+    dict-form entities already expose via ``style.primitive``. This unblocks
+    domain glyphs (the IgG antibody, etc.) from the tuple shorthand. Pass
+    ``location=None`` when you need a primitive but no compartment, e.g.
+    ``("igg", "protein", "IgG", None, "antibody")``.
+    """
     if isinstance(item, dict):
         return item
     if isinstance(item, tuple):
@@ -100,8 +110,14 @@ def _normalize_entity(item: Any) -> dict[str, Any] | Any:
             return entity(*item)
         if len(item) == 4:
             return entity(item[0], item[1], item[2], location=item[3])
+        if len(item) == 5:
+            return entity(
+                item[0], item[1], item[2],
+                location=item[3], style={"primitive": item[4]},
+            )
         raise ValueError(
-            f"entity tuple must have 3 or 4 elements (id, type, label[, location]); "
+            f"entity tuple must have 3 to 5 elements "
+            f"(id, type, label[, location[, primitive]]); "
             f"got {len(item)}: {item!r}"
         )
     return item  # Pydantic Entity or unknown — let Figure.model_validate complain.
