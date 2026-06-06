@@ -30,7 +30,6 @@ Source: live-render review of 10 figures, 2026-06-05 (see plan
 
 | ID | Priority | Issue |
 |---|---|---|
-| FR8 | medium | **Stacked labels on parallel fwd/back edges** (item 2: subunit dissociation / GTP hydrolysis). Add `label_side: above\|below` to `Relation`; offset in `layout/label_placement.py`. SCHEMA-GATED -- needs approval (CONTRIBUTING rule 5). Cross-ref V3-L2. Short-term: ASCII arrow prefixes in labels. |
 | FR9 | low | **No abbreviation/acronym glossary** (item 4). Add `glossary:[{term,definition}]` to `Figure`, boxed legend via `render/legend.py`, verifier "every acronym defined". SCHEMA-GATED + V3-tier -- candidate for `V3_FEATURES.md`. Short-term: hand-authored `annotations` block (depends on FR1). |
 | FR10 | low | **Domain-canonical idioms missing** (item G): action-potential voltage trace, antibody Y-shape (curved electron-pushing arrows already tracked as V3-C4). New primitives -- V3-tier; candidate for `V3_FEATURES.md`. |
 

@@ -69,13 +69,21 @@ def relation(
     target: str,
     label: str | None = None,
     conditions: dict[str, Any] | None = None,
+    label_side: str | None = None,
 ) -> dict[str, Any]:
-    """Build a relation dict. Argument order reads naturally as `source verb target`."""
+    """Build a relation dict. Argument order reads naturally as `source verb target`.
+
+    ``label_side`` (FR8): optional ``"above"``/``"below"``/``"left"``/``"right"``
+    hint for which side of the arrow the label prefers — use it to split the two
+    labels on a parallel forward/back edge pair.
+    """
     d: dict[str, Any] = {"source": source, "target": target, "type": type}
     if label is not None:
         d["label"] = label
     if conditions is not None:
         d["conditions"] = conditions
+    if label_side is not None:
+        d["label_side"] = label_side
     return d
 
 

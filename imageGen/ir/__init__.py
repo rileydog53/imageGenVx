@@ -11,6 +11,7 @@ from imageGen.ir.schema import (
     Panel,
     ReactionConditions,
     Relation,
+    RelationLabelSide,
     RelationType,
 )
 
@@ -27,5 +28,6 @@ __all__ = [
     "Panel",
     "ReactionConditions",
     "Relation",
+    "RelationLabelSide",
     "RelationType",
 ]

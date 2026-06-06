@@ -8,7 +8,7 @@ import svgwrite.container
 from tests._helpers import load_fixture, render_entries_to_png
 from imageGen.ir.schema import (
     Archetype, Compartment, CompartmentType, Entity, EntityType,
-    Figure, Relation, RelationType,
+    Figure, Relation, RelationLabelSide, RelationType,
 )
 from imageGen.layout._geom import ENTITY_BBOX, ENTITY_TO_PRIMITIVE
 from imageGen.layout.pathway_layout import (
@@ -1006,3 +1006,55 @@ def test_membrane_entity_snaps_to_bilayer_plane():
     # Receptor sits on the bilayer plane, NOT the band center.
     assert abs(pos["r"][1] - expected_y) < 0.01
     assert abs(pos["r"][1] - (mem_top + mem_h / 2)) > 1.0
+
+
+# ---------------------------------------------------------------------------
+# FR8 — parallel forward/back edge labels separate onto opposite sides
+# ---------------------------------------------------------------------------
+
+
+def _label_priority_by_id(fig):
+    from imageGen.layout.pathway_layout import pathway_label_requests
+    entries = layout_pathway(fig)
+    return {r.ir_id: r.priority for r in pathway_label_requests(fig, entries)}
+
+
+def test_fr8_reciprocal_pair_auto_opposite_sides():
+    """A labeled A→B + B→A pair auto-assigns perpendicular opposite sides."""
+    fig = Figure(
+        archetype=Archetype.PATHWAY,
+        entities=[Entity(id="a", type=EntityType.PROTEIN, label="A"),
+                  Entity(id="b", type=EntityType.PROTEIN, label="B")],
+        relations=[
+            Relation(source="a", target="b", type=RelationType.ACTIVATES, label="fwd"),
+            Relation(source="b", target="a", type=RelationType.ACTIVATES, label="back"),
+        ],
+    )
+    prio = _label_priority_by_id(fig)
+    lead = {k: v[0] for k, v in prio.items()}
+    assert {lead["rel_a_activates_b"], lead["rel_b_activates_a"]} == {"above", "below"}
+
+
+def test_fr8_explicit_label_side_overrides_default():
+    """relation.label_side leads the placement priority with that side."""
+    fig = Figure(
+        archetype=Archetype.PATHWAY,
+        entities=[Entity(id="a", type=EntityType.PROTEIN, label="A"),
+                  Entity(id="b", type=EntityType.PROTEIN, label="B")],
+        relations=[Relation(source="a", target="b", type=RelationType.ACTIVATES,
+                            label="x", label_side=RelationLabelSide.BELOW)],
+    )
+    prio = _label_priority_by_id(fig)
+    assert prio["rel_a_activates_b"][0] == "below"
+
+
+def test_fr8_single_edge_unchanged_default():
+    """A lone horizontal edge keeps the pre-FR8 orientation default (above-first)."""
+    fig = Figure(
+        archetype=Archetype.PATHWAY,
+        entities=[Entity(id="a", type=EntityType.PROTEIN, label="A"),
+                  Entity(id="b", type=EntityType.PROTEIN, label="B")],
+        relations=[Relation(source="a", target="b", type=RelationType.ACTIVATES, label="x")],
+    )
+    prio = _label_priority_by_id(fig)
+    assert prio["rel_a_activates_b"][0] == "above"

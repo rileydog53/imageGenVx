@@ -39,6 +39,25 @@ def test_fixture_loads_validates_and_roundtrips(path: Path):
     assert fig.model_dump(mode="json") == fig2.model_dump(mode="json")
 
 
+def test_relation_label_side_roundtrips():
+    """FR8: the optional label_side enum survives JSON round-trip; default None."""
+    from imageGen.ir import RelationLabelSide
+
+    plain = Relation(source="a", target="b", type=RelationType.ACTIVATES)
+    assert plain.label_side is None
+
+    rel = Relation(source="a", target="b", type=RelationType.ACTIVATES,
+                   label="x", label_side=RelationLabelSide.LEFT)
+    back = Relation.from_dict(json.loads(rel.to_json()))
+    assert back.label_side is RelationLabelSide.LEFT
+
+
+def test_relation_label_side_rejects_unknown_value():
+    with pytest.raises(ValidationError):
+        Relation(source="a", target="b", type=RelationType.ACTIVATES,
+                 label_side="sideways")
+
+
 def test_relation_unknown_target_rejected():
     with pytest.raises(ValidationError, match="unknown target entity"):
         Figure(
