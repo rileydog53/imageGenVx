@@ -303,12 +303,20 @@ names warn and fall back to the type default.
 | Membrane transport | `ion_channel`, `transporter`, `pump` |
 | Subcellular | `ribosome`, `vesicle` (simple sphere), `liposome` (lipid-bilayer ring) |
 | Nucleic acids | `gene_helix` (DNA), `rna_helix` (RNA), `mrna_helix` (5' cap + polyA), `primer_helix` (3' arrow) |
-| Lab equipment (glyph) | `flask`, `centrifuge`, `flow_cytometer`, `sequencer`, `petri_dish`, `syringe` |
-| Lab equipment (detailed) | `microscope`, `well_plate`, `tube`, `pipette`, `gel`, `mouse`, `human_figure` |
+| Lab equipment (embedded icons) | `microscope`, `tube`, `well_plate`, `mouse`, `gel` (agarose), `western_blot`, `flask`, `centrifuge` — real Bioicons art (faithful color; see note) |
+| Lab equipment (simple glyph) | `pipette`, `flow_cytometer`, `sequencer`, `petri_dish`, `syringe`, `human_figure` |
 | Cell shapes | `cell` (generic), `cell_neuron`, `cell_epithelial`, `cell_immune` |
 | Organelles | `mitochondrion`, `nucleus`, `endoplasmic_reticulum`, `golgi`, `lysosome` |
 | Chemical structure | `molecule` — 2-D structure; **also set `style.smiles`**. `functional_group` — named callout; **also set `style.functional_group`** (see below) |
 | Domain idioms | `voltage_trace` (action-potential V-vs-t plot) |
+
+The **embedded-icon** lab glyphs are real [Bioicons](https://bioicons.com) art
+(e.g. an `equipment` labelled "Western blot" auto-renders the blot icon, "Mouse"
+the mouse, etc.). They keep their original color and do **not** retheme with
+journal style presets. Icons under CC-BY are credited automatically: a small
+**Credits** section appears in the figure's info box and a `<output>.credits.txt`
+sidecar is written; CC0 icons need no credit. Pass `render_figure(credits=False)`
+to drop the on-figure Credits section (the sidecar is still written).
 
 For `molecule`, add a `style.smiles` entry alongside the override: e.g.
 `{"id": "glc", "type": "metabolite", "label": "Glucose", "style": {"primitive":

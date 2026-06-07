@@ -33,10 +33,13 @@ from imageGen.verify.convention_check import (
 from imageGen.verify.semantic_check import semantic_check
 
 # The glyphs introduced by the v2.x expansion (names in PRIMITIVE_REGISTRY).
+# NOTE: flask and centrifuge were re-pointed to embedded Bioicons (DECISIONS D9)
+# and are now covered by tests/test_entity_adapters.py + test_icon_loader.py, so
+# they are no longer in this glyph-registry-driven list.
 EXPANSION_GLYPHS = [
     "antibody", "ion_channel", "transporter", "pump", "phosphatase",
     "ribosome", "vesicle",
-    "flask", "centrifuge", "flow_cytometer", "sequencer", "petri_dish",
+    "flow_cytometer", "sequencer", "petri_dish",
     "syringe",
     "mrna_helix", "primer_helix",
 ]

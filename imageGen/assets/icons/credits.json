@@ -7,6 +7,54 @@
     "source_url": "https://github.com/duerrsimon/bioicons/blob/main/static/icons/cc-0/Microbiology/OpenClipart/agarose-gel.svg",
     "title": "Agarose Gel"
   },
+  "centrifuge": {
+    "author": "Andi Wilson",
+    "license": "CC-BY 4.0",
+    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+    "modifications": "cleaned (stripped editor metadata), inlined CSS, namespaced ids, normalized viewBox",
+    "source_url": "https://github.com/duerrsimon/bioicons/blob/main/static/icons/cc-by-4.0/Microbiology/Andi-Wilson/Centrifuge.svg",
+    "title": "Centrifuge"
+  },
+  "flask": {
+    "author": "OpenClipart",
+    "license": "CC0 1.0",
+    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "modifications": "cleaned (stripped editor metadata), inlined CSS, namespaced ids, normalized viewBox",
+    "source_url": "https://github.com/duerrsimon/bioicons/blob/main/static/icons/cc-0/Chemistry/OpenClipart/round-bottomed-flask-1-250ml.svg",
+    "title": "Flask"
+  },
+  "microscope": {
+    "author": "Derek Croote",
+    "license": "CC0 1.0",
+    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "modifications": "cleaned (stripped editor metadata), inlined CSS, namespaced ids, normalized viewBox",
+    "source_url": "https://github.com/duerrsimon/bioicons/blob/main/static/icons/cc-0/Lab_apparatus/Derek-Croote/microscope-cartoon.svg",
+    "title": "Microscope"
+  },
+  "mouse": {
+    "author": "Ben Murrell",
+    "license": "CC0 1.0",
+    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "modifications": "cleaned (stripped editor metadata), inlined CSS, namespaced ids, normalized viewBox",
+    "source_url": "https://github.com/duerrsimon/bioicons/blob/main/static/icons/cc-0/Animals/Ben-Murrell/Mouse.svg",
+    "title": "Mouse"
+  },
+  "tube": {
+    "author": "Marcel Tisch",
+    "license": "CC0 1.0",
+    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "modifications": "cleaned (stripped editor metadata), inlined CSS, namespaced ids, normalized viewBox",
+    "source_url": "https://github.com/duerrsimon/bioicons/blob/main/static/icons/cc-0/Blood_Immunology/Marcel_Tisch/blood_sample_tube.svg",
+    "title": "Tube"
+  },
+  "well_plate": {
+    "author": "umasstr",
+    "license": "CC0 1.0",
+    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "modifications": "cleaned (stripped editor metadata), inlined CSS, namespaced ids, normalized viewBox",
+    "source_url": "https://github.com/duerrsimon/bioicons/blob/main/static/icons/cc-0/Genetics/umasstr/6-well_plate_cell_culture.svg",
+    "title": "Well Plate"
+  },
   "western_blot": {
     "author": "Pooja",
     "license": "CC-BY 4.0",

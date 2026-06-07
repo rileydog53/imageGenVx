@@ -58,7 +58,8 @@ def test_entity_type_dispatches_to_adapter(etype, expected):
     [
         "cell", "cell_neuron", "cell_epithelial", "cell_immune",
         "mitochondrion", "nucleus", "endoplasmic_reticulum", "golgi", "lysosome",
-        "microscope", "well_plate", "tube", "pipette", "gel", "mouse", "human_figure",
+        "microscope", "well_plate", "tube", "pipette", "gel", "western_blot",
+        "mouse", "human_figure", "flask", "centrifuge",
         "molecule", "functional_group", "liposome",
     ],
 )
@@ -92,11 +93,14 @@ def test_primitive_shape_covers_registry():
 
 
 def test_default_dispatch_shapes_covered():
-    """Every ENTITY_TO_PRIMITIVE target must have a _PRIMITIVE_SHAPE tag too."""
+    """Every ENTITY_TO_PRIMITIVE target must be known to convention_check —
+    either a shape tag or an explicitly skipped composite (EQUIPMENT/SAMPLE now
+    default to embedded Bioicons, which are skip-shape)."""
     missing = [
-        t for t, p in ENTITY_TO_PRIMITIVE.items() if p not in _PRIMITIVE_SHAPE
+        t for t, p in ENTITY_TO_PRIMITIVE.items()
+        if p not in _PRIMITIVE_SHAPE and p not in _SKIP_SHAPE_PRIMITIVES
     ]
-    assert not missing, f"_PRIMITIVE_SHAPE missing tags for entity types: {missing}"
+    assert not missing, f"convention_check missing tags for entity types: {missing}"
 
 
 # ---------------------------------------------------------------------------
@@ -251,14 +255,18 @@ def test_liposome_entity_renders_bilayer_and_passes_verifiers(tmp_path):
     "etype, label, expected_name",
     [
         # EQUIPMENT — default is microscope; a label names the real glyph
-        (EntityType.EQUIPMENT, "Western blot", "gel"),
+        (EntityType.EQUIPMENT, "Western blot", "western_blot"),  # blot → distinct icon
+        (EntityType.EQUIPMENT, "Immunoblot", "western_blot"),
         (EntityType.EQUIPMENT, "SDS-PAGE gel", "gel"),
+        (EntityType.EQUIPMENT, "Agarose gel", "gel"),
         (EntityType.EQUIPMENT, "Mr ladder", "gel"),
         (EntityType.EQUIPMENT, "96-well plate", "well_plate"),
         (EntityType.EQUIPMENT, "ELISA reader", "well_plate"),
         (EntityType.EQUIPMENT, "Multichannel pipette", "pipette"),
         (EntityType.EQUIPMENT, "Eppendorf tube", "tube"),
         (EntityType.EQUIPMENT, "Mouse model", "mouse"),
+        (EntityType.EQUIPMENT, "Benchtop centrifuge", "centrifuge"),
+        (EntityType.EQUIPMENT, "Erlenmeyer flask", "flask"),
         (EntityType.EQUIPMENT, "Patient cohort", "human_figure"),
         # ORGANELLE — default is mitochondrion
         (EntityType.ORGANELLE, "Nucleus", "nucleus"),
@@ -306,7 +314,7 @@ def test_inference_dispatches_specific_glyph_in_layout():
         entities=[Entity(id="b", label="Western blot", type=EntityType.EQUIPMENT)],
     )
     entry = next(e for e in layout_pathway(fig) if e.ir_id == "b")
-    assert entry.primitive is PRIMITIVE_REGISTRY["gel"]
+    assert entry.primitive is PRIMITIVE_REGISTRY["western_blot"]
 
 
 def test_explicit_override_beats_inference():

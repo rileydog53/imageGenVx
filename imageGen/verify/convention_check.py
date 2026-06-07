@@ -89,24 +89,29 @@ _PRIMITIVE_SHAPE = {
     entity_adapters.endoplasmic_reticulum: "polyline",
     entity_adapters.golgi: "polygon",
     entity_adapters.lysosome: "circle",
-    # method-figure lab equipment (lab_equipment.py)
-    entity_adapters.microscope: "rect",
-    entity_adapters.well_plate: "rect",
-    entity_adapters.tube: "rect",
+    # still hand-drawn lab equipment (re-trace planned); embedded ones are skipped below
     entity_adapters.pipette: "rect",
-    entity_adapters.gel: "rect",
-    entity_adapters.mouse: "ellipse",
     entity_adapters.human_figure: "circle",
     # closed lipid-bilayer vesicle (EW3) — first shape is the bilayer tail ring
     entity_adapters.liposome: "polygon",
 }
 
-# Primitives whose drawing is a composite (RDKit chemical structure), not a
-# single type-conventional glyph — shape-checked the same way reactions are:
-# not at all. Their entries live here instead of `_PRIMITIVE_SHAPE`.
+# Primitives whose drawing is a composite (RDKit chemical structure or an
+# embedded multi-path Bioicons illustration), not a single type-conventional
+# glyph — shape-checked the same way reactions are: not at all. Their entries
+# live here instead of `_PRIMITIVE_SHAPE`.
 _SKIP_SHAPE_PRIMITIVES = frozenset({
     entity_adapters.molecule,
     entity_adapters.functional_group,
+    # embedded Bioicons (DECISIONS D9) — faithful multi-path illustrations
+    entity_adapters.microscope,
+    entity_adapters.tube,
+    entity_adapters.mouse,
+    entity_adapters.well_plate,
+    entity_adapters.gel,
+    entity_adapters.western_blot,
+    entity_adapters.flask,
+    entity_adapters.centrifuge,
 })
 
 

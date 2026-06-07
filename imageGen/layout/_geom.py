@@ -83,9 +83,9 @@ PRIMITIVE_REGISTRY: dict[str, Callable[..., svgwrite.container.Group]] = {
     "phosphatase":           glyphs.phosphatase,
     "ribosome":              glyphs.ribosome,
     "vesicle":               glyphs.vesicle,
-    # v2.x expansion glyphs — lab equipment
-    "flask":                 glyphs.flask,
-    "centrifuge":            glyphs.centrifuge,
+    # v2.x expansion glyphs — lab equipment (flask/centrifuge now embedded Bioicons, D9)
+    "flask":                 entity_adapters.flask,
+    "centrifuge":            entity_adapters.centrifuge,
     "flow_cytometer":        glyphs.flow_cytometer,
     "sequencer":             glyphs.sequencer,
     "petri_dish":            glyphs.petri_dish,
@@ -111,6 +111,7 @@ PRIMITIVE_REGISTRY: dict[str, Callable[..., svgwrite.container.Group]] = {
     "tube":                  entity_adapters.tube,
     "pipette":               entity_adapters.pipette,
     "gel":                   entity_adapters.gel,
+    "western_blot":          entity_adapters.western_blot,
     "mouse":                 entity_adapters.mouse,
     "human_figure":          entity_adapters.human_figure,
     # chemical structure from SMILES (EW1) — entity with style.smiles
@@ -157,8 +158,11 @@ _PRIMITIVE_BBOX_OVERRIDE: dict[Callable[..., svgwrite.container.Group], tuple[fl
     entity_adapters.tube:            (40.0, 58.0),
     entity_adapters.pipette:         (28.0, 74.0),
     entity_adapters.gel:             (40.0, 74.0),
+    entity_adapters.western_blot:    (60.0, 64.0),
     entity_adapters.mouse:           (84.0, 46.0),
     entity_adapters.human_figure:    (44.0, 60.0),
+    entity_adapters.flask:           (44.0, 60.0),
+    entity_adapters.centrifuge:      (64.0, 56.0),
     entity_adapters.molecule:        (120.0, 96.0),
     entity_adapters.functional_group: (110.0, 96.0),
     entity_adapters.liposome:        (96.0, 96.0),
@@ -197,13 +201,16 @@ PRIMITIVE_TO_BBOX: dict[Callable[..., svgwrite.container.Group], tuple[float, fl
 # ---------------------------------------------------------------------------
 _INFERENCE_RULES: dict[EntityType, tuple[tuple[tuple[str, ...], str], ...]] = {
     EntityType.EQUIPMENT: (
-        (("gel", "blot", "western", "northern", "southern", "sds-page",
-          "electrophoresis", "ladder"), "gel"),
+        # blot rule first so "Western blot" → the blot icon, not the gel
+        (("blot", "western", "northern", "southern", "immunoblot"), "western_blot"),
+        (("gel", "sds-page", "agarose", "electrophoresis", "ladder"), "gel"),
         (("microplate", "well plate", "well-plate", "96-well", "384-well",
           "multiwell", "microtiter", "elisa"), "well_plate"),
         (("pipet", "micropipet"), "pipette"),
         (("eppendorf", "cuvette", "vial"), "tube"),
         (("mouse", "mice", "murine", "rodent"), "mouse"),
+        (("centrifuge", "spin column"), "centrifuge"),
+        (("flask", "erlenmeyer"), "flask"),
         (("human", "patient", "subject", "donor", "volunteer", "participant"),
          "human_figure"),
     ),

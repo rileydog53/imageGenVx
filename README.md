@@ -150,7 +150,7 @@ SKILL.md       the model-facing interface (LLM frontend)
 ~/Desktop/.venv/bin/pytest tests/ -v
 ```
 
-**920 tests** pass. Golden-image regressions render curated fixtures and
+**931 tests** pass. Golden-image regressions render curated fixtures and
 pixel-diff them against checked-in baselines; after an intentional visual
 change regenerate with `IMAGEGEN_REGEN_GOLDEN=1 pytest`.
 
