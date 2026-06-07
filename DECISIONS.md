@@ -284,3 +284,56 @@ this kept the golden blast radius to one intended image (`three_panel_workflow`,
 canonical bbox), so layout positions stay identical to the pre-inference
 default; only an explicit override re-sizes to the chosen glyph. This is why
 inference never perturbs spacing/collision, only the drawn icon.
+
+---
+
+## D9 — embedded Bioicons (faithful color) + unified info box + auto-credit
+
+**Decided:** 2026-06-07 · **Where enforced:** `primitives/icon_loader.py`,
+`assets/icons/`, `tools/ingest_icon.py`, `render/info_box.py`, `render/credits.py`,
+`render/compositor.py`, `primitives/entity_adapters.py` (`ICON_ASSETS`)
+
+The hand-drawn lab-equipment glyphs were crude box-art. We now embed real icons
+from **Bioicons** (per-icon licensed; 2,818 SVGs). Investigation found they are
+**flat multi-color illustrations**, not monochrome themeable glyphs, so the user
+chose **embed-first with faithful color** (icons keep their own fills and do
+*not* retheme with style presets), re-tracing only icons impractical to embed.
+
+**Asset pipeline (dev-time):** `tools/ingest_icon.py` fetches a Bioicons SVG,
+**cleans** it (strips Inkscape/sodipodi/RDF metadata), **inlines `<style>` CSS**
+onto element attributes, **namespaces every id** with the asset name (so two
+icons in one figure never collide on `defs`/clip ids), normalizes the viewBox,
+and writes a namespace-free `assets/icons/<name>.svg` + an attribution record in
+`assets/icons/credits.json` (license/author derived from the Bioicons path). It
+also regenerates `THIRD_PARTY_ICONS.md`.
+
+**Runtime:** `icon_loader.load_icon(name)` returns an origin-normalized
+`svgwrite` Group + intrinsic `(w,h)`, embedding the cleaned shape subtree
+*verbatim* via a tiny `_EmbeddedSVG` BaseElement (avoids lossily round-tripping
+every attribute through svgwrite's shape classes; assets are namespace-free so
+they inherit the Drawing's default SVG namespace). The Group is tagged
+`data-icon-credit`. Entity adapters' `_build_*` helpers point at `load_icon`
+(function names unchanged → registry/EW4/bbox wiring intact); embedded primitives
+go in `convention_check._SKIP_SHAPE_PRIMITIVES` (multi-path composites, like
+molecule/functional_group/liposome).
+
+**Why faithful color (no theming):** recoloring a 12-color illustration to the
+monochrome house palette is lossy; the user prefers the polished original look.
+Embedded icons therefore intentionally ignore the style_dict palette. Trade-off:
+they don't retheme under ACS/Nature/Cell-Press presets (documented limitation).
+
+**Unified info box (`render/info_box.py`):** the former separate legend overlay
+(top-right) and glossary strip (below) are consolidated into **one** bordered box
+in the below-figure strip with stacked **Key / Abbreviations / Credits** sections
+(each omitted when empty). The compositor emits a single `info_box` LayoutEntry;
+the legend/abbreviation sub-groups keep `data-ir-id="legend"`/`"glossary"` so
+existing checks still find them. Row/sample rendering is reused from `legend`
+and `glossary` (single source of truth).
+
+**Auto-credit (`render/credits.py`):** a figure's used icons are derived
+deterministically from the IR (`resolve_entity_primitive` → `ICON_ASSETS`), never
+by scanning output. **CC-BY** icons get a line in the info box's Credits section
+(`render_figure(credits="auto")`, the default; `False` suppresses it); **every**
+used icon (CC0/MIT included) is recorded in a per-figure `<output>.credits.txt`
+sidecar. This keeps generated figures compliant by construction while leaving
+CC0/MIT figures visually unencumbered.

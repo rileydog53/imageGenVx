@@ -35,6 +35,24 @@ def _row_text(entry) -> str:
     return f"{entry.term}{_SEP}{entry.definition}"
 
 
+def glossary_row(
+    entry, x: float, baseline: float, font_family: str, text_color: str,
+) -> svgwrite.text.Text:
+    """One abbreviation row: bold term + ` — definition` at ``baseline``.
+
+    Shared by :func:`glossary_box` and the unified ``render/info_box`` so the row
+    appearance has a single source of truth.
+    """
+    t = svgwrite.text.Text("", insert=(x, baseline), fill=text_color)
+    t["font-size"] = _FONT
+    t["font-family"] = font_family
+    term = svgwrite.text.TSpan(entry.term, x=[x])
+    term["font-weight"] = "bold"
+    t.add(term)
+    t.add(svgwrite.text.TSpan(f"{_SEP}{entry.definition}"))
+    return t
+
+
 def glossary_box_size(entries: list, style_dict: dict | None = None) -> tuple[float, float]:
     """(width, height) of the glossary box for ``entries`` (0,0 when empty)."""
     if not entries:
@@ -86,13 +104,6 @@ def glossary_box(
 
     for i, entry in enumerate(entries):
         row_baseline = y0 + _PAD + _TITLE_H + i * _ROW_H + _FONT * 0.8
-        t = svgwrite.text.Text("", insert=(x0 + _PAD, row_baseline), fill=text_color)
-        t["font-size"] = _FONT
-        t["font-family"] = font_family
-        term = svgwrite.text.TSpan(entry.term, x=[x0 + _PAD])
-        term["font-weight"] = "bold"
-        t.add(term)
-        t.add(svgwrite.text.TSpan(f"{_SEP}{entry.definition}"))
-        g.add(t)
+        g.add(glossary_row(entry, x0 + _PAD, row_baseline, font_family, text_color))
 
     return g

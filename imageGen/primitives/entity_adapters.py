@@ -339,3 +339,12 @@ pipette = _equip_adapter("pipette", _build_pipette, (12.0, 96.0), (28.0, 74.0))
 gel = _equip_adapter("gel", _build_gel, (24.0, 100.0), (40.0, 74.0))
 mouse = _equip_adapter("mouse", _build_mouse, (93.0, 30.0), (84.0, 46.0))
 human_figure = _equip_adapter("human_figure", _build_human, (40.0, 52.0), (44.0, 60.0))
+
+
+# ---------------------------------------------------------------------------
+# Embedded-icon registry (Bioicons) — maps a primitive callable to the asset
+# name it draws (``assets/icons/<name>.svg``). Used by ``render/credits`` to
+# collect attribution for the icons a figure actually uses. Empty until a batch
+# wires embedded-icon adapters; see DECISIONS D9.
+# ---------------------------------------------------------------------------
+ICON_ASSETS: dict = {}
