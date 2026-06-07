@@ -97,6 +97,7 @@ def render_figure(
     strict_labels: bool = False,
     autocrop: bool = False,
     legend: bool = False,
+    credits: bool | str = "auto",
 ) -> Path:
     """Render an IR Figure to a file and return the resolved output Path.
 
@@ -188,26 +189,6 @@ def render_figure(
 
     final_canvas = canvas if canvas is not None else computed_canvas
 
-    # Issue #4: opt-in auto-legend. Detect the glyph conventions the figure uses
-    # and float a key in the top-right corner. Emitted as a normal LayoutEntry so
-    # it draws on top of the figure through the standard write path.
-    if legend:
-        from imageGen.render.legend import (  # noqa: PLC0415 — opt-in import
-            legend as _legend_primitive,
-            legend_glyph_keys_for_figure,
-        )
-        keys = legend_glyph_keys_for_figure(ir)
-        if keys:
-            cw, _ch = final_canvas
-            inset = 12.0
-            entries = entries + [LayoutEntry(
-                _legend_primitive,
-                (keys, (cw - inset, inset)),
-                {"style_dict": style_dict},
-                position=(0.0, 0.0),
-                ir_id="legend",
-            )]
-
     # FR1: draw figure annotations (label / caption / scale_bar) last so they
     # sit above figure content. Until this, `figure.annotations` was never read
     # and these were silent no-ops despite fixtures relying on them.
@@ -215,25 +196,38 @@ def render_figure(
         from imageGen.render.annotations import annotation_entries  # noqa: PLC0415
         entries = entries + annotation_entries(ir, final_canvas, style_dict)
 
-    # FR9: abbreviation glossary. Drawn in a strip *below* the figure (canvas
-    # grows downward) so the key never overlaps figure content. Auto-drawn when
-    # `figure.glossary` is non-empty; emitted as a tagged LayoutEntry.
-    if ir.glossary:
-        from imageGen.render.glossary import (  # noqa: PLC0415
-            glossary_box,
-            glossary_box_size,
-        )
-        gw, gh = glossary_box_size(ir.glossary, style_dict)
+    # Unified info box (Issue #4 legend + FR9 abbreviation glossary + icon
+    # credits) in a strip *below* the figure (canvas grows downward) so the key
+    # never overlaps figure content. Consolidates what used to be a top-right
+    # legend overlay and a separate glossary strip into one box for ease of
+    # reading. Drawn only when a section has content (an all-empty box is never
+    # emitted, so figures with none of the three stay byte-identical).
+    legend_keys: list[str] = []
+    if legend:
+        from imageGen.render.legend import legend_glyph_keys_for_figure  # noqa: PLC0415
+        legend_keys = legend_glyph_keys_for_figure(ir)
+    glossary_entries = list(ir.glossary or [])
+    from imageGen.render.credits import (  # noqa: PLC0415
+        credit_lines as _credit_lines,
+        write_credits_sidecar as _write_credits_sidecar,
+    )
+    credit_section = _credit_lines(ir, credits)
+    if legend_keys or glossary_entries or credit_section:
+        from imageGen.render.info_box import info_box, info_box_size  # noqa: PLC0415
+        bw, bh = info_box_size(legend_keys, glossary_entries, credit_section, style_dict)
         cw, ch = final_canvas
-        gpad = 12.0
+        ipad = 12.0
         entries = entries + [LayoutEntry(
-            glossary_box,
-            (ir.glossary, (gpad, ch + gpad)),
-            {"style_dict": style_dict},
+            info_box,
+            ((ipad, ch + ipad),),
+            {"legend_keys": legend_keys, "glossary_entries": glossary_entries,
+             "credit_lines": credit_section, "style_dict": style_dict},
             position=(0.0, 0.0),
-            ir_id="glossary",
+            ir_id="info_box",
         )]
-        final_canvas = (max(cw, gw + 2 * gpad), ch + gh + 2 * gpad)
+        final_canvas = (max(cw, bw + 2 * ipad), ch + bh + 2 * ipad)
+    # Durable per-figure attribution record for any embedded icons used.
+    _write_credits_sidecar(ir, output_path, credits)
 
     svg_path = output_path if fmt == "svg" else output_path.with_suffix(".svg")
     _write_svg(entries, final_canvas, svg_path)

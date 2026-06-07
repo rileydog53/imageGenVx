@@ -8,8 +8,8 @@ Pins:
      without a PHOSPHORYLATES relation.
   3. legend() draws a bordered box anchored at its top-right corner, with a
      title, one caption per key, and a 'P' badge for phosphorylation.
-  4. render_figure(legend=True) appends a single 'legend' entry; legend=False
-     (default) appends nothing.
+  4. render_figure(legend=True) appends a single unified 'info_box' entry
+     containing the legend section; legend=False (default) appends nothing.
 """
 from __future__ import annotations
 
@@ -139,7 +139,7 @@ def _fig() -> Figure:
     )
 
 
-def test_render_figure_legend_flag_adds_one_legend_entry(tmp_path, monkeypatch):
+def test_render_figure_legend_flag_adds_info_box(tmp_path, monkeypatch):
     import imageGen.render.compositor as C
 
     captured: dict[str, list] = {}
@@ -151,10 +151,17 @@ def test_render_figure_legend_flag_adds_one_legend_entry(tmp_path, monkeypatch):
 
     monkeypatch.setattr(C, "_write_svg", spy)
 
-    C.render_figure(_fig(), tmp_path / "with.svg", legend=True)
+    # legend=True now rides in the single unified info box (which carries a
+    # `legend` sub-group with the glyph rows).
+    with_path = tmp_path / "with.svg"
+    C.render_figure(_fig(), with_path, legend=True)
     ids_with = [e.ir_id for e in captured["entries"]]
-    assert ids_with.count("legend") == 1
+    assert ids_with.count("info_box") == 1
+    svg = with_path.read_text()
+    assert 'data-ir-id="legend"' in svg      # legend section present inside the box
+    assert "Inhibition" in svg               # the figure's INHIBITS glyph caption
 
+    # legend=False with no glossary/credits → no info box at all.
     C.render_figure(_fig(), tmp_path / "without.svg", legend=False)
     ids_without = [e.ir_id for e in captured["entries"]]
-    assert "legend" not in ids_without
+    assert "info_box" not in ids_without

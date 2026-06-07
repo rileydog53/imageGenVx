@@ -22,7 +22,7 @@ import warnings
 
 import svgwrite.container
 
-from imageGen.primitives import _text, cells, lab_equipment, membranes
+from imageGen.primitives import _text, cells, icon_loader, lab_equipment, membranes
 from imageGen.primitives.glyphs import DEFAULT_STYLE as _GLYPH_STYLE
 
 # Fraction of the slot height reserved for the label strip beneath the icon.
@@ -155,43 +155,30 @@ def _equip_adapter(name, build_inner, intrinsic, default_size):
     return draw
 
 
-def _normalised(inner: svgwrite.container.Group, dx: float, dy: float):
-    """Wrap ``inner`` in a translate so a primitive that draws into negative
-    coordinates starts at the local origin."""
-    if dx == 0.0 and dy == 0.0:
-        return inner
-    g = svgwrite.container.Group(transform=f"translate({dx},{dy})")
-    g.add(inner)
-    return g
-
-
-def _build_well_plate(style_dict):
-    return lab_equipment.well_plate(style_dict=style_dict)
-
-
-def _build_microscope(style_dict):
-    return lab_equipment.microscope(position=(0.0, 0.0), style_dict=style_dict)
-
-
 def _build_pipette(style_dict):
     return lab_equipment.pipette(position=(0.0, 0.0), style_dict=style_dict)
 
 
-def _build_gel(style_dict):
-    return lab_equipment.gel_lane(position=(0.0, 0.0), style_dict=style_dict)
-
-
-def _build_tube(style_dict):
-    return lab_equipment.tube(position=(0.0, 0.0), style_dict=style_dict)
-
-
-def _build_mouse(style_dict):
-    # mouse() draws its tail to x≈-18; shift right so the icon starts at x=0.
-    return _normalised(lab_equipment.mouse(position=(0.0, 0.0), style_dict=style_dict), 18.0, 0.0)
-
-
 def _build_human(style_dict):
     return lab_equipment.human_figure(position=(0.0, 0.0), style_dict=style_dict)
+
+
+# ---------------------------------------------------------------------------
+# Embedded-icon adapters (Bioicons; DECISIONS D9)
+# ---------------------------------------------------------------------------
+
+def _icon_adapter(asset_name: str, default_size: tuple[float, float]):
+    """Entity primitive that draws an embedded Bioicons asset fit into the slot.
+
+    Faithful color (the asset keeps its own fills). Registered in ``ICON_ASSETS``
+    (below) so ``render/credits`` can collect attribution for figures using it.
+    """
+    def draw(label, position, size=default_size, color=None, style_dict=None):
+        inner, intrinsic = icon_loader.load_icon(asset_name)
+        return _fit_icon(inner, intrinsic, label, position, size, style_dict or {})
+    draw.__name__ = asset_name
+    draw.__qualname__ = asset_name
+    return draw
 
 
 # ---------------------------------------------------------------------------
@@ -332,10 +319,35 @@ endoplasmic_reticulum = _organelle_adapter("er")
 golgi = _organelle_adapter("golgi")
 lysosome = _organelle_adapter("lysosome")
 
-microscope = _equip_adapter("microscope", _build_microscope, (50.0, 60.0), (60.0, 64.0))
-well_plate = _equip_adapter("well_plate", _build_well_plate, (138.0, 98.0), (96.0, 70.0))
-tube = _equip_adapter("tube", _build_tube, (22.0, 50.0), (40.0, 58.0))
+# Embedded Bioicons (faithful color). The EW4 default for EQUIPMENT is
+# microscope; SAMPLE is tube. `gel` is the agarose gel; `western_blot` is the
+# distinct blot icon (EW4 routes "blot"/"western" labels there).
+microscope = _icon_adapter("microscope", (60.0, 64.0))
+tube = _icon_adapter("tube", (40.0, 58.0))
+mouse = _icon_adapter("mouse", (84.0, 46.0))
+well_plate = _icon_adapter("well_plate", (96.0, 70.0))
+gel = _icon_adapter("agarose_gel", (40.0, 74.0))
+western_blot = _icon_adapter("western_blot", (60.0, 64.0))
+flask = _icon_adapter("flask", (44.0, 60.0))
+centrifuge = _icon_adapter("centrifuge", (64.0, 56.0))
+
+# Still hand-drawn (no clean Bioicons source) — re-trace planned (Batch 2).
 pipette = _equip_adapter("pipette", _build_pipette, (12.0, 96.0), (28.0, 74.0))
-gel = _equip_adapter("gel", _build_gel, (24.0, 100.0), (40.0, 74.0))
-mouse = _equip_adapter("mouse", _build_mouse, (93.0, 30.0), (84.0, 46.0))
 human_figure = _equip_adapter("human_figure", _build_human, (40.0, 52.0), (44.0, 60.0))
+
+
+# ---------------------------------------------------------------------------
+# Embedded-icon registry (Bioicons) — maps a primitive callable to the asset
+# name it draws (``assets/icons/<name>.svg``). Used by ``render/credits`` to
+# collect attribution for the icons a figure actually uses; see DECISIONS D9.
+# ---------------------------------------------------------------------------
+ICON_ASSETS: dict = {
+    microscope: "microscope",
+    tube: "tube",
+    mouse: "mouse",
+    well_plate: "well_plate",
+    gel: "agarose_gel",
+    western_blot: "western_blot",
+    flask: "flask",
+    centrifuge: "centrifuge",
+}
