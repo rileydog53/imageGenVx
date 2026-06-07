@@ -304,7 +304,7 @@ names warn and fall back to the type default.
 | Subcellular | `ribosome`, `vesicle` (simple sphere), `liposome` (lipid-bilayer ring) |
 | Nucleic acids | `gene_helix` (DNA), `rna_helix` (RNA), `mrna_helix` (5' cap + polyA), `primer_helix` (3' arrow) |
 | Lab equipment (embedded icons) | `microscope`, `tube`, `well_plate`, `mouse`, `gel` (agarose), `western_blot`, `flask`, `centrifuge` — real Bioicons art (faithful color; see note) |
-| Lab equipment (simple glyph) | `pipette`, `flow_cytometer`, `sequencer`, `petri_dish`, `syringe`, `human_figure` |
+| Lab equipment (house-style glyph) | `pipette`, `human_figure` (re-traced, themeable), `flow_cytometer`, `sequencer`, `petri_dish`, `syringe` |
 | Cell shapes | `cell` (generic), `cell_neuron`, `cell_epithelial`, `cell_immune` |
 | Organelles | `mitochondrion`, `nucleus`, `endoplasmic_reticulum`, `golgi`, `lysosome` |
 | Chemical structure | `molecule` — 2-D structure; **also set `style.smiles`**. `functional_group` — named callout; **also set `style.functional_group`** (see below) |

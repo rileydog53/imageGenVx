@@ -337,3 +337,17 @@ by scanning output. **CC-BY** icons get a line in the info box's Credits section
 used icon (CC0/MIT included) is recorded in a per-figure `<output>.credits.txt`
 sidecar. This keeps generated figures compliant by construction while leaving
 CC0/MIT figures visually unencumbered.
+
+**Re-trace fallback (`primitives/lab_icons.py`, Batch 2):** `pipette` and
+`human_figure` had no clean simple Bioicons source (wrong instrument / 400 kB /
+no good "person"), so they are hand-authored from a few svgwrite shapes — drawn
+fresh, not copied, so they carry no license burden, stay themeable via
+style_dict (unlike embedded icons), and keep real `_PRIMITIVE_SHAPE` tags
+(pipette → rect, human_figure → circle). They flow through the same
+`_equip_adapter` fit+label path the old `lab_equipment` icons used.
+
+**Slot confinement:** embedded icons are clipped to their viewBox via a nested
+`<svg>` viewport and tagged `data-icon-credit`, which `legibility_check._walk`
+skips — necessary because `_walk` resolves only `translate`, not the `scale`
+icons are placed with, so otherwise a loose asset (the centrifuge) was measured
+at full intrinsic size and the auto-expand-to-content frame blew the canvas up.
