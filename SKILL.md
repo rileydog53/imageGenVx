@@ -280,6 +280,16 @@ never both.
 `type` ∈ `protein`, `complex`, `ligand`, `receptor`, `kinase`, `gene`, `rna`,
 `metabolite`, `cell`, `organelle`, `equipment`, `sample`, `generic`.
 
+The cellular / method-figure types render as domain icons. The label is
+inspected first: a keyword picks a specific glyph automatically — e.g. an
+`equipment` labelled "Western blot" or "SDS-PAGE" draws a gel, "96-well plate"
+a well plate, "mouse" a mouse; an `organelle` "Nucleus" draws a nucleus, "Golgi"
+the Golgi; a `cell` "Neuron" / "T cell" draws the neuron / immune-cell shape.
+With no recognised keyword the type default is used: `cell` → a cell outline,
+`organelle` → a mitochondrion, `equipment` → a microscope, `sample` → a tube.
+Set a `style.primitive` override (below) to force a specific glyph regardless of
+the label.
+
 #### Glyph overrides — `style.primitive`
 
 The `type` above picks a default shape. To render an entity with a more
@@ -291,10 +301,26 @@ names warn and fall back to the type default.
 |---|---|
 | Proteins / enzymes | `kinase`, `phosphatase`, `gpcr`, `receptor`, `transcription_factor`, `protein_complex`, `antibody` |
 | Membrane transport | `ion_channel`, `transporter`, `pump` |
-| Subcellular | `ribosome`, `vesicle` |
+| Subcellular | `ribosome`, `vesicle` (simple sphere), `liposome` (lipid-bilayer ring) |
 | Nucleic acids | `gene_helix` (DNA), `rna_helix` (RNA), `mrna_helix` (5' cap + polyA), `primer_helix` (3' arrow) |
-| Lab equipment | `flask`, `centrifuge`, `flow_cytometer`, `sequencer`, `petri_dish`, `syringe` |
+| Lab equipment (glyph) | `flask`, `centrifuge`, `flow_cytometer`, `sequencer`, `petri_dish`, `syringe` |
+| Lab equipment (detailed) | `microscope`, `well_plate`, `tube`, `pipette`, `gel`, `mouse`, `human_figure` |
+| Cell shapes | `cell` (generic), `cell_neuron`, `cell_epithelial`, `cell_immune` |
+| Organelles | `mitochondrion`, `nucleus`, `endoplasmic_reticulum`, `golgi`, `lysosome` |
+| Chemical structure | `molecule` — 2-D structure; **also set `style.smiles`**. `functional_group` — named callout; **also set `style.functional_group`** (see below) |
 | Domain idioms | `voltage_trace` (action-potential V-vs-t plot) |
+
+For `molecule`, add a `style.smiles` entry alongside the override: e.g.
+`{"id": "glc", "type": "metabolite", "label": "Glucose", "style": {"primitive":
+"molecule", "smiles": "C(C1C(C(C(C(O1)O)O)O)O)O"}}`. This renders a single
+metabolite's structure *inline in a pathway*; full reaction schemes still use
+the `reaction_scheme` archetype + `--smiles-map`. A missing/invalid SMILES
+warns and falls back to a label only.
+
+For `functional_group`, set `style.functional_group` to one of `carboxyl`,
+`amine`, `phosphate`, `hydroxyl`, `methyl`, `aldehyde`, `ester` — or just name
+the group in the entity `label` (e.g. `label: "amine"`) and omit the key. An
+unknown group warns and falls back to a label only.
 
 Example: `{"id": "igg", "type": "protein", "label": "IgG", "style":
 {"primitive": "antibody"}}`.

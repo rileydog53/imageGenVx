@@ -41,7 +41,6 @@ Step coupling:
 """
 from __future__ import annotations
 
-import importlib
 import warnings
 from pathlib import Path
 from typing import Any, Literal
@@ -49,14 +48,12 @@ from typing import Any, Literal
 import svgwrite
 
 from imageGen.ir.schema import Archetype, Figure
-from imageGen.layout.label_placement import LabelPlacementError, place_labels
+from imageGen.layout.label_placement import place_labels
 from imageGen.layout.panel_layout import (
     PANEL_DEFAULT_PARAMS,
     layout_panel,
 )
-from imageGen.layout._geom import entities_per_band, max_entity_bbox  # retained for tests that import via this module
 from imageGen.layout.pathway_layout import (
-    PATHWAY_DEFAULT_PARAMS,
     _PATHWAY_COMPATIBLE_ARCHETYPES,
     compute_pathway_canvas,
     layout_pathway,
@@ -71,7 +68,7 @@ from imageGen.layout.reaction_layout import (
 )
 from imageGen.layout.types import LayoutEntry
 from imageGen.render.export import svg_to_pdf, svg_to_png
-from imageGen.styles.loader import DEFAULT_PRESET, load_style, load_preset_full
+from imageGen.styles.loader import DEFAULT_PRESET, load_style
 
 # ---------------------------------------------------------------------------
 # Constants

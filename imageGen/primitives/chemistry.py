@@ -483,32 +483,15 @@ def render_reaction(
                 cursor += plus_size + gap
         return cursor
 
-    def _render_conditions_at(
-        arrow_mid_x: float, y_mol_top: float,
-    ) -> None:
-        """Render above/below condition text centred on arrow_mid_x."""
-        if not conditions:
-            return
+    def _render_conditions_at(arrow_mid_x: float, y_mol_top: float) -> None:
+        """Render above/below condition text centred on arrow_mid_x.
 
-        def _ctext(text: str, y: float) -> svgwrite.text.Text:
-            return svgwrite.text.Text(
-                text,
-                insert=(arrow_mid_x, y),
-                font_size=cond_size, fill=str(style["chem_conditions_color"]),
-                font_family=str(style["label_font_family"]),
-                text_anchor="middle",
-            )
-
-        if above_lines:
-            n = len(above_lines)
-            for i, line in enumerate(above_lines):
-                y = y_mol_top - cond_offset - line_gap * (n - 1 - i)
-                group.add(_ctext(line, y))
-        if conditions.get("below"):
-            group.add(_ctext(
-                str(conditions["below"]),
-                y_mol_top + mol_h + cond_offset + cond_size,
-            ))
+        Thin wrapper over the shared ``_emit_conditions`` so single- and
+        multi-step schemes place conditions identically.
+        """
+        _emit_conditions(
+            group, conditions, above_lines, arrow_mid_x, y_mol_top, mol_h, style,
+        )
 
     if not stack:
         # ---- Original horizontal layout ----

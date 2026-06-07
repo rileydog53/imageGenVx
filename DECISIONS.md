@@ -125,3 +125,162 @@ SMILES map and the round-trip through `render_figure`'s kwarg becomes
 cumbersome, add `figure.smiles_map: dict[str, str] | None = None` to
 the IR schema as a thin convenience layer (with the kwarg still
 overriding).
+
+---
+
+## D5 — `cells` / `lab_equipment` wired via an adapter layer, not direct dispatch
+
+**Decided:** 2026-06-06 (cleanup pass)
+**Where enforced:** `primitives/entity_adapters.py`, `layout/_geom.py`,
+`verify/convention_check.py`
+
+The `cells` and `lab_equipment` modules were fully built and tested but
+*unreachable*: `ENTITY_TO_PRIMITIVE` / `PRIMITIVE_REGISTRY` only referenced
+`proteins`, `glyphs`, `nucleic_acids`, so the documented `cell` / `organelle`
+/ `equipment` / `sample` entity types silently rendered as a generic protein
+box. They are now wired:
+
+- `CELL → cell`, `ORGANELLE → mitochondrion`, `EQUIPMENT → microscope`,
+  `SAMPLE → tube` defaults, plus `primitive=` overrides for the full set
+  (cell styles, 5 organelles, microscope/well_plate/tube/pipette/gel/mouse/
+  human_figure).
+
+**Why an adapter layer (`entity_adapters.py`) instead of editing those
+modules:** the dispatch convention is
+`(label, position_centre, *, size, color, style_dict)` with a fit-aware label.
+`cells.cell_outline` returns `(group, curve)` with no label/position;
+`lab_equipment` icons draw at a local origin at an intrinsic size and don't
+scale. The adapters scale-to-fit each icon into the slot, add a wrap/shrink
+label via `_text.fit_label` (so wide method labels don't spill — see the
+scrnaseq workflow), and keep the underlying modules (and their tests)
+untouched.
+
+**Coupling note:** `convention_check._PRIMITIVE_SHAPE` must carry a shape tag
+for every `PRIMITIVE_REGISTRY` entry, else it raises `KeyError` at verify
+time. `tests/test_entity_adapters.py::test_primitive_shape_covers_registry`
+now guards this.
+
+**Not wired (deliberate):** the `membranes` standalone draw functions
+(compartment-boundary primitives; `membranes.nuclear_envelope` is reached
+transitively via the `nucleus` organelle). `render_molecule` and
+`render_functional_group` were subsequently wired — see D6.
+
+---
+
+## D6 — chemistry-as-entity (`molecule`, `functional_group`) carries its input in `style`, and is skipped by `convention_check`
+
+**Decided:** 2026-06-06 (EW1, EW2)
+**Where enforced:** `primitives/entity_adapters.py`, `layout/_geom.py`,
+`verify/convention_check.py`
+
+A `metabolite` / `generic` entity with
+`style={"primitive": "molecule", "smiles": "<SMILES>"}` now renders its 2-D
+RDKit structure inline in a pathway (previously SMILES rendered only inside
+`reaction_scheme` via `--smiles-map`). The `functional_group` primitive is the
+same pattern: the group name comes from `style.functional_group` (or the entity
+label), and `render_functional_group` supplies the structure + its own name
+label, so the adapter adds no second label.
+
+**Why SMILES rides in `style`, not a new IR field:** the dispatch convention
+passes a *label*, not a structure string. `style` is already the per-entity
+extension channel (`primitive`, `sublabel`, `dna_break`) and flows into the
+primitive's `style_dict` untouched, so the adapter reads `style["smiles"]` with
+no schema change — keeping D4's "SMILES is not an IR field" stance intact. (The
+reaction `--smiles-map` kwarg path is unchanged and remains the route for full
+schemes.)
+
+**Why `convention_check` skips it:** that check verifies an entity renders with
+its *EntityType's conventional shape*. A molecule is a composite RDKit drawing,
+not a type glyph — exactly the case reactions are already skipped for. It is
+listed in `_SKIP_SHAPE_PRIMITIVES` (not `_PRIMITIVE_SHAPE`), and the
+registry-coverage guard test accepts either set. This also makes the
+missing/invalid-SMILES fallback (warn + label-only) safe: no shape is required.
+
+**Cost containment:** `chemistry` (hence RDKit) is imported lazily inside the
+adapter, so the `_geom` import chain stays RDKit-free for figures with no
+molecules.
+
+---
+
+## D7 — `liposome` surfaces the dead membrane primitives as a vesicle glyph (EW3)
+
+**Decided:** 2026-06-07 (EW3)
+**Where enforced:** `primitives/entity_adapters.py`, `layout/_geom.py`,
+`verify/convention_check.py`, `primitives/membranes.py`
+
+`membranes.cell_membrane_outline` + `membranes.lipid_bilayer` were built and
+tested but unreachable (only `nuclear_envelope` was, transitively via the
+`nucleus` organelle). They are now reachable through a new `liposome` entity
+primitive — a closed phospholipid bilayer ring (two leaflets of head groups
+around an empty lumen) — via `style={"primitive": "liposome"}`. The adapter
+consumes `cell_membrane_outline`'s curve purely for anchoring and renders only
+`lipid_bilayer`, so the first shape element is the bilayer tail `<polygon>`
+(its `_PRIMITIVE_SHAPE` tag — it is *not* skipped, unlike the composite
+molecule/functional_group of D6).
+
+**Why a new name, not `vesicle`:** `glyphs.vesicle` already exists as a simple
+filled-circle "membrane-bound sphere". `liposome` is the distinct textbook
+bilayer-cross-section drawing; the two coexist in `PRIMITIVE_REGISTRY`.
+
+**EW3's original premise was stale.** The backlog claimed `_compartment_band`
+"draws a plain band" — it does not: it already renders a lipid-bilayer border
+for `MEMBRANE` compartments (`_draw_bilayer_border`) and a nuclear-envelope
+border for `NUCLEUS` (`_draw_nuclear_border`), as flat horizontal stripes.
+Those inline stripe helpers are *deliberately separate* from `lipid_bilayer`
+(top-anchored straight stripe vs. symmetric offset from a closed curve), so
+compartment rendering was left untouched and no golden images shifted. EW3 was
+therefore re-scoped from "wire into compartments" to "surface as an entity",
+matching the EW1/EW2 adapter pattern.
+
+**Seam fix:** surfacing `lipid_bilayer` exposed a latent bug — on a closed
+curve its tail polygon (`outer_pts + reversed(inner_pts)`) never closed the
+outer arc across the angle-0 seam, leaving a one-segment wedge gap in the fill.
+Fixed by repeating each ring's first point so both radial bridges coincide at
+the seam (the standard single-polygon annulus technique). Safe because
+`lipid_bilayer` had no other call sites and the membrane tests assert only
+"returns a Group / doesn't crash".
+
+---
+
+## D8 — label-keyword glyph inference for coarse entity types (EW4), via a resolver shared with `convention_check`
+
+**Decided:** 2026-06-07 (EW4)
+**Where enforced:** `layout/_geom.py` (`_INFERENCE_RULES`, `infer_primitive`,
+`resolve_entity_primitive`), `layout/pathway_layout.py`,
+`verify/convention_check.py`
+
+CELL / ORGANELLE / EQUIPMENT / SAMPLE each had one label-agnostic default
+(generic cell / mitochondrion / microscope / tube), so a `"Western blot"`
+equipment drew as a microscope. When no explicit `style.primitive` is set, the
+entity label is now matched against a per-type keyword table and, on a hit,
+dispatched to the more specific registered glyph (blot/gel → `gel`, "Nucleus" →
+`nucleus`, "T cell" → `cell_immune`, …). No match → the type default, exactly as
+before.
+
+**Chosen over the two alternatives in the backlog:** richer per-type defaults
+don't help (still one glyph per type), and SKILL.md-only guidance ("always set
+`style.primitive`") leaves the default dumb when the LLM frontend omits it.
+Inference makes the out-of-the-box render correct while the override remains the
+escape hatch.
+
+**Why a single `resolve_entity_primitive` shared by layout and
+`convention_check`:** the check verifies an entity's drawn shape against its
+*resolved* primitive. If inference lived only in dispatch, inferring a
+different-shaped glyph than the type default (e.g. `nucleus`=circle vs the
+ORGANELLE default `mitochondrion`=polygon) would make `convention_check` expect
+the wrong shape and raise. Both now call the same resolver
+(override → inference → default), so they can never disagree.
+`tests/test_entity_adapters.py::test_inferred_organelle_passes_convention_check`
+guards this.
+
+**Matching rule:** keywords match at a word-start boundary (`\b` + keyword) so
+stems work (`"epitheli"` → *epithelial*) without firing mid-word (`\bplate`
+does **not** match inside *template*). Only non-default glyphs are listed, so a
+figure's rendering changes only when a label actually names a specific glyph —
+this kept the golden blast radius to one intended image (`three_panel_workflow`,
+"Western blot" microscope → gel).
+
+**Sizing:** an inferred glyph keeps the *entity-type* bbox (not the glyph's
+canonical bbox), so layout positions stay identical to the pre-inference
+default; only an explicit override re-sizes to the chosen glyph. This is why
+inference never perturbs spacing/collision, only the drawn icon.

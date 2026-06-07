@@ -70,6 +70,7 @@ from imageGen.ir.schema import (
     Entity,
     EntityType,
     Figure,
+    Relation,
     RelationType,
 )
 from imageGen.layout._geom import (
@@ -78,6 +79,7 @@ from imageGen.layout._geom import (
     PRIMITIVE_REGISTRY,
     PRIMITIVE_TO_BBOX,
     max_entity_bbox,
+    resolve_entity_primitive,
 )
 from imageGen.layout._layered import order_within_ranks, rank_nodes, tighten_ranks
 from imageGen.layout.types import LayoutEntry
@@ -521,7 +523,6 @@ def compute_pathway_canvas(
     if len(compartments) == 1 and compartments[0].id == _IMPLICIT_COMPARTMENT_ID:
         max_sibs = _max_topo_siblings(figure)
         if max_sibs > 1:
-            edge_margin = float(params["pathway_edge_margin"])
             l20_h = max_sibs * (max_entity_h + row_v_gap) + _LABEL_MARGIN + 2 * edge_margin
             heights = [max(heights[0], l20_h)]
 
@@ -1557,8 +1558,8 @@ def _orthogonal_waypoints(
     """
     sx, sy = src_center
     tx, ty = tgt_center
-    shw, shh = src_bbox[0] / 2, src_bbox[1] / 2
-    thw, thh = tgt_bbox[0] / 2, tgt_bbox[1] / 2
+    shh = src_bbox[1] / 2
+    thh = tgt_bbox[1] / 2
     src_top, src_bottom = src_band
     tgt_top, tgt_bottom = tgt_band
 
@@ -1909,26 +1910,30 @@ def layout_pathway(
         ))
 
     for e in figure.entities:
-        # V2 / L6: per-entity primitive override via entity.style["primitive"].
+        # V2 / L6: per-entity primitive override via entity.style["primitive"];
+        # EW4: when absent, infer a specific glyph from the label, else the
+        # entity-type default. resolve_entity_primitive owns that policy (and is
+        # shared with convention_check); the warning for an unknown explicit
+        # override name stays here.
         prim_override_name = (e.style or {}).get("primitive")
-        if prim_override_name is not None:
-            override_prim = PRIMITIVE_REGISTRY.get(prim_override_name)
-            if override_prim is None:
-                warnings.warn(
-                    f"Entity {e.id!r}: unknown primitive override "
-                    f"{prim_override_name!r}; using default for type "
-                    f"{e.type.value!r}. Known primitives: "
-                    f"{sorted(PRIMITIVE_REGISTRY)}.",
-                    UserWarning,
-                    stacklevel=2,
-                )
-                override_prim = ENTITY_TO_PRIMITIVE[e.type]
-        else:
-            override_prim = ENTITY_TO_PRIMITIVE[e.type]
+        explicit_override = (
+            prim_override_name is not None and prim_override_name in PRIMITIVE_REGISTRY
+        )
+        if prim_override_name is not None and not explicit_override:
+            warnings.warn(
+                f"Entity {e.id!r}: unknown primitive override "
+                f"{prim_override_name!r}; using default for type "
+                f"{e.type.value!r}. Known primitives: "
+                f"{sorted(PRIMITIVE_REGISTRY)}.",
+                UserWarning,
+                stacklevel=2,
+            )
+        override_prim = resolve_entity_primitive(e)
 
-        # Size: use the override primitive's canonical bbox when overriding,
-        # otherwise use the entity-type bbox (already scaled by L9 factor).
-        if prim_override_name is not None and override_prim is not ENTITY_TO_PRIMITIVE[e.type]:
+        # Size: an *explicit* override sizes by the chosen glyph's canonical
+        # bbox; a default or label-inferred glyph keeps the entity-type bbox
+        # (already scaled by L9) so layout positions stay stable.
+        if explicit_override and override_prim is not ENTITY_TO_PRIMITIVE[e.type]:
             size = PRIMITIVE_TO_BBOX.get(override_prim, effective_bbox[e.type])
         else:
             # V2 / L9: forward effective size explicitly so primitives render at
@@ -2098,7 +2103,7 @@ _SIDE_PRIORITY: dict[str, tuple[str, ...]] = {
 
 
 def _relation_label_priority(
-    relation: "Relation", dx: float, dy: float, has_reciprocal: bool
+    relation: Relation, dx: float, dy: float, has_reciprocal: bool
 ) -> tuple[str, ...]:
     """Candidate-side order for a relation label (FR8).
 

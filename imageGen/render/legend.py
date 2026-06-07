@@ -19,6 +19,7 @@ import svgwrite.text
 
 from imageGen.ir.schema import Figure, RelationType
 from imageGen.primitives import arrows
+from imageGen.render._measure import estimate_text_w as _estimate_text_w
 
 # Each relation type maps to a *glyph key* (its visual appearance). Types that
 # render with the same glyph share a key so the legend shows one row per glyph.
@@ -96,11 +97,6 @@ def legend_glyph_keys_for_figure(figure: Figure) -> list[str]:
         if (e.style or {}).get("phosphorylated"):
             present.add("phosphorylation")
     return [k for k in _GLYPH_ORDER if k in present]
-
-
-def _estimate_text_w(text: str, font_size: float) -> float:
-    """Rough monospace-ish width estimate (matches the 0.6 factor used elsewhere)."""
-    return max(1, len(text)) * font_size * 0.6
 
 
 def legend_box_size(keys: list[str]) -> tuple[float, float]:

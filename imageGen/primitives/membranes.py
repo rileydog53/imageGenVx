@@ -36,6 +36,8 @@ import svgwrite
 import svgwrite.container
 import svgwrite.shapes
 
+from imageGen.primitives._svg import polyline_to_svg_points as _polyline_to_svg_points
+
 # ---------------------------------------------------------------------------
 # Style defaults -- flat namespaced keys for Phase 4 preset union
 # ---------------------------------------------------------------------------
@@ -279,12 +281,6 @@ def _place_heads(
         accumulated += seg_len
 
 
-def _polyline_to_svg_points(
-    points: list[tuple[float, float]]
-) -> list[tuple[float, float]]:
-    """Round float coordinates to 2 decimal places for clean SVG output."""
-    return [(round(x, 2), round(y, 2)) for x, y in points]
-
 
 # ---------------------------------------------------------------------------
 # Public functions
@@ -374,8 +370,16 @@ def lipid_bilayer(
 
     group = svgwrite.container.Group()
 
-    # Tail region: filled polygon spanning outer -> inner (reverse) boundaries
-    tail_pts = _polyline_to_svg_points(outer_pts + list(reversed(inner_pts)))
+    # Tail region: filled polygon spanning outer -> inner (reverse) boundaries.
+    # For a closed curve, repeat each ring's first point so both leaflet arcs
+    # close fully; the two radial bridges then coincide at the seam (a zero-area
+    # spoke), filling a clean annulus instead of leaving a one-segment wedge gap.
+    if curve.closed:
+        outer_loop = outer_pts + [outer_pts[0]]
+        inner_loop = inner_pts + [inner_pts[0]]
+    else:
+        outer_loop, inner_loop = outer_pts, inner_pts
+    tail_pts = _polyline_to_svg_points(outer_loop + list(reversed(inner_loop)))
     group.add(svgwrite.shapes.Polygon(
         points=tail_pts,
         fill=str(s["bilayer_tail_fill"]),

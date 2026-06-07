@@ -31,6 +31,7 @@ import svgwrite.text
 
 from imageGen.ir.schema import Annotation, AnnotationType, Figure, NamedSlot
 from imageGen.layout.types import LayoutEntry
+from imageGen.render._measure import estimate_text_w as _estimate_text_w
 
 # Inset (px) from the canvas edge for slot-anchored annotations.
 _SLOT_INSET = 14.0
@@ -101,11 +102,6 @@ def _baseline_y(y: float, vertical: str, font_size: float) -> float:
     if vertical == "bottom":
         return y - font_size * 0.2
     return y + font_size * 0.35  # middle
-
-
-def _estimate_text_w(text: str, font_size: float) -> float:
-    """Rough text width (matches the 0.6 factor used across the renderer)."""
-    return max(1, len(text)) * font_size * 0.6
 
 
 def _label(
