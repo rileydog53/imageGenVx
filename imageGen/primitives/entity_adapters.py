@@ -22,7 +22,7 @@ import warnings
 
 import svgwrite.container
 
-from imageGen.primitives import _text, cells, icon_loader, lab_equipment, membranes
+from imageGen.primitives import _text, cells, icon_loader, lab_icons, membranes
 from imageGen.primitives.glyphs import DEFAULT_STYLE as _GLYPH_STYLE
 
 # Fraction of the slot height reserved for the label strip beneath the icon.
@@ -156,11 +156,11 @@ def _equip_adapter(name, build_inner, intrinsic, default_size):
 
 
 def _build_pipette(style_dict):
-    return lab_equipment.pipette(position=(0.0, 0.0), style_dict=style_dict)
+    return lab_icons.pipette(style_dict=style_dict)
 
 
 def _build_human(style_dict):
-    return lab_equipment.human_figure(position=(0.0, 0.0), style_dict=style_dict)
+    return lab_icons.human_figure(style_dict=style_dict)
 
 
 # ---------------------------------------------------------------------------
@@ -331,9 +331,9 @@ western_blot = _icon_adapter("western_blot", (60.0, 64.0))
 flask = _icon_adapter("flask", (44.0, 60.0))
 centrifuge = _icon_adapter("centrifuge", (64.0, 56.0))
 
-# Still hand-drawn (no clean Bioicons source) — re-trace planned (Batch 2).
-pipette = _equip_adapter("pipette", _build_pipette, (12.0, 96.0), (28.0, 74.0))
-human_figure = _equip_adapter("human_figure", _build_human, (40.0, 52.0), (44.0, 60.0))
+# Re-traced themeable house-style glyphs (Batch 2) — no clean Bioicons source.
+pipette = _equip_adapter("pipette", _build_pipette, lab_icons.PIPETTE_SIZE, (28.0, 74.0))
+human_figure = _equip_adapter("human_figure", _build_human, lab_icons.HUMAN_SIZE, (44.0, 60.0))
 
 
 # ---------------------------------------------------------------------------
