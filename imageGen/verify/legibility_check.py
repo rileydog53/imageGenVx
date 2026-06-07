@@ -223,6 +223,13 @@ def _walk(
         # canvas and defeat whitespace/crop detection.
         if child.get("data-role") == "band":
             continue
+        # Skip embedded-icon subtrees (Bioicons; DECISIONS D9). They are
+        # fit-scaled into their entity slot and clipped to their own nested-SVG
+        # viewport, so their raw geometry must not drive content bounds — and
+        # `_walk` resolves only translate, not the scale these are placed with,
+        # which would otherwise measure them at full intrinsic size.
+        if child.get("data-icon-credit") is not None:
+            continue
         tx, ty = _parse_translate(child.get("transform"))
         cx, cy = ox + tx, oy + ty
         if ctag == "svg":

@@ -61,15 +61,31 @@ def _parse_viewbox(root: ET.Element) -> tuple[float, float, float, float]:
 
 @lru_cache(maxsize=None)
 def _cached_asset(name: str) -> tuple[ET.Element, tuple[float, float]]:
-    """Parse + normalize an asset once: a `<g translate>` wrapper + intrinsic size."""
+    """Parse + normalize an asset once into a nested `<svg>` viewport + size.
+
+    The content is wrapped in a nested ``<svg width=w height=h viewBox=...>`` (not
+    a plain ``<g transform>``): a nested SVG viewport **clips** anything outside
+    the viewBox and maps it onto ``[0,w]×[0,h]``. Without the clip, an asset whose
+    paths stray past its viewBox (e.g. the centrifuge) leaks outside the
+    fit-scaled slot, and the always-on auto-expand-to-content frame then blows the
+    whole figure canvas up to enclose it.
+    """
     asset = _ASSETS_DIR / f"{name}.svg"
     if not asset.exists():
         raise IconNotFoundError(f"no embedded icon asset {name!r} at {asset}")
     root = ET.fromstring(asset.read_text())
     min_x, min_y, w, h = _parse_viewbox(root)
-    wrapper = ET.Element("g")
-    if min_x or min_y:
-        wrapper.set("transform", f"translate({-min_x},{-min_y})")
+    # Nested <svg> viewport: clips any geometry straying outside the viewBox to
+    # [0,w]×[0,h] (cairosvg honors this), so a loose asset like the centrifuge
+    # never spills past its slot. The whole icon subtree is tagged
+    # data-icon-credit on the returned Group and is skipped by
+    # legibility_check._walk, so the (fit-scaled) icon never drives the figure's
+    # content bounds / auto-expand frame.
+    wrapper = ET.Element("svg")
+    wrapper.set("width", f"{w:g}")
+    wrapper.set("height", f"{h:g}")
+    wrapper.set("viewBox", f"{min_x:g} {min_y:g} {w:g} {h:g}")
+    wrapper.set("preserveAspectRatio", "xMidYMid meet")
     for child in list(root):
         wrapper.append(child)
     return wrapper, (w, h)

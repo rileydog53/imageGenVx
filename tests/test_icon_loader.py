@@ -64,6 +64,26 @@ def test_available_icons_lists_store():
     assert "western_blot" in names and "agarose_gel" in names
 
 
+def test_embedded_icon_does_not_inflate_canvas(tmp_path):
+    """Regression: a heavy embedded icon (the centrifuge has explicit-coord
+    shapes far past its viewBox) must stay confined to its slot, not blow the
+    figure canvas up via the auto-expand-to-content frame. Before the fix this
+    rendered ~3200×4200 instead of a small single-entity pathway canvas."""
+    from imageGen.ir.schema import Archetype, Entity, EntityType, Figure
+    from imageGen.render.compositor import render_figure
+    from imageGen.verify.legibility_check import content_bounds
+
+    fig = Figure(
+        archetype=Archetype.PATHWAY,
+        entities=[Entity(id="c", label="Centrifuge", type=EntityType.GENERIC,
+                         style={"primitive": "centrifuge"})],
+    )
+    out = tmp_path / "c.svg"
+    render_figure(fig, out)
+    _content, canvas = content_bounds(out)
+    assert canvas[2] <= 1000 and canvas[3] <= 400, f"canvas blew up: {canvas}"
+
+
 def test_every_asset_has_a_credit_record():
     creds = json.loads((_ASSETS / "credits.json").read_text())
     assets = {p.stem for p in _ASSETS.glob("*.svg")}
