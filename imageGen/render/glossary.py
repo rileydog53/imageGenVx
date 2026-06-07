@@ -17,6 +17,8 @@ import svgwrite.container
 import svgwrite.shapes
 import svgwrite.text
 
+from imageGen.render._measure import estimate_text_w as _estimate_text_w
+
 # Box geometry (px, canvas units before raster scaling). Mirrors legend.py.
 _PAD = 10.0
 _ROW_H = 18.0
@@ -26,11 +28,6 @@ _TITLE_FONT = 12.0
 _TITLE_H = 18.0
 _TERM_GAP = 6.0   # px between a bold term and its definition
 _SEP = " — "
-
-
-def _estimate_text_w(text: str, font_size: float) -> float:
-    """Rough text width (matches the 0.6 factor used across the renderer)."""
-    return max(1, len(text)) * font_size * 0.6
 
 
 def _row_text(entry) -> str:

@@ -44,6 +44,7 @@ import svgwrite
 import svgwrite.container
 import svgwrite.shapes
 
+from imageGen.primitives._svg import polyline_to_svg_points as _polyline_to_svg_points
 from imageGen.primitives.membranes import MembraneCurve, nuclear_envelope
 
 # ---------------------------------------------------------------------------
@@ -169,12 +170,6 @@ def _sample_spiky_circle(
 
     return pts
 
-
-def _polyline_to_svg_points(
-    pts: list[tuple[float, float]],
-) -> list[tuple[float, float]]:
-    """Round float coordinates to 2 decimal places for clean SVG output."""
-    return [(round(x, 2), round(y, 2)) for x, y in pts]
 
 
 # ---------------------------------------------------------------------------

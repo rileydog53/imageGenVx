@@ -61,7 +61,7 @@ import svgwrite.container
 
 from imageGen.layout._geom import ENTITY_BBOX, ENTITY_TO_PRIMITIVE, PRIMITIVE_REGISTRY
 from imageGen.layout.types import LayoutEntry
-from imageGen.primitives import nucleic_acids, proteins
+from imageGen.primitives import proteins
 from imageGen.primitives._text import centered_label as _centered_label
 
 

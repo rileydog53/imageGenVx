@@ -44,6 +44,8 @@ import svgwrite.container
 import svgwrite.shapes
 import svgwrite.text
 
+from imageGen.primitives._svg import polyline_to_svg_points as _polyline_to_svg_points
+
 # ---------------------------------------------------------------------------
 # Style defaults -- flat namespaced keys for Phase 4 preset union
 # ---------------------------------------------------------------------------
@@ -207,13 +209,6 @@ def _add_strand_polyline(
         stroke=stroke,
         stroke_width=stroke_width,
     ))
-
-
-def _polyline_to_svg_points(
-    pts: list[tuple[float, float]],
-) -> list[tuple[float, float]]:
-    """Round float coordinates to 2 decimal places for clean SVG output."""
-    return [(round(x, 2), round(y, 2)) for x, y in pts]
 
 
 def _complement(base: str) -> str:

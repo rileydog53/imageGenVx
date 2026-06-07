@@ -76,14 +76,6 @@ def test_import_ir():
     import imageGen.ir.schema  # noqa: F401
 
 
-def test_import_archetypes():
-    import imageGen.archetypes.pathway  # noqa: F401
-    import imageGen.archetypes.reaction_scheme  # noqa: F401
-    import imageGen.archetypes.workflow  # noqa: F401
-    import imageGen.archetypes.cellular_schematic  # noqa: F401
-    import imageGen.archetypes.mechanism_cartoon  # noqa: F401
-
-
 def test_import_primitives():
     import imageGen.primitives.arrows  # noqa: F401
     import imageGen.primitives.proteins  # noqa: F401
@@ -124,9 +116,6 @@ def test_directory_structure():
     root = Path(__file__).parent.parent
     required = [
         "imageGen/ir/schema.py",
-        "imageGen/archetypes/pathway.py", "imageGen/archetypes/reaction_scheme.py",
-        "imageGen/archetypes/workflow.py", "imageGen/archetypes/cellular_schematic.py",
-        "imageGen/archetypes/mechanism_cartoon.py",
         "imageGen/primitives/arrows.py", "imageGen/primitives/proteins.py",
         "imageGen/primitives/membranes.py", "imageGen/primitives/nucleic_acids.py",
         "imageGen/primitives/cells.py", "imageGen/primitives/chemistry.py",

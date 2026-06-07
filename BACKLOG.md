@@ -24,9 +24,15 @@ figures soon; low = polish / advanced use.
 
 ## Open issues
 
-_None._ All tracked defects from the 2026-06-05 live-render review (FR1–FR10)
-are resolved. Out-of-scope feature ideas live in `V3_FEATURES.md`; wrong-figure
-reports go in `FEEDBACK.md`.
+_No open defects._ The 2026-06-06 cleanup-pass follow-ups (DECISIONS D5) are all
+landed: the `cells`/`lab_equipment` wiring, then **EW1** (molecule-as-entity) and
+**EW2** (functional-group entity) on 2026-06-06 (DECISIONS D6), and **EW3**
+(liposome entity, DECISIONS D7) + **EW4** (label-keyword glyph inference for the
+coarse entity types, DECISIONS D8) on 2026-06-07. The earlier FR1–FR10
+live-render defects and the Phase 7 LLM frontend (now the skill in `SKILL.md`,
+including the reaction `--smiles-map` path) were already done.
+
+Larger future features remain in `V3_FEATURES.md`.
 
 ---
 

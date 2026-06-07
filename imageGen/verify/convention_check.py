@@ -9,11 +9,13 @@ Conventions enforced:
   * Inhibition arrows use a T-bar terminus, never a triangular arrowhead.
     A T-bar and an arrowhead carry different biological meanings
     (repression vs. activation), so the two must never be swapped.
-  * Every entity of a given ``EntityType`` renders with that type's
-    conventional shape. The expected shape is derived table-driven from
-    ``layout/_geom.ENTITY_TO_PRIMITIVE`` — the single source of truth for
-    ``EntityType → primitive`` — so this catches both an inconsistency
-    *and* a whole type rendered with the wrong shape.
+  * Every entity renders with its resolved primitive's conventional shape.
+    The expected primitive comes from ``layout/_geom.resolve_entity_primitive``
+    — the single source of truth shared with ``pathway_layout`` dispatch
+    (explicit ``style.primitive`` override → EW4 label inference → the
+    ``EntityType`` default) — so this catches both an inconsistency *and* a
+    whole type rendered with the wrong shape, and never disagrees with what
+    layout actually drew.
 
 Scope:
   Mirrors ``semantic_check``'s dispatch — REACTION_SCHEME (sub-)figures
@@ -38,8 +40,8 @@ from pathlib import Path
 from typing import Iterator, Literal
 
 from imageGen.ir.schema import Archetype, Figure, RelationType
-from imageGen.layout._geom import ENTITY_TO_PRIMITIVE, PRIMITIVE_REGISTRY
-from imageGen.primitives import glyphs, nucleic_acids, proteins
+from imageGen.layout._geom import resolve_entity_primitive
+from imageGen.primitives import entity_adapters, glyphs, nucleic_acids, proteins
 from imageGen.render.compositor import scoped_id
 
 _Kind = Literal["inhibition_arrow", "entity_shape"]
@@ -77,7 +79,35 @@ _PRIMITIVE_SHAPE = {
     nucleic_acids.mrna_helix: "polyline",
     nucleic_acids.primer_helix: "polyline",
     glyphs.voltage_trace: "path",
+    # cellular-schematic adapters (cells.py) — first shape each draws
+    entity_adapters.cell: "polygon",
+    entity_adapters.cell_neuron: "polygon",
+    entity_adapters.cell_epithelial: "polygon",
+    entity_adapters.cell_immune: "polygon",
+    entity_adapters.mitochondrion: "polygon",
+    entity_adapters.nucleus: "circle",
+    entity_adapters.endoplasmic_reticulum: "polyline",
+    entity_adapters.golgi: "polygon",
+    entity_adapters.lysosome: "circle",
+    # method-figure lab equipment (lab_equipment.py)
+    entity_adapters.microscope: "rect",
+    entity_adapters.well_plate: "rect",
+    entity_adapters.tube: "rect",
+    entity_adapters.pipette: "rect",
+    entity_adapters.gel: "rect",
+    entity_adapters.mouse: "ellipse",
+    entity_adapters.human_figure: "circle",
+    # closed lipid-bilayer vesicle (EW3) — first shape is the bilayer tail ring
+    entity_adapters.liposome: "polygon",
 }
+
+# Primitives whose drawing is a composite (RDKit chemical structure), not a
+# single type-conventional glyph — shape-checked the same way reactions are:
+# not at all. Their entries live here instead of `_PRIMITIVE_SHAPE`.
+_SKIP_SHAPE_PRIMITIVES = frozenset({
+    entity_adapters.molecule,
+    entity_adapters.functional_group,
+})
 
 
 class ConventionCheckError(RuntimeError):
@@ -158,15 +188,12 @@ def _check_entity_shapes(
         group = groups.get(scoped_id(entity.id, panel_chain))
         if group is None:
             continue  # missing element — semantic_check's responsibility
-        # Respect a per-entity primitive override (entity.style["primitive"]),
-        # mirroring pathway_layout's dispatch: a known override name selects
-        # that glyph; an unknown name falls back to the type default.
-        override_name = (entity.style or {}).get("primitive")
-        prim = (
-            PRIMITIVE_REGISTRY.get(override_name, ENTITY_TO_PRIMITIVE[entity.type])
-            if override_name is not None
-            else ENTITY_TO_PRIMITIVE[entity.type]
-        )
+        # Resolve the primitive exactly as pathway_layout does — explicit
+        # override, then EW4 label inference, then the type default — via the
+        # shared resolver, so the expected shape always matches what was drawn.
+        prim = resolve_entity_primitive(entity)
+        if prim in _SKIP_SHAPE_PRIMITIVES:
+            continue  # composite structure (e.g. a molecule) — no conventional shape
         expected = _PRIMITIVE_SHAPE[prim]
         actual = next(
             (_tag(el) for el in group.iter() if _tag(el) in _SHAPE_TAGS), None

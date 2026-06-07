@@ -37,7 +37,7 @@ import svgwrite.path
 import svgwrite.shapes
 import svgwrite.text
 
-from imageGen.primitives._text import (  # noqa: F401
+from imageGen.primitives._text import (
     centered_label as _centered_label,
     fit_label as _fit_label,
     label_for_fit as _label_for_fit,

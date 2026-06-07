@@ -50,8 +50,6 @@ from __future__ import annotations
 import warnings
 from typing import Any
 
-import svgwrite.container
-
 from imageGen.ir.schema import Archetype, Figure, ReactionConditions
 from imageGen.layout.types import LayoutEntry
 from imageGen.primitives.chemistry import render_multistep_reaction, render_reaction

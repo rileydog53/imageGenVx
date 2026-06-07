@@ -35,3 +35,8 @@ scratch/
 
 # Debugging-sibling SVGs emitted next to worked-example PNGs
 references/examples/*.svg
+
+# Per-run visual-debug output from the test suite (regenerated each run)
+tests/figures/*.png
+tests/figures/*.svg
+tests/figures/*.pdf
