@@ -74,6 +74,128 @@ def estimate_text_width(text: str, font_size: float) -> float:
     return max(1, len(text)) * font_size * AVG_CHAR_RATIO
 
 
+# ---------------------------------------------------------------------------
+# Chemical-formula text: numeric subscripts in reagent / condition strings.
+#
+# A flat <text> node renders "H2SO4" with full-size baseline digits — wrong on a
+# publication-grade scheme. Stoichiometric subscripts in a formula are exactly
+# the digit runs that immediately follow an element symbol (a letter), so that
+# is the rule: a digit run is set as <tspan baseline-shift="sub"> only when the
+# preceding character is a letter. Leading/standalone numbers stay on the
+# baseline — locants and coefficients ("2-DG", "100 °C", "50%") are not
+# subscripts. Shared by ``arrows.reaction_arrow`` and ``chemistry`` condition
+# text so both render formulas identically.
+# ---------------------------------------------------------------------------
+
+SUBSCRIPT_SIZE_FACTOR = 0.75  # subscript digits render at 75% of the base size
+SUBSCRIPT_DROP_FACTOR = 0.22  # subscript baseline drops 22% of the base size
+
+
+def chemical_runs(text: str) -> list[tuple[str, bool]]:
+    """Split *text* into ``(segment, is_subscript)`` runs by the formula rule.
+
+    A digit run is flagged subscript only when the immediately preceding
+    character is a letter (an element symbol), so ``"H2SO4"`` →
+    ``[("H", False), ("2", True), ("SO", False), ("4", True)]`` while ``"2-DG"``
+    stays a single baseline run. Concatenating every segment reproduces *text*.
+    """
+    runs: list[tuple[str, bool]] = []
+    i, n = 0, len(text)
+    while i < n:
+        if text[i].isdigit() and i > 0 and text[i - 1].isalpha():
+            j = i
+            while j < n and text[j].isdigit():
+                j += 1
+            runs.append((text[i:j], True))
+            i = j
+        else:
+            j = i + 1
+            while j < n and not (text[j].isdigit() and text[j - 1].isalpha()):
+                j += 1
+            runs.append((text[i:j], False))
+            i = j
+    return runs
+
+
+def formula_text(
+    text: str,
+    insert: tuple[float, float],
+    *,
+    font_family: str,
+    font_size: float,
+    fill: str,
+    anchor: str = "middle",
+) -> svgwrite.text.Text:
+    """A ``<text>`` for *text* with chemical numeric subscripts rendered.
+
+    When *text* has no subscript digits the result is a plain ``<text>`` node,
+    byte-identical to a direct ``svgwrite.text.Text`` (so non-formula labels and
+    existing goldens are unchanged). When it does, each run is a nested
+    ``<tspan>``; subscript runs drop via a relative ``dy`` and a reduced font
+    size, with the next baseline run carrying the inverse ``dy`` to return.
+
+    Three deliberate rendering choices, all forced by cairosvg (the PNG/PDF
+    rasteriser), which only lays out a multi-``<tspan>`` ``<text>`` correctly
+    when it is ``text-anchor="start"``:
+
+    * ``dy`` is used rather than ``baseline-shift`` (cairosvg mis-advances x
+      after a ``baseline-shift`` tspan, overlapping the next glyph);
+    * the requested ``anchor`` is *emulated* by pre-offsetting x and emitting a
+      start-anchored element — ``middle``/``end`` directly on a multi-tspan
+      element makes cairosvg overlap the runs;
+    * the leading baseline run is the ``<text>`` body, not a first ``<tspan>``.
+
+    The x offset uses :func:`estimate_text_width` (the same approximate metric
+    the layout/legibility code uses), counting subscript runs at their reduced
+    size, so a centred formula sits visually centred.
+    """
+    runs = chemical_runs(text)
+    has_sub = any(sub for _seg, sub in runs)
+    if not has_sub:
+        t = svgwrite.text.Text(
+            text, insert=insert, font_family=font_family,
+            font_size=font_size, fill=fill,
+        )
+        t["text-anchor"] = anchor
+        return t
+
+    # Emulate the anchor with start positioning (see docstring).
+    total_w = sum(
+        estimate_text_width(
+            seg, font_size * (SUBSCRIPT_SIZE_FACTOR if sub else 1.0)
+        )
+        for seg, sub in runs
+    )
+    ix, iy = insert
+    if anchor == "middle":
+        x0 = ix - total_w / 2.0
+    elif anchor == "end":
+        x0 = ix - total_w
+    else:
+        x0 = ix
+
+    # Leading baseline run as the <text> body; remaining runs as tspans. ``dy``
+    # is relative, so track the current vertical offset and emit the delta to
+    # reach each run's target (drop for subscripts, 0 for baseline). debug off so
+    # svgwrite's strict validator accepts the float font-size on the tspans.
+    t = svgwrite.text.Text(
+        runs[0][0], insert=(x0, iy), font_family=font_family,
+        font_size=font_size, fill=fill,
+    )
+    t._parameter.debug = False
+    drop = font_size * SUBSCRIPT_DROP_FACTOR
+    current = 0.0
+    for seg, sub in runs[1:]:
+        target = drop if sub else 0.0
+        span = svgwrite.text.TSpan(seg, dy=[target - current])
+        if sub:
+            span._parameter.debug = False
+            span["font-size"] = font_size * SUBSCRIPT_SIZE_FACTOR
+        t.add(span)
+        current = target
+    return t
+
+
 def _best_two_line_split(label: str) -> Optional[tuple[str, str]]:
     """Split ``label`` into two balanced lines at the most central break point.
 

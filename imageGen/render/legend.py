@@ -17,7 +17,7 @@ import svgwrite.container
 import svgwrite.shapes
 import svgwrite.text
 
-from imageGen.ir.schema import Figure, RelationType
+from imageGen.ir.schema import Archetype, Figure, RelationType
 from imageGen.primitives import arrows
 from imageGen.render._measure import estimate_text_w as _estimate_text_w
 
@@ -97,6 +97,37 @@ def legend_glyph_keys_for_figure(figure: Figure) -> list[str]:
         if (e.style or {}).get("phosphorylated"):
             present.add("phosphorylation")
     return [k for k in _GLYPH_ORDER if k in present]
+
+
+# The filled-triangle arrow glyph ("activation" key) is shared by these three
+# relation types. Labelling it "Activation" is only correct when the figure
+# actually encodes one of the activation-family relations below.
+_ACTIVATION_FAMILY = {RelationType.ACTIVATES, RelationType.TRANSCRIBES}
+
+
+def activation_caption_for_figure(figure: Figure) -> str:
+    """Context-aware caption for the filled-arrow ("activation") legend row.
+
+    The glyph is shared by ACTIVATES / TRANSCRIBES / GENERIC, so a hardcoded
+    "Activation" is wrong when no activation relation exists: a workflow's
+    generic arrows are process steps; any other figure's bare arrow is a plain
+    reaction / "leads to". Returns the caption that matches the figure.
+    """
+    if any(r.type in _ACTIVATION_FAMILY for r in figure.relations):
+        return "Activation"
+    if figure.archetype == Archetype.WORKFLOW:
+        return "Step"
+    return "Reaction"
+
+
+def legend_captions_for_figure(figure: Figure) -> dict[str, str]:
+    """Per-figure caption overrides for legend glyph keys.
+
+    Currently only the context-sensitive ``"activation"`` row; every other key
+    falls back to :data:`_GLYPH_CAPTION`. Returned dict is passed to the info
+    box so the rendered Key caption matches the figure's semantics.
+    """
+    return {"activation": activation_caption_for_figure(figure)}
 
 
 def legend_box_size(keys: list[str]) -> tuple[float, float]:

@@ -19,6 +19,8 @@ import svgwrite.path
 import svgwrite.shapes
 import svgwrite.text
 
+from imageGen.primitives._text import formula_text as _formula_text
+
 DEFAULT_STYLE: dict = {
     "stroke": "#222222",
     "stroke_width": 2.0,
@@ -585,27 +587,19 @@ def reaction_arrow(
     gap = fs * 1.4
 
     if conditions:
-        t = svgwrite.text.Text(
+        g.add(_formula_text(
             conditions,
-            insert=(mid[0] - px * gap, mid[1] - py * gap),
-            font_family=ff,
-            font_size=fs,
-            fill=fc,
-        )
-        t["text-anchor"] = "middle"
-        g.add(t)
+            (mid[0] - px * gap, mid[1] - py * gap),
+            font_family=ff, font_size=fs, fill=fc,
+        ))
 
     if reagents:
         n = 2 if conditions else 1
-        t = svgwrite.text.Text(
+        g.add(_formula_text(
             reagents,
-            insert=(mid[0] - px * gap * n, mid[1] - py * gap * n),
-            font_family=ff,
-            font_size=fs,
-            fill=fc,
-        )
-        t["text-anchor"] = "middle"
-        g.add(t)
+            (mid[0] - px * gap * n, mid[1] - py * gap * n),
+            font_family=ff, font_size=fs, fill=fc,
+        ))
 
     if yield_pct is not None:
         t = svgwrite.text.Text(

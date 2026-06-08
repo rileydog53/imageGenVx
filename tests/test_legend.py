@@ -165,3 +165,66 @@ def test_render_figure_legend_flag_adds_info_box(tmp_path, monkeypatch):
     C.render_figure(_fig(), tmp_path / "without.svg", legend=False)
     ids_without = [e.ir_id for e in captured["entries"]]
     assert "info_box" not in ids_without
+
+
+# ---------------------------------------------------------------------------
+# Context-aware caption for the filled-arrow ("activation") row
+# ---------------------------------------------------------------------------
+
+from imageGen.render.legend import (  # noqa: E402
+    activation_caption_for_figure,
+    legend_captions_for_figure,
+)
+
+
+def _fig_with(archetype, rel_type):
+    return Figure(
+        archetype=archetype,
+        entities=[
+            Entity(id="a", type=EntityType.PROTEIN, label="A"),
+            Entity(id="b", type=EntityType.PROTEIN, label="B"),
+        ],
+        relations=[Relation(source="a", target="b", type=rel_type)],
+    )
+
+
+def test_activation_caption_is_activation_only_with_an_activation_relation():
+    assert activation_caption_for_figure(
+        _fig_with(Archetype.PATHWAY, RelationType.ACTIVATES)) == "Activation"
+    # TRANSCRIBES is also an activation-family relation (shares the glyph).
+    assert activation_caption_for_figure(
+        _fig_with(Archetype.PATHWAY, RelationType.TRANSCRIBES)) == "Activation"
+
+
+def test_activation_caption_is_step_for_generic_workflow():
+    assert activation_caption_for_figure(
+        _fig_with(Archetype.WORKFLOW, RelationType.GENERIC)) == "Step"
+
+
+def test_activation_caption_is_reaction_for_generic_non_workflow():
+    # A pathway whose filled arrow is a bare reactant→product reaction, with no
+    # activation relation anywhere, must not claim "Activation".
+    assert activation_caption_for_figure(
+        _fig_with(Archetype.PATHWAY, RelationType.GENERIC)) == "Reaction"
+
+
+def test_legend_captions_override_maps_only_the_activation_key():
+    caps = legend_captions_for_figure(_fig_with(Archetype.WORKFLOW, RelationType.GENERIC))
+    assert caps == {"activation": "Step"}
+
+
+def test_render_workflow_key_uses_step_not_activation(tmp_path):
+    from imageGen.render.compositor import render_figure
+    fig = Figure(
+        archetype=Archetype.WORKFLOW,
+        entities=[
+            Entity(id="a", type=EntityType.PROTEIN, label="A"),
+            Entity(id="b", type=EntityType.PROTEIN, label="B"),
+        ],
+        relations=[Relation(source="a", target="b", type=RelationType.GENERIC)],
+    )
+    out = tmp_path / "wf.svg"
+    render_figure(fig, out, legend=True)
+    svg = out.read_text()
+    assert "Step" in svg
+    assert "Activation" not in svg

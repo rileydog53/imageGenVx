@@ -148,8 +148,19 @@ def _label_box(el: ET.Element) -> tuple[str, float, Bbox, bool]:
     ``data-overlap="true"`` — a deliberate last-resort placement from the
     label engine's fallback ladder, which the overlap audit must not treat
     as a defect.
+
+    Inline ``<tspan>`` children that carry no vertical offset (chemical
+    subscripts, e.g. H₂SO₄) hold the element's rendered text, so their text is
+    folded in — otherwise the ``<text>`` reads as empty and the label is dropped
+    from both content bounds (clipping it) and the off-canvas audit. Multiline
+    labels use ``dy``-offset tspans and stay measured via the box that contains
+    them, so they are left to the existing empty-text skip.
     """
-    text = (el.text or "").strip()
+    text = el.text or ""
+    inline_tspans = [c for c in el if _tag(c) == "tspan" and c.get("dy") is None]
+    if inline_tspans and len(list(el)) == len(inline_tspans):
+        text = "".join(el.itertext())
+    text = text.strip()
     font_size = _f(el.get("font-size"))
     x = _f(el.get("x"))
     y = _f(el.get("y"))
@@ -220,8 +231,10 @@ def _walk(
         # Skip decorative compartment bands entirely — both their full-width
         # background rect and their corner label are chrome, not figure
         # content. Including them would make `content_bbox` span the whole
-        # canvas and defeat whitespace/crop detection.
-        if child.get("data-role") == "band":
+        # canvas and defeat whitespace/crop detection. The full-frame page
+        # background (data-role="background", painted by the compositor) is the
+        # same kind of chrome and is excluded for the same reason.
+        if child.get("data-role") in ("band", "background"):
             continue
         # Skip embedded-icon subtrees (Bioicons; DECISIONS D9). They are
         # fit-scaled into their entity slot and clipped to their own nested-SVG

@@ -61,6 +61,8 @@ import svgwrite.text
 from rdkit import Chem
 from rdkit.Chem.Draw import rdMolDraw2D
 
+from imageGen.primitives._text import formula_text as _formula_text
+
 
 # ---------------------------------------------------------------------------
 # Style defaults -- flat namespaced keys for Phase 4 preset union
@@ -337,12 +339,15 @@ def _emit_conditions(
     line_gap = cond_size * 1.3
 
     def _ctext(text: str, y: float) -> svgwrite.text.Text:
-        return svgwrite.text.Text(
+        # Render chemical numeric subscripts (H2SO4 → H₂SO₄). Plain strings come
+        # back as a byte-identical flat <text>, so non-formula conditions and
+        # existing goldens are unchanged.
+        return _formula_text(
             text,
-            insert=(arrow_mid_x, y),
-            font_size=cond_size, fill=str(style["chem_conditions_color"]),
+            (arrow_mid_x, y),
             font_family=str(style["label_font_family"]),
-            text_anchor="middle",
+            font_size=cond_size,
+            fill=str(style["chem_conditions_color"]),
         )
 
     if above_lines:

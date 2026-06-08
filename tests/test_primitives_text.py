@@ -12,10 +12,13 @@ import svgwrite.text
 from imageGen.primitives._text import (
     AVG_CHAR_RATIO,
     FONT_FLOOR,
+    SUBSCRIPT_SIZE_FACTOR,
     FitResult,
     centered_label,
+    chemical_runs,
     estimate_text_width,
     fit_label,
+    formula_text,
     label_for_fit,
     multiline_label,
 )
@@ -187,3 +190,68 @@ def test_multiline_label_is_centered_text():
 def test_multiline_label_single_line_still_renders():
     el = multiline_label(["solo"], 30.0, 15.0, STYLE)
     assert el.tostring().count("<tspan") == 1
+
+
+# ---------------------------------------------------------------------------
+# Chemical-formula subscripts (chemical_runs + formula_text)
+# ---------------------------------------------------------------------------
+
+FORMULA_STYLE = dict(font_family="Helvetica, Arial, sans-serif", fill="#000")
+
+
+def test_chemical_runs_subscripts_digits_after_a_letter():
+    # H2SO4 → H, ₂, SO, ₄ — only the digit runs that follow a letter subscript.
+    assert chemical_runs("H2SO4") == [
+        ("H", False), ("2", True), ("SO", False), ("4", True)
+    ]
+    assert chemical_runs("CO2") == [("CO", False), ("2", True)]
+    assert chemical_runs("Na2CO3") == [
+        ("Na", False), ("2", True), ("CO", False), ("3", True)
+    ]
+
+
+def test_chemical_runs_leaves_locants_and_plain_text_on_baseline():
+    # Leading/standalone numbers are locants/coefficients, never subscripts.
+    assert chemical_runs("2-DG") == [("2-DG", False)]
+    assert chemical_runs("NAD+") == [("NAD+", False)]
+    assert chemical_runs("reflux") == [("reflux", False)]
+    assert chemical_runs("100 °C") == [("100 °C", False)]
+
+
+def test_chemical_runs_roundtrips():
+    for s in ("H2SO4", "2-DG", "CO2 + H2O", "G6P", "CH3COOH", ""):
+        assert "".join(seg for seg, _ in chemical_runs(s)) == s
+
+
+def test_formula_text_plain_when_no_subscripts_is_a_flat_text():
+    # No letter-then-digit → a plain <text>, no tspans, anchor preserved.
+    el = formula_text("reflux", (10.0, 20.0), font_size=11, anchor="middle",
+                      **FORMULA_STYLE)
+    xml = el.tostring()
+    assert "<tspan" not in xml
+    assert 'text-anchor="middle"' in xml
+    assert ">reflux<" in xml
+
+
+def test_formula_text_emits_subscript_tspans():
+    el = formula_text("H2SO4", (100.0, 20.0), font_size=12, anchor="middle",
+                      **FORMULA_STYLE)
+    xml = el.tostring()
+    # One tspan per run after the leading baseline run (2, SO, 4) = 3 tspans.
+    assert xml.count("<tspan") == 3
+    # Subscript digits render smaller; the baseline run between them does not.
+    assert f'font-size="{12 * SUBSCRIPT_SIZE_FACTOR}"' in xml
+    # The whole formula text is recoverable from the rendered element.
+    import xml.etree.ElementTree as ET
+    assert "".join(ET.fromstring(xml).itertext()) == "H2SO4"
+
+
+def test_formula_text_uses_start_anchor_for_subscripts_cairosvg_safe():
+    # cairosvg only lays out multi-tspan text under text-anchor="start"; the
+    # requested middle anchor is emulated by offsetting x, not by the attribute.
+    el = formula_text("H2SO4", (100.0, 20.0), font_size=12, anchor="middle",
+                      **FORMULA_STYLE)
+    xml = el.tostring()
+    assert 'text-anchor="middle"' not in xml
+    # x is shifted left of the requested centre by ~half the text width.
+    assert float(el.attribs["x"]) < 100.0

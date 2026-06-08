@@ -41,6 +41,7 @@ Step coupling:
 """
 from __future__ import annotations
 
+import re
 import warnings
 from pathlib import Path
 from typing import Any, Literal
@@ -75,6 +76,22 @@ from imageGen.styles.loader import DEFAULT_PRESET, load_style
 # ---------------------------------------------------------------------------
 
 _DEFAULT_CANVAS = (800.0, 600.0)
+
+# Page background painted behind every figure (Issue: figures shipped with a
+# transparent canvas that composites to pure black in many viewers — the
+# "void" on figs 05/07/09). White is the publication page colour; a preset can
+# override it via a ``page_bg_fill`` style key.
+_PAGE_BG_DEFAULT = "#FFFFFF"
+
+# Figure-title heading (rendered above the figure for the archetypes that
+# otherwise ship headless). Defaults are overridable via the ``figure_title_*``
+# style keys; size falls back a few px above the body label size.
+_TITLE_SIZE_DEFAULT = 14.0
+_TITLE_GAP = 10.0  # px between the title baseline's descenders and content top
+
+# Archetypes whose top-level figures render the spec title. Pathway / reaction /
+# cellular figures are intentionally left out of this batch (see report).
+_TITLED_ARCHETYPES = frozenset({Archetype.MECHANISM_CARTOON, Archetype.WORKFLOW})
 
 Format = Literal["svg", "png", "pdf"]
 
@@ -196,6 +213,15 @@ def render_figure(
         from imageGen.render.annotations import annotation_entries  # noqa: PLC0415
         entries = entries + annotation_entries(ir, final_canvas, style_dict)
 
+    # Render the spec title as a heading above the figure for the archetypes
+    # that otherwise ship headless. Placed in negative-y headroom that the FR3
+    # frame-expansion below grows into, so it needs no canvas pre-sizing. Scoped
+    # to top-level mechanism_cartoon / workflow figures (panels carry their own
+    # per-panel title chrome).
+    title_entry = _title_entry(ir, final_canvas, style_dict)
+    if title_entry is not None:
+        entries = entries + [title_entry]
+
     # Unified info box (Issue #4 legend + FR9 abbreviation glossary + icon
     # credits) in a strip *below* the figure (canvas grows downward) so the key
     # never overlaps figure content. Consolidates what used to be a top-right
@@ -203,9 +229,14 @@ def render_figure(
     # reading. Drawn only when a section has content (an all-empty box is never
     # emitted, so figures with none of the three stay byte-identical).
     legend_keys: list[str] = []
+    legend_captions: dict[str, str] = {}
     if legend:
-        from imageGen.render.legend import legend_glyph_keys_for_figure  # noqa: PLC0415
+        from imageGen.render.legend import (  # noqa: PLC0415
+            legend_captions_for_figure,
+            legend_glyph_keys_for_figure,
+        )
         legend_keys = legend_glyph_keys_for_figure(ir)
+        legend_captions = legend_captions_for_figure(ir)
     glossary_entries = list(ir.glossary or [])
     from imageGen.render.credits import (  # noqa: PLC0415
         credit_lines as _credit_lines,
@@ -214,14 +245,18 @@ def render_figure(
     credit_section = _credit_lines(ir, credits)
     if legend_keys or glossary_entries or credit_section:
         from imageGen.render.info_box import info_box, info_box_size  # noqa: PLC0415
-        bw, bh = info_box_size(legend_keys, glossary_entries, credit_section, style_dict)
+        bw, bh = info_box_size(
+            legend_keys, glossary_entries, credit_section, style_dict,
+            legend_captions,
+        )
         cw, ch = final_canvas
         ipad = 12.0
         entries = entries + [LayoutEntry(
             info_box,
             ((ipad, ch + ipad),),
             {"legend_keys": legend_keys, "glossary_entries": glossary_entries,
-             "credit_lines": credit_section, "style_dict": style_dict},
+             "credit_lines": credit_section, "style_dict": style_dict,
+             "legend_captions": legend_captions},
             position=(0.0, 0.0),
             ir_id="info_box",
         )]
@@ -238,6 +273,10 @@ def render_figure(
     _expand_svg_to_content(svg_path)
     if autocrop:
         _autocrop_svg(svg_path)
+    # Paint the page background LAST, after the frame is finalized, so the rect
+    # always matches the shipped viewBox (a write-time rect wouldn't cover the
+    # headroom FR3 grows for a title). Kills the transparent→black void.
+    _paint_page_background(svg_path, style_dict)
     if fmt == "png":
         svg_to_png(svg_path, output_path, dpi=dpi)
         if display_dpi is not None:
@@ -567,6 +606,119 @@ def _expand_svg_to_content(svg_path: Path) -> None:
     box = expand_box(content, canvas)
     if box is not None:
         _rewrite_svg_frame(svg_path, box, set_size=True)
+
+
+# Frame parsing for the background pass. Mirrors crop._SVG_OPEN but kept local
+# so the compositor doesn't depend on crop's private regexes.
+_SVG_OPEN_RE = re.compile(r"<svg\b[^>]*>", re.IGNORECASE)
+_VIEWBOX_RE = re.compile(r'viewBox="\s*([-\d.eE+]+)\s+([-\d.eE+]+)\s+([-\d.eE+]+)\s+([-\d.eE+]+)\s*"', re.IGNORECASE)
+_WIDTH_RE = re.compile(r'\bwidth="\s*([-\d.eE+]+)\s*"', re.IGNORECASE)
+_HEIGHT_RE = re.compile(r'\bheight="\s*([-\d.eE+]+)\s*"', re.IGNORECASE)
+
+
+def _frame_box(svg_open_tag: str) -> tuple[float, float, float, float] | None:
+    """Return the visible frame ``(x, y, w, h)`` of an ``<svg …>`` opening tag.
+
+    Prefers the ``viewBox`` (set whenever expand/autocrop rewrote the frame);
+    falls back to ``width``/``height`` at origin ``(0, 0)`` for the svgwrite
+    default (no viewBox). Returns ``None`` when neither is parseable.
+    """
+    vb = _VIEWBOX_RE.search(svg_open_tag)
+    if vb:
+        return (float(vb.group(1)), float(vb.group(2)), float(vb.group(3)), float(vb.group(4)))
+    w = _WIDTH_RE.search(svg_open_tag)
+    h = _HEIGHT_RE.search(svg_open_tag)
+    if w and h:
+        return (0.0, 0.0, float(w.group(1)), float(h.group(1)))
+    return None
+
+
+def _paint_page_background(svg_path: Path, style_dict: dict[str, Any]) -> None:
+    """Insert a full-frame background rect (page colour) behind all content.
+
+    Figures otherwise ship with a transparent canvas that composites to pure
+    black in many viewers (the "void" on figs 05/07/09). This paints an opaque
+    page-colour rect covering the *finalized* frame so the output is
+    deterministic regardless of the viewer's compositing.
+
+    Runs after ``_expand_svg_to_content`` / ``_autocrop_svg`` so it always
+    matches the shipped ``viewBox``. The rect is tagged
+    ``data-role="background"`` so the crop / content-bounds passes (see
+    ``legibility_check._walk``) never treat it as content — e.g. a later
+    ``--crop`` still reframes onto real content. The fill is
+    ``style_dict['page_bg_fill']`` when present, else white.
+    """
+    fill = (style_dict or {}).get("page_bg_fill", _PAGE_BG_DEFAULT)
+    text = svg_path.read_text()
+    m = _SVG_OPEN_RE.search(text)
+    if m is None:
+        return
+    box = _frame_box(m.group(0))
+    if box is None:
+        return
+    x, y, w, h = box
+    rect = (
+        f'<rect data-role="background" x="{x}" y="{y}" '
+        f'width="{w}" height="{h}" fill="{fill}" />'
+    )
+    svg_path.write_text(text[: m.end()] + rect + text[m.end():])
+
+
+def _figure_title_group(
+    title: str,
+    cx: float,
+    baseline_y: float,
+    *,
+    font_size: float,
+    font_family: str,
+    color: str,
+) -> svgwrite.container.Group:
+    """A centered, bold ``<text>`` heading at ``(cx, baseline_y)``."""
+    g = svgwrite.container.Group()
+    t = svgwrite.text.Text(
+        title, insert=(cx, baseline_y),
+        font_family=font_family, font_size=font_size, fill=color,
+    )
+    t["text-anchor"] = "middle"
+    t["font-weight"] = "bold"
+    g.add(t)
+    return g
+
+
+def _title_entry(
+    ir: Figure,
+    canvas: tuple[float, float],
+    style_dict: dict[str, Any],
+) -> LayoutEntry | None:
+    """Build the figure-title heading entry, or ``None`` when no title applies.
+
+    Returns ``None`` for panel figures (they carry per-panel titles), for
+    archetypes outside ``_TITLED_ARCHETYPES``, and when the spec has no title.
+    The heading is centered on the canvas width and placed in negative-y
+    headroom above the content; ``_expand_svg_to_content`` grows the frame to
+    include it and ``_paint_page_background`` (run after) covers it.
+    """
+    if ir.panels or ir.archetype not in _TITLED_ARCHETYPES or not ir.title:
+        return None
+    cw, _ch = canvas
+    fs = float(style_dict.get("figure_title_size", _TITLE_SIZE_DEFAULT))
+    family = style_dict.get(
+        "figure_title_family",
+        style_dict.get("label_font_family", "Helvetica, Arial, sans-serif"),
+    )
+    color = style_dict.get(
+        "figure_title_color", style_dict.get("label_font_color", "#1A1A1A")
+    )
+    # Baseline sits a gap above the content top (y=0); descenders (~0.2 em) clear
+    # the gap, ascenders (~0.8 em) define how far the frame grows upward.
+    baseline_y = -(_TITLE_GAP + fs * 0.2)
+    return LayoutEntry(
+        _figure_title_group,
+        (ir.title, cw / 2.0, baseline_y),
+        {"font_size": fs, "font_family": family, "color": color},
+        position=(0.0, 0.0),
+        ir_id="figure_title",
+    )
 
 
 def _write_svg(

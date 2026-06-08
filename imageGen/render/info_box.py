@@ -60,12 +60,18 @@ def _section_specs(legend_keys, glossary_entries, credit_lines):
     return specs
 
 
-def _section_content_w(kind, title, rows) -> float:
+def _legend_caption(key, legend_captions) -> str:
+    """Caption for a legend glyph key, honouring per-figure overrides."""
+    return (legend_captions or {}).get(key) or _legend._GLYPH_CAPTION[key]
+
+
+def _section_content_w(kind, title, rows, legend_captions=None) -> float:
     """Inner content width (px) a section needs, including its subtitle."""
     w_title = _estimate_text_w(title, _SUBTITLE_FONT)
     if kind == "legend":
         w_rows = max(
-            _estimate_text_w(_legend._GLYPH_CAPTION[k], _BODY_FONT) for k in rows
+            _estimate_text_w(_legend_caption(k, legend_captions), _BODY_FONT)
+            for k in rows
         )
         w_rows += _LEGEND_SAMPLE_W + _LEGEND_GAP
     elif kind == "glossary":
@@ -77,12 +83,15 @@ def _section_content_w(kind, title, rows) -> float:
 
 def info_box_size(
     legend_keys, glossary_entries, credit_lines, style_dict=None,
+    legend_captions=None,
 ) -> tuple[float, float]:
     """(width, height) of the unified box; (0, 0) when every section is empty."""
     specs = _section_specs(legend_keys, glossary_entries, credit_lines)
     if not specs:
         return (0.0, 0.0)
-    box_w = 2 * _PAD + max(_section_content_w(k, t, r) for k, t, r, _h in specs)
+    box_w = 2 * _PAD + max(
+        _section_content_w(k, t, r, legend_captions) for k, t, r, _h in specs
+    )
     body_h = sum(_SUBTITLE_H + len(r) * rh for _k, _t, r, rh in specs)
     box_h = 2 * _PAD + body_h + _SECTION_GAP * (len(specs) - 1)
     return (box_w, box_h)
@@ -103,11 +112,14 @@ def info_box(
     glossary_entries=None,
     credit_lines=None,
     style_dict=None,
+    legend_captions=None,
 ) -> svgwrite.container.Group:
     """Render the unified info box with its top-left corner at ``top_left``.
 
     Sections (Key / Abbreviations / Credits) stack top-to-bottom; empty ones are
-    skipped. Sized by :func:`info_box_size`.
+    skipped. Sized by :func:`info_box_size`. ``legend_captions`` carries
+    per-figure caption overrides for legend rows (e.g. the context-sensitive
+    "activation" caption); unset keys fall back to :data:`_legend._GLYPH_CAPTION`.
     """
     legend_keys = list(legend_keys or [])
     glossary_entries = list(glossary_entries or [])
@@ -124,7 +136,9 @@ def info_box(
         "catalysis_circle_radius": 4.0, "recruit_dot_radius": 3.0,
     }
 
-    box_w, box_h = info_box_size(legend_keys, glossary_entries, credit_lines, s)
+    box_w, box_h = info_box_size(
+        legend_keys, glossary_entries, credit_lines, s, legend_captions
+    )
     x0, y0 = top_left
 
     g = svgwrite.container.Group()
@@ -157,7 +171,8 @@ def info_box(
                 cy = rows_top + i * row_h + row_h / 2
                 sub.add(_legend._sample_glyph(key, sx0, sx1, cy, sample_style))
                 cap = svgwrite.text.Text(
-                    _legend._GLYPH_CAPTION[key], insert=(text_x, cy), fill=text_color,
+                    _legend_caption(key, legend_captions),
+                    insert=(text_x, cy), fill=text_color,
                 )
                 cap["dominant-baseline"] = "central"
                 cap["font-size"] = _BODY_FONT

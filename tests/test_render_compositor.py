@@ -774,3 +774,115 @@ def test_autocrop_true_adds_viewbox(tmp_path):
     render_figure(fig, out, autocrop=True)
     text = out.read_text()
     assert _VIEWBOX.search(text) is not None
+
+
+# ---------------------------------------------------------------------------
+# Page background — figures must ship opaque, not on a transparent canvas that
+# composites to black in a viewer.
+# ---------------------------------------------------------------------------
+
+def _first_drawable_tag(root) -> str:
+    """Local tag name of the first non-<defs> child of the <svg> root."""
+    for child in root:
+        tag = child.tag.split("}")[-1]
+        if tag != "defs":
+            return tag
+    return ""
+
+
+def test_background_rect_is_painted_behind_content(tmp_path):
+    """A full-frame data-role=background rect is the first drawable element."""
+    fig = load_fixture(MAPK)
+    out = tmp_path / "fig.svg"
+    render_figure(fig, out)
+    root = ET.parse(out).getroot()
+    # The background must paint first (behind everything else).
+    assert _first_drawable_tag(root) == "rect"
+    bg = next(c for c in root if c.tag.split("}")[-1] == "rect")
+    assert bg.get("data-role") == "background"
+    # It covers the whole frame (origin 0,0 here — no crop applied).
+    w, h = _svg_dims(out)
+    assert float(bg.get("width")) == pytest.approx(w)
+    assert float(bg.get("height")) == pytest.approx(h)
+
+
+def test_background_covers_cropped_viewbox(tmp_path):
+    """After autocrop the background still matches the (rewritten) viewBox."""
+    fig = load_fixture(MAPK)
+    out = tmp_path / "fig.svg"
+    render_figure(fig, out, autocrop=True)
+    root = ET.parse(out).getroot()
+    vb = [float(v) for v in root.get("viewBox").split()]
+    bg = next(c for c in root if c.tag.split("}")[-1] == "rect")
+    assert bg.get("data-role") == "background"
+    assert float(bg.get("x")) == pytest.approx(vb[0])
+    assert float(bg.get("y")) == pytest.approx(vb[1])
+    assert float(bg.get("width")) == pytest.approx(vb[2])
+    assert float(bg.get("height")) == pytest.approx(vb[3])
+
+
+def test_rendered_png_corners_are_opaque(tmp_path):
+    """The shipped PNG has no transparent pixels (the 'void' regression)."""
+    fig = load_fixture("gpcr_signaling.json")  # banded figure with empty regions
+    out = tmp_path / "fig.png"
+    render_figure(fig, out, legend=True, dpi=96)
+    with Image.open(out) as img:
+        rgba = img.convert("RGBA")
+        w, h = rgba.size
+        for x, y in [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1), (w // 2, h - 1)]:
+            assert rgba.getpixel((x, y))[3] == 255, f"transparent pixel at {(x, y)}"
+
+
+# ---------------------------------------------------------------------------
+# Figure title heading — mechanism_cartoon / workflow ship the spec title.
+# ---------------------------------------------------------------------------
+
+def _titled_fig(archetype, title="My Title"):
+    return Figure(
+        archetype=archetype,
+        title=title,
+        entities=[
+            Entity(id="a", type=EntityType.METABOLITE, label="A"),
+            Entity(id="b", type=EntityType.METABOLITE, label="B"),
+        ],
+        relations=[Relation(source="a", target="b", type=RelationType.GENERIC)],
+    )
+
+
+def _title_text_nodes(svg_path):
+    root = ET.parse(svg_path).getroot()
+    out = []
+    for g in root.iter():
+        if g.get("data-ir-id") == "figure_title":
+            out.append("".join(g.itertext()).strip())
+    return out
+
+
+def test_mechanism_cartoon_renders_spec_title(tmp_path):
+    out = tmp_path / "fig.svg"
+    render_figure(_titled_fig(Archetype.MECHANISM_CARTOON, "SN2 mechanism"), out)
+    assert _title_text_nodes(out) == ["SN2 mechanism"]
+    # The frame grew upward to include the heading above the content (y=0).
+    vb = [float(v) for v in ET.parse(out).getroot().get("viewBox").split()]
+    assert vb[1] < 0.0
+
+
+def test_workflow_renders_spec_title(tmp_path):
+    out = tmp_path / "fig.svg"
+    render_figure(_titled_fig(Archetype.WORKFLOW, "Western blot workflow"), out)
+    assert _title_text_nodes(out) == ["Western blot workflow"]
+
+
+def test_pathway_figure_is_not_titled_this_batch(tmp_path):
+    # Title rendering is scoped to mechanism_cartoon / workflow for now.
+    out = tmp_path / "fig.svg"
+    render_figure(_titled_fig(Archetype.PATHWAY, "Some pathway"), out)
+    assert _title_text_nodes(out) == []
+
+
+def test_titled_archetype_without_title_emits_no_heading(tmp_path):
+    out = tmp_path / "fig.svg"
+    fig = _titled_fig(Archetype.WORKFLOW, "x")
+    fig = fig.model_copy(update={"title": None})
+    render_figure(fig, out)
+    assert _title_text_nodes(out) == []
