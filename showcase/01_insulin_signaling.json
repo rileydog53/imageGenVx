@@ -1,0 +1,34 @@
+{
+  "archetype": "cellular_schematic",
+  "title": "Insulin / PI3K–AKT signaling",
+  "style_preset": "nature",
+  "compartments": [
+    {"id": "extracellular", "type": "extracellular", "label": "Extracellular space"},
+    {"id": "membrane", "type": "membrane", "label": "Plasma membrane"},
+    {"id": "cytoplasm", "type": "cytoplasm", "label": "Cytoplasm"},
+    {"id": "nucleus", "type": "nucleus", "label": "Nucleus"}
+  ],
+  "entities": [
+    {"id": "insulin", "type": "ligand", "label": "Insulin", "location": "extracellular"},
+    {"id": "insr", "type": "receptor", "label": "INSR", "location": "membrane"},
+    {"id": "glut4", "type": "complex", "label": "GLUT4 vesicle", "location": "membrane"},
+    {"id": "irs1", "type": "protein", "label": "IRS-1", "location": "cytoplasm"},
+    {"id": "pi3k", "type": "kinase", "label": "PI3K", "location": "cytoplasm"},
+    {"id": "akt", "type": "kinase", "label": "AKT", "location": "cytoplasm"},
+    {"id": "gsk3", "type": "kinase", "label": "GSK-3β", "location": "cytoplasm"},
+    {"id": "mtor", "type": "kinase", "label": "mTORC1", "location": "cytoplasm"},
+    {"id": "foxo", "type": "protein", "label": "FOXO1", "location": "nucleus"},
+    {"id": "pepck", "type": "gene", "label": "PEPCK", "location": "nucleus"}
+  ],
+  "relations": [
+    {"source": "insulin", "target": "insr", "type": "binds", "label": "binding"},
+    {"source": "insr", "target": "irs1", "type": "phosphorylates"},
+    {"source": "irs1", "target": "pi3k", "type": "activates"},
+    {"source": "pi3k", "target": "akt", "type": "activates", "label": "PIP3"},
+    {"source": "akt", "target": "gsk3", "type": "phosphorylates"},
+    {"source": "akt", "target": "mtor", "type": "activates"},
+    {"source": "akt", "target": "glut4", "type": "translocates", "label": "GLUT4 → membrane"},
+    {"source": "akt", "target": "foxo", "type": "inhibits"},
+    {"source": "foxo", "target": "pepck", "type": "transcribes", "label": "gluconeogenesis"}
+  ]
+}

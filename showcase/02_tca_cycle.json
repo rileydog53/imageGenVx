@@ -1,0 +1,28 @@
+{
+  "archetype": "pathway",
+  "title": "Citric acid (TCA) cycle",
+  "style_preset": "nature",
+  "layout_hint": "circular",
+  "entities": [
+    {"id": "accoa", "type": "metabolite", "label": "Acetyl-CoA"},
+    {"id": "cit", "type": "metabolite", "label": "Citrate"},
+    {"id": "isocit", "type": "metabolite", "label": "Isocitrate"},
+    {"id": "akg", "type": "metabolite", "label": "α-Ketoglutarate"},
+    {"id": "succoa", "type": "metabolite", "label": "Succinyl-CoA"},
+    {"id": "succ", "type": "metabolite", "label": "Succinate"},
+    {"id": "fum", "type": "metabolite", "label": "Fumarate"},
+    {"id": "mal", "type": "metabolite", "label": "Malate"},
+    {"id": "oaa", "type": "metabolite", "label": "Oxaloacetate"}
+  ],
+  "relations": [
+    {"source": "accoa", "target": "cit", "type": "catalyzes", "label": "citrate synthase"},
+    {"source": "cit", "target": "isocit", "type": "catalyzes", "label": "aconitase"},
+    {"source": "isocit", "target": "akg", "type": "catalyzes", "label": "IDH · CO₂"},
+    {"source": "akg", "target": "succoa", "type": "catalyzes", "label": "α-KGDH · CO₂"},
+    {"source": "succoa", "target": "succ", "type": "catalyzes", "label": "SCS · GTP"},
+    {"source": "succ", "target": "fum", "type": "catalyzes", "label": "SDH · FADH₂"},
+    {"source": "fum", "target": "mal", "type": "catalyzes", "label": "fumarase"},
+    {"source": "mal", "target": "oaa", "type": "catalyzes", "label": "MDH · NADH"},
+    {"source": "oaa", "target": "cit", "type": "catalyzes", "label": "+ Acetyl-CoA"}
+  ]
+}

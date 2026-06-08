@@ -1,0 +1,33 @@
+{
+  "archetype": "pathway",
+  "title": "RTK–RAS–MAPK cascade with negative feedback",
+  "style_preset": "nature",
+  "entities": [
+    {"id": "egf", "type": "ligand", "label": "EGF"},
+    {"id": "egfr", "type": "receptor", "label": "EGFR"},
+    {"id": "grb2", "type": "complex", "label": "GRB2–SOS"},
+    {"id": "ras", "type": "protein", "label": "RAS-GTP"},
+    {"id": "raf", "type": "kinase", "label": "RAF"},
+    {"id": "mek", "type": "kinase", "label": "MEK"},
+    {"id": "erk", "type": "kinase", "label": "ERK"},
+    {"id": "rsk", "type": "kinase", "label": "RSK"},
+    {"id": "dusp", "type": "protein", "label": "DUSP6"},
+    {"id": "myc", "type": "protein", "label": "c-MYC"},
+    {"id": "fos", "type": "gene", "label": "FOS"},
+    {"id": "mrna", "type": "rna", "label": "FOS mRNA"}
+  ],
+  "relations": [
+    {"source": "egf", "target": "egfr", "type": "binds"},
+    {"source": "egfr", "target": "grb2", "type": "activates"},
+    {"source": "grb2", "target": "ras", "type": "activates"},
+    {"source": "ras", "target": "raf", "type": "activates"},
+    {"source": "raf", "target": "mek", "type": "phosphorylates"},
+    {"source": "mek", "target": "erk", "type": "phosphorylates"},
+    {"source": "erk", "target": "rsk", "type": "activates"},
+    {"source": "erk", "target": "myc", "type": "activates"},
+    {"source": "erk", "target": "dusp", "type": "activates"},
+    {"source": "dusp", "target": "erk", "type": "inhibits", "label": "negative feedback"},
+    {"source": "myc", "target": "fos", "type": "transcribes"},
+    {"source": "fos", "target": "mrna", "type": "transcribes"}
+  ]
+}

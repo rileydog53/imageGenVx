@@ -1,0 +1,13 @@
+{
+  "archetype": "pathway",
+  "title": "MAPK core cascade",
+  "entities": [
+    {"id": "raf", "type": "kinase", "label": "RAF"},
+    {"id": "mek", "type": "kinase", "label": "MEK"},
+    {"id": "erk", "type": "kinase", "label": "ERK"}
+  ],
+  "relations": [
+    {"source": "raf", "target": "mek", "type": "phosphorylates"},
+    {"source": "mek", "target": "erk", "type": "phosphorylates"}
+  ]
+}
