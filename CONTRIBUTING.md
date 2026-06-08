@@ -26,7 +26,7 @@ Before writing code, read in order:
 4. **Conventions over creativity.** Copy how Nature/Cell draws it.
 5. **Don't change `ir/schema.py` without explicit approval.** It is
    load-bearing.
-6. **All project files live in `~/Desktop/imageGen-v2.5/`.** Throwaway
+6. **All project files live in `~/Desktop/imageGen-v2.6/`.** Throwaway
    scripts go in `~/Desktop/scratch/`.
 
 ## Code conventions
@@ -49,6 +49,6 @@ Before writing code, read in order:
   project-local venv.
 - **Package:** importable as `imageGen` (`pip install -e .` done); CLI is
   `python -m imageGen`.
-- **Repo:** `~/Desktop/imageGen-v2.5/` (directory name retained), remote
+- **Repo:** `~/Desktop/imageGen-v2.6/` (local dir renamed with each version), remote
   `https://github.com/rileydog53/imageGenVx` (renamed from `imageGenV0` so the
   version number isn't tied to the repo name).
