@@ -61,6 +61,7 @@ import svgwrite.text
 from rdkit import Chem
 from rdkit.Chem.Draw import rdMolDraw2D
 
+from imageGen.primitives._anchors import AnchoredGroup
 from imageGen.primitives._text import formula_text as _formula_text
 
 
@@ -158,13 +159,20 @@ def _smiles_to_mol(smiles: str) -> Chem.Mol:
     return mol
 
 
-def _rdkit_mol_to_svg(
+def _rdkit_mol_to_svg_and_coords(
     mol: Chem.Mol,
     size: tuple[int, int],
     style_name: str,
     style: dict,
-) -> str:
-    """Render *mol* via MolDraw2DSVG with preset-aware drawOptions. Returns raw SVG.
+) -> tuple[str, dict[int, tuple[float, float]]]:
+    """Render *mol* via MolDraw2DSVG; return (raw SVG, {atom_idx: (x, y)}).
+
+    The coords are each atom's post-layout pixel position from
+    ``drawer.GetDrawCoords(i)``. MolDraw2DSVG emits ``viewBox='0 0 W H'`` matching
+    *size*, so those pixels map 1:1 onto the inlined ``<svg>``'s local frame —
+    they are exactly where each atom renders inside the returned Group's local
+    space. This is the source of truth for the V3 anchor protocol; the plain
+    ``_rdkit_mol_to_svg`` below discards the coords for existing callers.
 
     style_name='ball_stick' uses larger labels and thicker bonds; both styles
     produce 2D depictions (MolDraw2DSVG is inherently 2D).
@@ -189,7 +197,25 @@ def _rdkit_mol_to_svg(
 
     drawer.DrawMolecule(mol)
     drawer.FinishDrawing()
-    return drawer.GetDrawingText()
+    coords: dict[int, tuple[float, float]] = {}
+    for i in range(mol.GetNumAtoms()):
+        p = drawer.GetDrawCoords(i)
+        coords[i] = (float(p.x), float(p.y))
+    return drawer.GetDrawingText(), coords
+
+
+def _rdkit_mol_to_svg(
+    mol: Chem.Mol,
+    size: tuple[int, int],
+    style_name: str,
+    style: dict,
+) -> str:
+    """Render *mol* via MolDraw2DSVG with preset-aware drawOptions. Returns raw SVG.
+
+    Thin wrapper over :func:`_rdkit_mol_to_svg_and_coords` for the existing
+    point-anchored callers that don't need atom coordinates.
+    """
+    return _rdkit_mol_to_svg_and_coords(mol, size, style_name, style)[0]
 
 
 # Match `stroke:#xxxxxx` inside a style attribute (RDKit emits bond color this way)
@@ -242,6 +268,35 @@ def _inline_molecule(
     group = svgwrite.container.Group(transform=f"translate({tx},{ty})")
     group.add(_RawSVGElement(svg_root))
     return group
+
+
+def _inline_molecule_anchored(
+    mol: Chem.Mol,
+    size: tuple[int, int],
+    style_name: str,
+    style: dict,
+    translate: tuple[float, float] = (0.0, 0.0),
+) -> tuple[svgwrite.container.Group, dict[int, tuple[float, float]]]:
+    """Like :func:`_inline_molecule`, but also return ``{atom_idx: (x, y)}``.
+
+    The atom coords are shifted by *translate* so they describe positions in the
+    frame of whatever places this Group's origin — matching how the Group's own
+    ``translate(...)`` transform shifts the rendered atoms. Keeps the SVG-build
+    body in one place: same restyle + width/height/viewBox handling as
+    ``_inline_molecule``.
+    """
+    raw_svg, atom_coords = _rdkit_mol_to_svg_and_coords(mol, size, style_name, style)
+    svg_root = _restyle_rdkit_svg(raw_svg, style)
+    width, height = size
+    svg_root.set("width", str(width))
+    svg_root.set("height", str(height))
+    svg_root.set("x", "0")
+    svg_root.set("y", "0")
+    tx, ty = translate
+    group = svgwrite.container.Group(transform=f"translate({tx},{ty})")
+    group.add(_RawSVGElement(svg_root))
+    shifted = {i: (x + tx, y + ty) for i, (x, y) in atom_coords.items()}
+    return group, shifted
 
 
 def _arrow(
@@ -404,6 +459,85 @@ def render_molecule(
     else:
         translate = (0.0, 0.0)
     return _inline_molecule(mol, size, style, merged_style, translate=translate)
+
+
+def render_molecule_anchored(
+    smiles: str,
+    size: tuple[int, int] = (200, 150),
+    style: MoleculeStyle = "skeletal",
+    style_dict: dict | None = None,
+    center: tuple[float, float] | None = None,
+    anchor_names: dict[int, str] | None = None,
+) -> AnchoredGroup:
+    """Render a molecule AND publish per-atom anchor points (V3 scene chassis).
+
+    Same depiction as :func:`render_molecule`, but returns an
+    :class:`~imageGen.primitives._anchors.AnchoredGroup` so the scene layer can
+    draw bonds/curly-arrows that terminate on specific atoms (e.g. the carbonyl
+    carbon a Ser530 hydroxyl attacks).
+
+    Anchor naming, every atom gets:
+        - ``"atom{idx}"`` — always, the RDKit atom index (debug / fallback).
+        - ``"a{map}"`` — when the SMILES carries an atom-map number (``[O:1]`` →
+          ``"a1"``); this is how an author addresses a specific atom.
+        - the human name from *anchor_names* ``{map_num: name}`` — when given,
+          an additional alias (``{1: "carbonyl_C"}`` → anchor ``"carbonyl_C"``).
+
+    Args:
+        smiles: SMILES; may carry atom-map numbers to name anchors.
+        size: (width, height) bbox in pixels.
+        style: 'skeletal' (default) or 'ball_stick'.
+        style_dict: Optional preset overlay; merged onto DEFAULT_STYLE.
+        center: Optional (x, y) bbox-center placement, as in render_molecule; the
+            returned anchors include the same translate so they stay correct.
+        anchor_names: Optional ``{atom_map_number: human_name}`` alias map.
+
+    Returns:
+        AnchoredGroup(group, anchors) — anchors in the Group's local frame.
+
+    Raises:
+        ValueError: SMILES does not parse, *style* is unsupported, or an
+            *anchor_names* key has no matching atom-map number in the SMILES.
+    """
+    if style not in ("skeletal", "ball_stick"):
+        raise ValueError(f"Unknown style {style!r} (expected 'skeletal' or 'ball_stick')")
+    merged_style = {**DEFAULT_STYLE, **(style_dict or {})}
+    mol = _smiles_to_mol(smiles)
+    width, height = size
+    if center is not None:
+        cx, cy = center
+        translate = (cx - width / 2.0, cy - height / 2.0)
+    else:
+        translate = (0.0, 0.0)
+
+    # Capture the atom-map -> index mapping, then clear the map numbers so they
+    # don't render as "C:1" labels. Indices are unaffected by clearing, so the
+    # coords (keyed by index) stay atom-precise.
+    map_to_idx = {
+        a.GetAtomMapNum(): a.GetIdx()
+        for a in mol.GetAtoms()
+        if a.GetAtomMapNum()
+    }
+    for atom in mol.GetAtoms():
+        atom.SetAtomMapNum(0)
+
+    group, atom_coords = _inline_molecule_anchored(
+        mol, size, style, merged_style, translate=translate
+    )
+    anchors: dict[str, tuple[float, float]] = {}
+    for idx, xy in atom_coords.items():
+        anchors[f"atom{idx}"] = xy
+    for map_num, idx in map_to_idx.items():
+        anchors[f"a{map_num}"] = atom_coords[idx]
+    if anchor_names:
+        for map_num, name in anchor_names.items():
+            if map_num not in map_to_idx:
+                raise ValueError(
+                    f"anchor_names key {map_num} has no matching atom-map number "
+                    f"in SMILES {smiles!r} (mapped numbers: {sorted(map_to_idx)})"
+                )
+            anchors[name] = atom_coords[map_to_idx[map_num]]
+    return AnchoredGroup(group=group, anchors=anchors)
 
 
 def render_reaction(

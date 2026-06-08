@@ -28,6 +28,9 @@ htmlcov/
 .idea/
 *.swp
 
+# Claude Code local state (per-machine session/tool data, not project source)
+.claude/
+
 # Throwaway renders during dev
 scratch/
 *.tmp.svg
