@@ -257,7 +257,7 @@ def _spec_to_figure(spec: dict[str, Any]) -> Figure:
     # Tuple-shaped list items arrive as plain lists from YAML/JSON; the
     # builder's normalisers accept tuples *or* dicts, so coerce lists → tuples.
     # (Panels are left as-is — their nested content is full IR dicts.)
-    for key in ("entities", "relations", "compartments"):
+    for key in ("entities", "relations", "compartments", "glossary"):
         if key in spec and isinstance(spec[key], list):
             spec[key] = [tuple(item) if isinstance(item, list) else item for item in spec[key]]
     return build_figure(archetype, **spec)
