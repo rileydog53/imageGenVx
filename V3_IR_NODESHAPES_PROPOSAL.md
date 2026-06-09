@@ -155,6 +155,18 @@ referential integrity in a `@model_validator(mode="after")`; synthetic `ir_id`
    made optional (required for remove/replace/add_label, optional for ADD).
    Tested by `tests/test_ir_schema_tiers.py` (33 tests). Full suite **1000** green.
 3. **Vertical slice end-to-end** on existing primitives: 1 blob-stand-in + 1 residue-stand-in + 1 dashed connect + 1 midline rail + 1 cross-cell `TierEdge` → real render.
+   **✅ LANDED 2026-06-08.** `layout/tier_layout.py::layout_tiers` lowers a tiered
+   `Figure` to `LayoutEntry`s through the `AnchorRegistry` (TITLE + SCENE_ROW tiers,
+   MOLECULE/TEXT slots, dependency-ordered attach solver, intra-scene `SceneEdge`
+   + cross-cell `TierEdge` with rail clamp + standoff). Proven by the IR-driven
+   aspirin→salicylic render in `tests/test_layout_tiers.py` (11 tests). Adversarially
+   reviewed (3 lenses, all "sound"); fixes applied: dependency-ordered/cycle-safe
+   attach solver, loud errors for unsupported attach edges & `rail:` endpoints,
+   `resolve_edge` standoff clamp on short edges, curved-arrow tangent. Full suite
+   **1012** green. *Deferred review nits (out of slice scope): sub-pixel molecule
+   centering from int() render size; non-molecule attach-parent extent; text
+   `center` anchor = baseline; duplicate-edge ir_id uniquifier; partial-`height_frac`
+   fallback — revisit with the Step-4/5 compositor + solver.*
 4. **Tier compositor + band chrome** (band fill/border/divider draw calls).
 5. **Scene solver** (topological attach/offset pass) + scene-local label placement.
 6. **Step expansion** (builder-layer, slot-granular).

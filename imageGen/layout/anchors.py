@@ -178,4 +178,14 @@ class AnchorRegistry:
         else:
             p0 = self.resolve(from_ref)
             p1 = self.resolve(to_ref)
-        return _inset_toward(p0, p1, from_standoff), _inset_toward(p1, p0, to_standoff)
+        # Clamp the standoffs so they never cross past each other on a short edge
+        # (which would draw the segment / arrowhead reversed). When the combined
+        # standoff would consume the whole span, scale both down to leave ~20%
+        # of the span as the drawn edge. Long edges are unaffected.
+        fs, ts = from_standoff, to_standoff
+        total = fs + ts
+        length = math.hypot(p1[0] - p0[0], p1[1] - p0[1])
+        if total > 0 and total >= length:
+            scale = (length * 0.8) / total
+            fs, ts = fs * scale, ts * scale
+        return _inset_toward(p0, p1, fs), _inset_toward(p1, p0, ts)

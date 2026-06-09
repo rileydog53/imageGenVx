@@ -157,6 +157,17 @@ def test_resolve_edge_shortens_by_both_standoffs():
     assert math.dist(p1, (100.0, 0.0)) == pytest.approx(15.0)
 
 
+def test_resolve_edge_clamps_standoff_on_short_edges():
+    # anchors 10px apart, standoff 8+8 would cross over (q0 past q1) without a
+    # clamp; the clamp keeps p0 before p1 with ~20% of the span as the edge.
+    reg = AnchorRegistry()
+    reg.publish("L", {"p": (0.0, 0.0)})
+    reg.publish("R", {"p": (10.0, 0.0)})
+    p0, p1 = reg.resolve_edge("L.p", "R.p", from_standoff=8.0, to_standoff=8.0)
+    assert p0[0] < p1[0]                       # not reversed
+    assert math.dist(p0, p1) == pytest.approx(2.0)  # ~20% of the 10px span
+
+
 def test_resolve_edge_on_rail_clamps_then_insets():
     reg = AnchorRegistry()
     reg.publish("A", {"p": (0.0, 30.0)})
