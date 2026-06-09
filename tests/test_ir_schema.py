@@ -129,7 +129,7 @@ def test_panels_and_entities_mutually_exclusive():
         archetype=Archetype.PATHWAY,
         entities=[Entity(id="a", type=EntityType.PROTEIN, label="A")],
     )
-    with pytest.raises(ValidationError, match="not both"):
+    with pytest.raises(ValidationError, match="exactly one of"):
         Figure(
             archetype=Archetype.WORKFLOW,
             entities=[Entity(id="z", type=EntityType.PROTEIN, label="Z")],

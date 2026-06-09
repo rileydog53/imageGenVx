@@ -192,6 +192,7 @@ def build(
     relations: list[Any] | None = None,
     compartments: list[Any] | None = None,
     panels: list[Any] | None = None,
+    tiers: list[Any] | None = None,
     annotations: list[Any] | None = None,
     glossary: list[Any] | None = None,
     style: str | None = None,
@@ -211,6 +212,8 @@ def build(
         compartments: List of compartment tuples/dicts. Tuples are
             `(id, type, label)`.
         panels: List of panel dicts (panels nest a `Figure`, so use dicts here).
+        tiers: List of tier dicts (V3 scene chassis; tiers nest scene/slot/step
+            dicts, so use dicts here). Mutually exclusive with panels/leaf.
         annotations: List of annotation dicts.
         style: Convenience alias for `style_preset` ("cell_press", "nature",
             "acs"). Falls through to the schema default when omitted.
@@ -243,6 +246,10 @@ def build(
         data["relations"] = [_normalize_relation(r) for r in relations]
     if panels:
         data["panels"] = list(panels)
+    if tiers:
+        # Tiers nest full scene/slot/step dicts, so pass through (like panels)
+        # and let Figure.model_validate enforce structure.
+        data["tiers"] = list(tiers)
     if annotations:
         data["annotations"] = list(annotations)
     if glossary:

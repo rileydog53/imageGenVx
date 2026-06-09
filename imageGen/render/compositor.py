@@ -373,6 +373,15 @@ def _dispatch_layout(
     Passed through to ``layout_panel`` so each panel's sub-engine uses
     its own preset.
     """
+    if ir.tiers:
+        # V3 scene chassis: the tier/scene layout engine is not built yet
+        # (build order: keystone done, schema done, engine next). Fail loudly
+        # rather than silently emit an empty figure.
+        raise NotImplementedError(
+            "Tiered figures (Figure.tiers) require the scene-chassis layout "
+            "engine, which is not yet wired in the compositor. The IR validates; "
+            "rendering is the next build step."
+        )
     if ir.panels:
         smiles_maps = (
             {p.id: smiles_map for p in ir.panels} if smiles_map else None

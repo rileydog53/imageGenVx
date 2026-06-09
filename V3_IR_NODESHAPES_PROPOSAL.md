@@ -120,7 +120,7 @@ referential integrity in a `@model_validator(mode="after")`; synthetic `ir_id`
 
 ## 2. Decisions settled by recommendation (object if you disagree)
 
-1. **Scene/slot ids are figure-global-unique**, and `.`/`__` forbidden in them. (Registry + cross-tier refs need this.)
+1. **Scene ids are figure-global-unique; slot ids are scene-scoped** (unique within their scene), and `.`/`__` forbidden in scene/slot/rail ids. *Refinement of the original §2.1 ("slot ids figure-global-unique") made at implementation: the scene id already namespaces slot anchors in the `scene.slot.anchor` registry key, so global slot uniqueness is unnecessary and would block natural id reuse (a `blob`/`mol` slot in every scene). Scene-scoped is sufficient for unambiguous refs and `__` scoping.*
 2. **Dedicated `SceneEdgeType`** rather than overloading `RelationType`.
 3. **`RailAxis` enum** (`x`/`y`) for full convention parity (not a free str).
 4. **Step expansion at the builder layer**, deltas slot-granular only.
@@ -144,6 +144,16 @@ referential integrity in a `@model_validator(mode="after")`; synthetic `ir_id`
    arrow clamped to a midline rail — all resolving to correct coords and
    rendering (`tests/figures/anchor_keystone_slice.png`). Full suite 964 green.
 2. **Schema additions** (this doc) — additive IR; `layout_tiers` stub raising `NotImplementedError` for unimplemented `SlotKind`s (mirrors the existing unregistered-archetype pattern).
+   **✅ LANDED 2026-06-08.** `ir/schema.py`: 7 enums (`TierRole`, `TierLayout`,
+   `SlotKind`, `AttachEdge`, `StepOp`, `SceneEdgeType`, `RailAxis`) + 10 models
+   (`Tier`, `Rail`, `TierEdge`, `Scene`, `Slot`, `Attach`, `SceneEdge`,
+   `StepSequence`, `Step`, `StepDelta`) + `Figure.tiers` + three-way leaf/panels/
+   tiers exclusivity + id-uniqueness/reserved-char/ref-resolution validators +
+   all-at-module-end `model_rebuild()`. `ir/__init__.py` exports; `builder.py`
+   gains a `tiers` passthrough; `compositor._dispatch_layout` raises a clear
+   `NotImplementedError` for tiered figures (engine is Step 4–5). `StepDelta.target`
+   made optional (required for remove/replace/add_label, optional for ADD).
+   Tested by `tests/test_ir_schema_tiers.py` (33 tests). Full suite **1000** green.
 3. **Vertical slice end-to-end** on existing primitives: 1 blob-stand-in + 1 residue-stand-in + 1 dashed connect + 1 midline rail + 1 cross-cell `TierEdge` → real render.
 4. **Tier compositor + band chrome** (band fill/border/divider draw calls).
 5. **Scene solver** (topological attach/offset pass) + scene-local label placement.
