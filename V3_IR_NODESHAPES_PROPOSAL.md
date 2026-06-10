@@ -168,9 +168,31 @@ referential integrity in a `@model_validator(mode="after")`; synthetic `ir_id`
    `center` anchor = baseline; duplicate-edge ir_id uniquifier; partial-`height_frac`
    fallback — revisit with the Step-4/5 compositor + solver.*
 4. **Tier compositor + band chrome** (band fill/border/divider draw calls).
+   **✅ LANDED 2026-06-10.** `render/compositor.py` wires `layout_tiers` into the
+   normal `render_figure` pipeline/CLI: `_dispatch_layout` lowers tiered figures
+   through the engine (the Step-3 `NotImplementedError` stub is gone), `_canvas_size`
+   sizes via the new `tier_layout.tier_canvas` (content-aware: cols×cell width +
+   per-tier natural heights; pinnable) so the SVG viewport matches the engine's
+   baked coords, the pathway label pass + `Figure.title` are suppressed under tiers
+   (the TITLE tier owns titling), and autocrop/expand/page-bg flow unchanged. New
+   engine work: unified `_band_chrome` (fill/border + solid/dashed top divider),
+   scene `_badge_group` (corner step number) + `_caption_group` (centred multi-line
+   `scene.label`), `_tier_rects` weighted by `height_frac`-or-role-natural-height,
+   and the **cell-vs-content extent fix** — scene-frame anchors now publish from the
+   union of slot boxes (content extent) so cross-cell transition arrows span the
+   visible molecule gap, not the narrow inter-cell gutter. Title/subtitle baselines
+   reworked to a fixed-separation centred block so a thin TITLE band no longer trips
+   a legibility false-positive (canonical figure verifies semantic+legibility+
+   convention clean via the CLI). Proven by `tests/test_compositor_tiers.py` (13
+   tests: end-to-end render, canvas match, title suppression, autocrop, content-gap
+   arrow, chrome/badge/caption goldens) + updated `test_ir_schema_tiers` dispatch
+   test. Full suite **1025** green. *Deferred (Step 5): topological attach solver +
+   scene-local label collision; non-molecule attach-parent extent; sub-pixel molecule
+   centering; `rail:` bare endpoints; step_sequence (Step 6).*
 5. **Scene solver** (topological attach/offset pass) + scene-local label placement.
+   *Acceptance: no overlapping slots (V3_FEATURES MF-3) — His513-vs-ligand-tangle class of bug.*
 6. **Step expansion** (builder-layer, slot-granular).
-7. **→ Primitive refresh + expansion** (separate spec, #1 follow-on): the aspirin chemistry/style glyphs + per-atom anchors (RDKit conformer coords keyed by atom-map-number → anchor). **Aspirin/COX-1 reproduction is this workstream's acceptance test.**
+7. **→ Primitive refresh + expansion** (separate spec, #1 follow-on): the aspirin chemistry/style glyphs + per-atom anchors (RDKit conformer coords keyed by atom-map-number → anchor). **Aspirin/COX-1 reproduction is this workstream's acceptance test** — gated by the mechanism-figure fidelity criteria (V3_FEATURES **MF-1** one atom convention / no bare-dot oxygens, **MF-2** curly arrows terminate on atom anchors / V3-C4) so the mechanism is *readable*, not just placed. Scoped 2026-06-10 from a hand-composed north-star read.
 
 ---
 

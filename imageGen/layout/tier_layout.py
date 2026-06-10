@@ -62,6 +62,9 @@ from imageGen.primitives.chemistry import render_molecule_anchored
 # ---------------------------------------------------------------------------
 
 TIER_DEFAULT_PARAMS: dict[str, Any] = {
+    # ``tier_canvas`` is a FALLBACK only: when ``layout_params`` does not pin it,
+    # ``tier_canvas()`` computes a content-aware canvas (cols x cell width,
+    # per-tier natural heights). Pinning it (the tests do) bypasses that.
     "tier_canvas": (600.0, 300.0),
     "tier_margin": 20.0,
     "tier_gutter": 24.0,
@@ -69,9 +72,33 @@ TIER_DEFAULT_PARAMS: dict[str, Any] = {
     "tier_edge_standoff": 8.0,
     "tier_title_font_size": 18,
     "tier_subtitle_font_size": 13,
+    # Title->subtitle baseline separation as a multiple of the title font size.
+    # Must clear the legibility bbox heuristic (~0.24*title + 0.96*subtitle of
+    # box height) regardless of how thin the TITLE band's height_frac makes it,
+    # so the two lines never trip a false overlap report. 1.25 leaves margin.
+    "tier_title_subtitle_em": 1.25,
     "tier_text_font_size": 12,
     "tier_text_color": "#1A1A1A",
     "tier_font_family": "Helvetica, Arial, sans-serif",
+    # Content-aware sizing knobs (consumed by tier_canvas / _tier_rects).
+    "tier_cell_pad_x": 45.0,       # horizontal slack each side of a slot in its cell
+    "tier_scene_row_extra": 50.0,  # headroom for a scene row beyond the slot height
+    "tier_title_band_height": 64.0,
+    "tier_bar_band_height": 60.0,
+    "tier_canvas_min": (400.0, 200.0),
+    # Scene chrome.
+    "tier_badge_radius": 11.0,
+    "tier_badge_fill": "#444444",
+    "tier_badge_text_color": "#FFFFFF",
+    "tier_badge_inset": 6.0,       # badge centre inset from the cell top-left
+    "tier_caption_font_size": 12,
+    "tier_caption_gap": 12.0,      # gap below content before the scene caption
+    "tier_caption_line_step": 1.25,  # line height as a multiple of font size
+    # Band chrome defaults (a tier's ``style`` overrides per key).
+    "tier_band_radius": 4.0,
+    "tier_band_stroke_width": 1.0,
+    "tier_divider_color": "#BBBBBB",
+    "tier_divider_width": 1.0,
 }
 
 # Per-SceneEdgeType drawing defaults; ``edge.style`` overrides "stroke".
@@ -92,26 +119,83 @@ _EDGE_DEFAULTS: dict[str, dict[str, Any]] = {
 # Geometry helpers
 # ---------------------------------------------------------------------------
 
+def _tier_natural_height(tier: Tier, params: dict[str, Any]) -> float:
+    """A tier's intrinsic height for content-aware sizing, by role.
+
+    A TITLE band needs only typography headroom; a SCENE_ROW needs a slot plus
+    caption/badge headroom; SUMMARY_BAR / BAND are thin strips. Used both to
+    size the canvas (``tier_canvas``) and to weight the band split when no
+    ``height_frac`` is declared (``_tier_rects``)."""
+    _sw, sh = params["tier_slot_size"]
+    if tier.role == TierRole.TITLE:
+        return float(params["tier_title_band_height"])
+    if tier.role == TierRole.SCENE_ROW:
+        return float(sh) + float(params["tier_scene_row_extra"])
+    return float(params["tier_bar_band_height"])
+
+
 def _tier_rects(
-    tiers: list[Tier], canvas: tuple[float, float], margin: float
+    tiers: list[Tier], canvas: tuple[float, float], margin: float,
+    params: dict[str, Any],
 ) -> list[tuple[Tier, tuple[float, float, float, float]]]:
-    """Stack tiers vertically. Heights use ``height_frac`` (normalised over the
-    content height) when every tier declares one, else an equal split."""
+    """Stack tiers vertically, distributing the content height by weight.
+
+    Weights are each tier's ``height_frac`` when *every* tier declares one
+    (author intent), else each tier's role-based natural height (so a title
+    band stays compact and a scene row gets room without manual fractions).
+    Either way the weights are normalised to fill the inner height, so a pinned
+    canvas is honoured exactly and an auto-sized canvas (whose inner height is
+    the natural sum) is filled without remainder."""
     w, h = canvas
     inner_w = w - 2 * margin
     inner_h = h - 2 * margin
     fracs = [t.height_frac for t in tiers]
     if tiers and all(f is not None for f in fracs):
-        total = sum(fracs)  # normalise so they fill the content height
-        heights = [inner_h * (f / total) for f in fracs]
+        weights = [float(f) for f in fracs]
     else:
-        heights = [inner_h / len(tiers)] * len(tiers) if tiers else []
+        weights = [_tier_natural_height(t, params) for t in tiers]
+    total = sum(weights) or 1.0
+    heights = [inner_h * (wt / total) for wt in weights]
     rects: list[tuple[Tier, tuple[float, float, float, float]]] = []
     y = margin
     for tier, th in zip(tiers, heights):
         rects.append((tier, (margin, y, inner_w, th)))
         y += th
     return rects
+
+
+def tier_canvas(
+    figure: Figure, layout_params: dict[str, Any] | None = None
+) -> tuple[float, float]:
+    """Content-aware canvas ``(w, h)`` for a tiered figure.
+
+    Width is driven by the widest SCENE_ROW (columns x cell width + gutters +
+    margins); height is the sum of per-tier natural heights + margins. When
+    ``layout_params`` pins ``tier_canvas`` it is returned verbatim (the tests
+    and any caller that wants a fixed envelope), so the layout engine and the
+    compositor's viewport agree by both routing through this one function.
+
+    Mirrors ``pathway_layout.compute_pathway_canvas``: the size formula lives in
+    one place so ``layout_tiers`` (which bakes absolute coords) and
+    ``compositor._canvas_size`` (the SVG viewport) never drift apart."""
+    if layout_params and "tier_canvas" in layout_params:
+        w, h = layout_params["tier_canvas"]
+        return (float(w), float(h))
+    params = {**TIER_DEFAULT_PARAMS, **(layout_params or {})}
+    margin = float(params["tier_margin"])
+    gutter = float(params["tier_gutter"])
+    sw, _sh = params["tier_slot_size"]
+    cell_w = float(sw) + 2 * float(params["tier_cell_pad_x"])
+    max_cols = max(
+        (len(t.scenes) for t in figure.tiers if t.role == TierRole.SCENE_ROW),
+        default=1,
+    ) or 1
+    width = 2 * margin + max_cols * cell_w + (max_cols - 1) * gutter
+    height = 2 * margin + sum(
+        _tier_natural_height(t, params) for t in figure.tiers
+    )
+    min_w, min_h = params["tier_canvas_min"]
+    return (max(width, float(min_w)), max(height, float(min_h)))
 
 
 def _column_rects(
@@ -249,20 +333,20 @@ def _layout_scene(
     scene: Scene, rect: tuple[float, float, float, float],
     registry: AnchorRegistry, params: dict[str, Any],
 ) -> list[LayoutEntry]:
-    """Render a scene's slots into ``rect``, publish anchors, emit connect edges."""
+    """Render a scene's slots into ``rect``, publish anchors, emit connect edges.
+
+    Order matters: slots are solved and placed first so the scene-frame anchors
+    can be published from the *content* extent (the union of slot boxes) rather
+    than the cell rect — a cross-cell transition arrow then spans the visible
+    molecule gap, not the narrow inter-cell gutter. Badge / caption chrome and
+    intra-scene edges are emitted last (edges need the atom anchors above)."""
     sw, sh = params["tier_slot_size"]
     standoff = float(params["tier_edge_standoff"])
     cx, cy, cw, ch = rect
     entries: list[LayoutEntry] = []
 
-    # Scene-frame anchors (for cross-cell "scene@edge" TierEdge refs).
-    registry.publish(scene.id, {
-        "left": (0.0, ch / 2.0), "right": (cw, ch / 2.0),
-        "top": (cw / 2.0, 0.0), "bottom": (cw / 2.0, ch),
-        "center": (cw / 2.0, ch / 2.0),
-    }, offset=(cx, cy))
-
     centers = _solve_slot_centers(scene, rect, (sw, sh))
+    boxes: list[tuple[float, float, float, float]] = []
     for slot in scene.slots:
         center = centers.get(slot.id, (cx + cw / 2.0, cy + ch / 2.0))
         top_left = (center[0] - sw / 2.0, center[1] - sh / 2.0)
@@ -290,6 +374,37 @@ def _layout_scene(
             raise NotImplementedError(
                 f"SlotKind {slot.kind.value!r} is not yet supported by the "
                 f"Step-3 tier-layout slice (slot '{scene.id}.{slot.id}')")
+        boxes.append(_slot_bbox(slot, center, (sw, sh), params))
+
+    # Scene-frame anchors from the CONTENT extent (cell-vs-content fix). Falls
+    # back to the cell rect for an empty scene so the keys always resolve.
+    if boxes:
+        minx = min(b[0] for b in boxes); miny = min(b[1] for b in boxes)
+        maxx = max(b[2] for b in boxes); maxy = max(b[3] for b in boxes)
+    else:
+        minx, miny, maxx, maxy = cx, cy, cx + cw, cy + ch
+    fcx, fcy = (minx + maxx) / 2.0, (miny + maxy) / 2.0
+    registry.publish(scene.id, {
+        "left": (minx, fcy), "right": (maxx, fcy),
+        "top": (fcx, miny), "bottom": (fcx, maxy),
+        "center": (fcx, fcy),
+    })
+
+    # Step badge (top-left of the cell, so badges align across a row) + caption.
+    if scene.badge:
+        inset = float(params["tier_badge_inset"])
+        r = float(params["tier_badge_radius"])
+        entries.append(LayoutEntry(
+            (lambda b=scene.badge, c=(cx + inset + r, cy + inset + r), p=params:
+                _badge_group(b, c, p)),
+            (), {}, (0.0, 0.0), ir_id=f"scene_{scene.id}_badge"))
+    if scene.label:
+        gap = float(params["tier_caption_gap"])
+        base_y = maxy + gap + int(params["tier_caption_font_size"])
+        entries.append(LayoutEntry(
+            (lambda t=scene.label, x=fcx, y=base_y, p=params:
+                _caption_group(t, x, y, p)),
+            (), {}, (0.0, 0.0), ir_id=f"scene_{scene.id}_label"))
 
     # Intra-scene edges: refs are scene-local ("slot.anchor"); resolve_edge
     # applies (clamped) endpoint standoff so the line clears both atoms.
@@ -317,12 +432,103 @@ def _text_group(text: str, pos: tuple[float, float], size: int, color: str,
     return g
 
 
-def _band(rect: tuple[float, float, float, float], fill: str) -> svgwrite.container.Group:
-    """A rounded band-background rect for a tier."""
+def _band_chrome(
+    rect: tuple[float, float, float, float], tier_style: dict[str, Any],
+    params: dict[str, Any],
+) -> svgwrite.container.Group:
+    """Background / border / top-divider chrome for one tier band.
+
+    Driven by the tier's ``style`` bag (declarative, like every other primitive's
+    visual intent): ``band_fill`` paints the rounded background, ``band_stroke``
+    (+ ``band_stroke_width``) the border, and ``divider`` ('solid' | 'dashed')
+    draws a rule across the tier's TOP edge — the convention that fences a
+    summary bar off from the steps above it."""
     x, y, w, h = rect
     g = svgwrite.container.Group()
-    g.add(svgwrite.shapes.Rect(insert=(x, y), size=(w, h), fill=str(fill), rx=4, ry=4))
+    fill = tier_style.get("band_fill")
+    stroke = tier_style.get("band_stroke")
+    if fill or stroke:
+        g.add(svgwrite.shapes.Rect(
+            insert=(x, y), size=(w, h),
+            rx=float(params["tier_band_radius"]), ry=float(params["tier_band_radius"]),
+            fill=str(fill) if fill else "none",
+            stroke=str(stroke) if stroke else "none",
+            stroke_width=float(tier_style.get(
+                "band_stroke_width", params["tier_band_stroke_width"])) if stroke else 0,
+        ))
+    divider = tier_style.get("divider")
+    if divider:
+        attrs: dict[str, Any] = {
+            "start": (x, y), "end": (x + w, y),
+            "stroke": str(tier_style.get("divider_color", params["tier_divider_color"])),
+            "stroke_width": float(tier_style.get(
+                "divider_width", params["tier_divider_width"])),
+        }
+        if divider == "dashed":
+            attrs["stroke_dasharray"] = "6,4"
+        g.add(svgwrite.shapes.Line(**attrs))
     return g
+
+
+def _badge_group(
+    text: str, center: tuple[float, float], params: dict[str, Any],
+) -> svgwrite.container.Group:
+    """A small filled circle with a centred number — a scene's step badge.
+
+    Vertical centring is done by nudging the baseline down ~0.35 em rather than
+    relying on ``dominant-baseline`` (cairosvg ignores it on <text>)."""
+    cx, cy = center
+    r = float(params["tier_badge_radius"])
+    g = svgwrite.container.Group()
+    g.add(svgwrite.shapes.Circle(
+        center=(cx, cy), r=r, fill=str(params["tier_badge_fill"]), stroke="none"))
+    g.add(svgwrite.text.Text(
+        text, insert=(cx, cy + r * 0.35), font_size=r * 1.1,
+        fill=str(params["tier_badge_text_color"]),
+        font_family=str(params["tier_font_family"]),
+        text_anchor="middle", font_weight="bold"))
+    return g
+
+
+def _caption_group(
+    text: str, cx: float, top_y: float, params: dict[str, Any],
+) -> svgwrite.container.Group:
+    """A centred, possibly multi-line scene caption below the content.
+
+    ``\\n`` splits into stacked lines (the schema documents scene labels as
+    multi-line); ``top_y`` is the baseline of the first line."""
+    fs = int(params["tier_caption_font_size"])
+    step = fs * float(params["tier_caption_line_step"])
+    g = svgwrite.container.Group()
+    for i, line in enumerate(text.split("\n")):
+        g.add(svgwrite.text.Text(
+            line, insert=(cx, top_y + i * step), font_size=fs,
+            fill=str(params["tier_text_color"]),
+            font_family=str(params["tier_font_family"]),
+            text_anchor="middle", font_style="italic"))
+    return g
+
+
+def _slot_bbox(
+    slot: Slot, center: tuple[float, float], slot_size: tuple[float, float],
+    params: dict[str, Any],
+) -> tuple[float, float, float, float]:
+    """Absolute ``(minx, miny, maxx, maxy)`` a slot occupies around its centre.
+
+    A MOLECULE fills the full slot box; a TEXT slot is roughly measured from its
+    label. The union of these (computed by the caller) is the scene's *content*
+    extent — what cross-cell transition arrows reach to, instead of the wider
+    cell frame (the cell-vs-content fix)."""
+    cxc, cyc = center
+    if slot.kind == SlotKind.MOLECULE:
+        sw, sh = slot_size
+        return (cxc - sw / 2.0, cyc - sh / 2.0, cxc + sw / 2.0, cyc + sh / 2.0)
+    if slot.kind == SlotKind.TEXT:
+        fs = int(params["tier_text_font_size"])
+        w = max(1, len(slot.label or "")) * fs * 0.6
+        half_h = fs * 0.7
+        return (cxc - w / 2.0, cyc - half_h, cxc + w / 2.0, cyc + half_h)
+    return (cxc, cyc, cxc, cyc)
 
 
 def _ref_to_key(ref: str) -> str:
@@ -340,8 +546,9 @@ def layout_tiers(
 
     Args:
         figure: a ``Figure`` with ``tiers`` populated.
-        layout_params: overrides merged onto ``TIER_DEFAULT_PARAMS`` (notably
-            ``tier_canvas``).
+        layout_params: overrides merged onto ``TIER_DEFAULT_PARAMS``. Pin
+            ``tier_canvas`` for a fixed envelope; otherwise the canvas is
+            content-aware via :func:`tier_canvas`.
         style_dict: reserved for the Step-4 preset union (unused in the slice).
 
     Returns:
@@ -356,35 +563,51 @@ def layout_tiers(
     if not figure.tiers:
         raise ValueError("layout_tiers requires a Figure with tiers populated")
     params = {**TIER_DEFAULT_PARAMS, **(layout_params or {})}
-    canvas = params["tier_canvas"]
+    # Self-size through tier_canvas so the baked coords match the compositor's
+    # SVG viewport (which sizes through the same function).
+    canvas = tier_canvas(figure, layout_params)
     margin = float(params["tier_margin"])
     gutter = float(params["tier_gutter"])
     registry = AnchorRegistry()
     entries: list[LayoutEntry] = []
 
-    for tier, rect in _tier_rects(figure.tiers, canvas, margin):
+    for tier, rect in _tier_rects(figure.tiers, canvas, margin, params):
         tx, ty, tw, th = rect
 
-        # Optional band background (style['band_fill']).
-        band_fill = (tier.style or {}).get("band_fill")
-        if band_fill:
+        # Band chrome: background / border / top divider (all style-driven).
+        tstyle = tier.style or {}
+        if any(k in tstyle for k in ("band_fill", "band_stroke", "divider")):
             entries.append(LayoutEntry(
-                (lambda r=rect, f=band_fill: _band(r, f)),
-                (), {}, (0.0, 0.0), ir_id=f"tier_{tier.id}_band"))
+                (lambda r=rect, s=tstyle, p=params: _band_chrome(r, s, p)),
+                (), {}, (0.0, 0.0), ir_id=f"tier_{tier.id}_chrome"))
 
         if tier.role == TierRole.TITLE:
+            title_fs = int(params["tier_title_font_size"])
+            sub_fs = int(params["tier_subtitle_font_size"])
+            cxm = tx + tw / 2.0
+            band_cy = ty + th / 2.0
+            gap = title_fs * float(params["tier_title_subtitle_em"])
+            # Fixed baseline geometry (not band fractions): a one- or two-line
+            # block centred in the band with a separation guaranteed to clear the
+            # legibility overlap heuristic even when the band is thin.
+            if tier.label and tier.subtitle:
+                title_y, sub_y = band_cy - gap * 0.4, band_cy - gap * 0.4 + gap
+            elif tier.label:
+                title_y, sub_y = band_cy + title_fs * 0.35, None
+            else:
+                title_y, sub_y = None, band_cy + sub_fs * 0.35
             if tier.label:
                 entries.append(LayoutEntry(
-                    (lambda t=tier.label, x=tx + tw / 2.0, y=ty + th * 0.45,
-                            p=params: _text_group(t, (x, y), int(p["tier_title_font_size"]),
+                    (lambda t=tier.label, x=cxm, y=title_y, fs=title_fs,
+                            p=params: _text_group(t, (x, y), fs,
                                             str(p["tier_text_color"]),
                                             str(p["tier_font_family"]),
                                             anchor="middle", weight="bold")),
                     (), {}, (0.0, 0.0), ir_id=f"tier_{tier.id}_title"))
             if tier.subtitle:
                 entries.append(LayoutEntry(
-                    (lambda t=tier.subtitle, x=tx + tw / 2.0, y=ty + th * 0.75,
-                            p=params: _text_group(t, (x, y), int(p["tier_subtitle_font_size"]),
+                    (lambda t=tier.subtitle, x=cxm, y=sub_y, fs=sub_fs,
+                            p=params: _text_group(t, (x, y), fs,
                                             str(p["tier_text_color"]),
                                             str(p["tier_font_family"]),
                                             anchor="middle", italic=True)),

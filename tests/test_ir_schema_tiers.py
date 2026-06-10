@@ -343,12 +343,14 @@ def test_builder_accepts_tiers():
     assert fig.tiers[0].label == "Hi"
 
 
-def test_compositor_raises_on_tiered_figure():
+def test_compositor_dispatches_tiered_figure():
+    # Step 4 wired the scene-chassis engine in: a tiered figure now lowers
+    # through layout_tiers instead of raising. An empty BAND tier lays out to
+    # no entries (it has no scenes or band chrome), but the call must succeed.
     from imageGen.render.compositor import _dispatch_layout
     fig = Figure.model_validate({"archetype": "mechanism_cartoon",
         "tiers": [{"id": "t", "role": "band"}]})
-    with pytest.raises(NotImplementedError, match="scene-chassis layout engine"):
-        _dispatch_layout(fig, style_dict={}, smiles_map=None)
+    assert _dispatch_layout(fig, style_dict={}, smiles_map=None) == []
 
 
 def test_unknown_enum_values_rejected():

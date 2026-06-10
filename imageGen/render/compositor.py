@@ -67,6 +67,7 @@ from imageGen.layout.reaction_layout import (
     layout_reaction,
     reaction_label_requests,
 )
+from imageGen.layout.tier_layout import layout_tiers, tier_canvas
 from imageGen.layout.types import LayoutEntry
 from imageGen.render.export import svg_to_pdf, svg_to_png
 from imageGen.styles.loader import DEFAULT_PRESET, load_style
@@ -185,7 +186,10 @@ def render_figure(
     # to place_labels, preventing labels from rendering outside the SVG viewport.
     computed_canvas = _canvas_size(ir, entries)
 
-    if labels:
+    # Tiered figures bake their scene labels / captions / badges in the tier
+    # engine itself (scene-local placement, not the pathway collision pass), so
+    # the compositor's label step is skipped for them.
+    if labels and not ir.tiers:
         if ir.panels:
             entries = _place_labels_per_panel(
                 ir, entries, style_dict, strict_labels=strict_labels,
@@ -374,14 +378,12 @@ def _dispatch_layout(
     its own preset.
     """
     if ir.tiers:
-        # V3 scene chassis: the tier/scene layout engine is not built yet
-        # (build order: keystone done, schema done, engine next). Fail loudly
-        # rather than silently emit an empty figure.
-        raise NotImplementedError(
-            "Tiered figures (Figure.tiers) require the scene-chassis layout "
-            "engine, which is not yet wired in the compositor. The IR validates; "
-            "rendering is the next build step."
-        )
+        # V3 scene chassis: lower the tier/scene graph through the tier engine.
+        # It self-sizes via tier_canvas (the same function _canvas_size uses for
+        # the SVG viewport), so baked coords and viewport agree. Scene labels /
+        # badges are emitted by the engine, so the compositor skips the pathway
+        # label pass for tiered figures (see render_figure).
+        return layout_tiers(ir, style_dict=style_dict)
     if ir.panels:
         smiles_maps = (
             {p.id: smiles_map for p in ir.panels} if smiles_map else None
@@ -530,8 +532,12 @@ def _canvas_size(ir: Figure, entries: list[LayoutEntry]) -> tuple[float, float]:
     `_compute_pathway_canvas`) clamped to the v1 default `(800, 600)` so
     small figures stay golden-image-identical. Panels and reactions still
     use their respective static defaults — those engines lay out within a
-    fixed envelope already.
+    fixed envelope already. Tiered figures size through `tier_canvas`, the
+    same function `layout_tiers` uses, so the viewport matches the baked
+    coordinates exactly.
     """
+    if ir.tiers:
+        return tier_canvas(ir)
     if ir.panels:
         return PANEL_DEFAULT_PARAMS["panel_canvas"]
     if ir.archetype in _PATHWAY_COMPATIBLE_ARCHETYPES:
@@ -702,12 +708,14 @@ def _title_entry(
     """Build the figure-title heading entry, or ``None`` when no title applies.
 
     Returns ``None`` for panel figures (they carry per-panel titles), for
-    archetypes outside ``_TITLED_ARCHETYPES``, and when the spec has no title.
-    The heading is centered on the canvas width and placed in negative-y
-    headroom above the content; ``_expand_svg_to_content`` grows the frame to
-    include it and ``_paint_page_background`` (run after) covers it.
+    tiered figures (the TITLE tier owns titling — rendering ``Figure.title`` too
+    would double up), for archetypes outside ``_TITLED_ARCHETYPES``, and when
+    the spec has no title. The heading is centered on the canvas width and
+    placed in negative-y headroom above the content; ``_expand_svg_to_content``
+    grows the frame to include it and ``_paint_page_background`` (run after)
+    covers it.
     """
-    if ir.panels or ir.archetype not in _TITLED_ARCHETYPES or not ir.title:
+    if ir.panels or ir.tiers or ir.archetype not in _TITLED_ARCHETYPES or not ir.title:
         return None
     cw, _ch = canvas
     fs = float(style_dict.get("figure_title_size", _TITLE_SIZE_DEFAULT))
