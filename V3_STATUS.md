@@ -19,6 +19,23 @@ first, then dive into the detail docs linked below.
 
 **Current test count:** 1025 passing.
 
+> **Phase R (module decomposition)** is now tracked in
+> [`V3_EXECUTION_PLAN.md` → Phase R](V3_EXECUTION_PLAN.md). It splits the six
+> largest modules (pathway_layout 2494 → 6 sub-modules, schema, chemistry,
+> nucleic_acids, compositor, loader) into focused files behind re-export shims —
+> pure mechanical, no behaviour change, 1025-green at every step. **R1 landed in
+> full 2026-06-11**: `pathway_layout.py` 2494 → 652 ln, split into
+> `_pathway_{glyphs,common,rings,bands,routing,labels}.py` (largest 702 ln);
+> AST-verified pure move (46 fns + 20 consts byte-identical), no import cycle.
+> R3–R6 pending; R2 (schema) blocked on sign-off. Runs independently of Steps 5–7.
+
+> **Steps 5–7 are now planned in detail in [`V3_EXECUTION_PLAN.md`](V3_EXECUTION_PLAN.md).**
+> That doc is the active forward plan: it folds in a verified 17-agent
+> architecture scan (2026-06-11), schedules the dispatch/label/style unifications
+> as Phase-0 gates *in front of* each step (seam-before-step), and lists ~30
+> small action items with explicit `file:line` fixes. Read it before starting
+> Step 5. The deferred nits below are now tracked as **P5.4** there.
+
 ---
 
 ## Deferred nits (from Step 4 review — revisit during Step 5/6)
