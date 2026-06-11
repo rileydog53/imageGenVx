@@ -414,7 +414,16 @@ modules (no cycle); all 7 public re-exports resolve; **AST pure-move proof** —
 - [x] **R1.c — `_pathway_bands.py`** (383 ln) — compartments, `_graph_positions`, membrane snap, arrow endpoints.
 - [x] **R1.d — `_pathway_routing.py`** (702 ln) — port routing, fan-out, arch, bilayer/nuclear borders.
 - [x] **R1.e — `_pathway_labels.py`** (487 ln) — ring-label declutter, `pathway_label_requests`, ext-label leaders (label_placement imports kept lazy).
-- [ ] **R3–R6** — as tabled above (chemistry, nucleic_acids, compositor, loader).
+- [x] **R3 — `primitives/chemistry.py`** (801 → 93 ln shim) — split into
+  `_mol_render.py` (433 ln: RDKit ingest/style + `render_molecule`/
+  `render_molecule_anchored`/`render_functional_group`) and `_reaction_render.py`
+  (374 ln: arrows/conditions + `render_reaction`/`render_multistep_reaction`).
+  One-directional dep (`_reaction_render` → `_mol_render` for `DEFAULT_STYLE`,
+  `_smiles_to_mol`, `_inline_molecule`); no cycle. AST-verified pure move (all 17
+  funcs/classes byte-identical to HEAD); shim re-exports every HEAD-defined name
+  + the private surface the tree imports (`DEFAULT_STYLE`, `_arrow`,
+  `_reversible_arrow`, `_FUNCTIONAL_GROUPS`, `_wrap_conditions`). **1025 green.**
+- [ ] **R4–R6** — as tabled above (nucleic_acids, compositor, loader).
 - [ ] **R2** — `schema.py` split; **blocked on sign-off.**
 
 > **Dead code spotted during R1** (not fixed — pure-move discipline): `_label_extent_w`
