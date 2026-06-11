@@ -23,11 +23,14 @@ first, then dive into the detail docs linked below.
 > [`V3_EXECUTION_PLAN.md` → Phase R](V3_EXECUTION_PLAN.md). It splits the six
 > largest modules (pathway_layout 2494 → 6 sub-modules, schema, chemistry,
 > nucleic_acids, compositor, loader) into focused files behind re-export shims —
-> pure mechanical, no behaviour change, 1025-green at every step. **R1 landed in
-> full 2026-06-11**: `pathway_layout.py` 2494 → 652 ln, split into
-> `_pathway_{glyphs,common,rings,bands,routing,labels}.py` (largest 702 ln);
-> AST-verified pure move (46 fns + 20 consts byte-identical), no import cycle.
-> R3–R6 pending; R2 (schema) blocked on sign-off. Runs independently of Steps 5–7.
+> pure mechanical, no behaviour change, 1025-green at every step. **R1 + R3–R6
+> all landed 2026-06-11** (R1: `pathway_layout.py` 2494 → 652 ln into
+> `_pathway_{glyphs,common,rings,bands,routing,labels}.py`; R3: `chemistry.py`
+> 801 → `_mol_render`/`_reaction_render`; R4: `nucleic_acids.py` 796 → `_dna`/`_rna`;
+> R5: `compositor.py` 766 → 615 + `_svg_post`; R6: `loader.py` 358 → 318 + `_palette`).
+> Each is an AST-verified pure move (every moved fn/class byte-identical to HEAD),
+> no import cycle, full public surface re-exported. **Only R2 (schema) remains —
+> blocked on sign-off.** Runs independently of Steps 5–7.
 
 > **Steps 5–7 are now planned in detail in [`V3_EXECUTION_PLAN.md`](V3_EXECUTION_PLAN.md).**
 > That doc is the active forward plan: it folds in a verified 17-agent
