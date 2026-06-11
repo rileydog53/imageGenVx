@@ -430,7 +430,17 @@ modules (no cycle); all 7 public re-exports resolve; **AST pure-move proof** —
   (`_rna` → `_dna` for `DEFAULT_STYLE`, `_axis_frame`, `_sample_strand_on_path`,
   `_add_strand_polyline`, `dna_segment`); no cycle. AST-verified pure move (all 14
   funcs byte-identical to HEAD); shim re-exports every HEAD-defined name. **1025 green.**
-- [ ] **R5–R6** — as tabled above (compositor, loader).
+- [x] **R5 — `render/compositor.py`** (766 → 615 ln orchestrator) — split the
+  post-write SVG passes + figure-title chrome into `_svg_post.py` (193 ln:
+  `_autocrop_svg`, `_expand_svg_to_content`, `_frame_box` + frame regexes,
+  `_paint_page_background`, `_figure_title_group`, `_title_entry`). `render_figure`
+  + dispatch/style/canvas/label helpers stay in `compositor.py`. One-directional dep
+  (`compositor` → `_svg_post`); no cycle. The seam files Steps 5/6/7 edit
+  (`_dispatch_layout`, `_canvas_size`, label coordinator) are untouched. Every
+  externally-imported name still resolves from `compositor` (the moved private
+  names are re-exported). AST-verified pure move (all 20 funcs/classes
+  byte-identical to HEAD). **1025 green.**
+- [ ] **R6** — as tabled above (loader).
 - [ ] **R2** — `schema.py` split; **blocked on sign-off.**
 
 > **Dead code spotted during R1** (not fixed — pure-move discipline): `_label_extent_w`
