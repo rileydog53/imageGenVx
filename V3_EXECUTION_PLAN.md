@@ -440,7 +440,14 @@ modules (no cycle); all 7 public re-exports resolve; **AST pure-move proof** —
   externally-imported name still resolves from `compositor` (the moved private
   names are re-exported). AST-verified pure move (all 20 funcs/classes
   byte-identical to HEAD). **1025 green.**
-- [ ] **R6** — as tabled above (loader).
+- [x] **R6 — `styles/loader.py`** (358 → 318 ln) — extracted the palette→fill
+  recipe (`PALETTE_RECIPE`, `apply_palette_recipe`) into `_palette.py` (55 ln);
+  `loader.py` keeps all preset I/O (`load_style`, `load_preset_full`,
+  `load_layout_params`, `list_presets`, `StylePreset`, key sets). One-directional
+  dep (`loader` → `_palette`); no cycle. Both moved names re-exported so the full
+  surface (incl. `PALETTE_RECIPE`/`apply_palette_recipe`) stays importable from
+  `loader`. AST-verified pure move (all 11 funcs/classes byte-identical to HEAD).
+  **1025 green.**
 - [ ] **R2** — `schema.py` split; **blocked on sign-off.**
 
 > **Dead code spotted during R1** (not fixed — pure-move discipline): `_label_extent_w`

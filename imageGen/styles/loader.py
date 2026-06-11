@@ -49,6 +49,11 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+# Palette → primitive-fill recipe (R6 split). Re-exported here so
+# ``PALETTE_RECIPE`` and ``apply_palette_recipe`` stay importable from
+# ``imageGen.styles.loader`` unchanged; ``load_style`` calls the latter.
+from imageGen.styles._palette import PALETTE_RECIPE, apply_palette_recipe
+
 
 PRESET_DIR = Path(__file__).parent
 DEFAULT_PRESET = "cell_press"
@@ -79,51 +84,6 @@ def _collect_known_style_keys() -> frozenset[str]:
 
 
 KNOWN_STYLE_KEYS: frozenset[str] = _collect_known_style_keys()
-
-
-# ---------------------------------------------------------------------------
-# V2 / ST1: palette-to-primitive fill recipe.
-# Each slot i maps palette[i] to a list of style keys that should receive
-# that colour. apply_palette_recipe() derives a flat style dict from any
-# 8-colour palette; load_style() merges it under explicit overrides so
-# overrides always win. Presets can supply a custom palette_recipe to
-# redefine the mapping; None means "use PALETTE_RECIPE".
-# ---------------------------------------------------------------------------
-
-PALETTE_RECIPE: list[list[str]] = [
-    ["protein_fill"],               # palette[0] — generic entity / protein fill
-    ["kinase_fill"],                # palette[1] — kinase / enzyme fill
-    ["receptor_fill"],              # palette[2] — receptor fill
-    ["gpcr_helix_fill"],            # palette[3] — GPCR helix fill
-    ["tf_fill"],                    # palette[4] — transcription factor fill
-    ["dna_strand1_stroke"],         # palette[5] — DNA strand colour
-    ["rna_stroke"],                 # palette[6] — RNA stroke colour
-    ["chromatin_nucleosome_fill"],  # palette[7] — chromatin / histone fill
-]
-
-
-def apply_palette_recipe(
-    palette: list[str],
-    recipe: list[list[str]] | None = None,
-) -> dict[str, str]:
-    """Derive a flat style dict from a palette using a slot→key recipe.
-
-    Args:
-        palette: Exactly 8 ``#RRGGBB`` hex strings.
-        recipe: List of 8 slots; slot ``i`` is a list of style keys to set
-                to ``palette[i]``. Defaults to ``PALETTE_RECIPE`` when ``None``.
-
-    Returns:
-        Flat ``{style_key: hex_colour}`` dict. When multiple slots map to the
-        same key (unusual), the last slot wins (deterministic, palette-order).
-        Always call this before merging explicit overrides so overrides win.
-    """
-    active = recipe if recipe is not None else PALETTE_RECIPE
-    result: dict[str, str] = {}
-    for colour, keys in zip(palette, active):
-        for key in keys:
-            result[key] = colour
-    return result
 
 
 # ---------------------------------------------------------------------------
