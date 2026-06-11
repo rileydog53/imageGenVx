@@ -423,7 +423,14 @@ modules (no cycle); all 7 public re-exports resolve; **AST pure-move proof** —
   funcs/classes byte-identical to HEAD); shim re-exports every HEAD-defined name
   + the private surface the tree imports (`DEFAULT_STYLE`, `_arrow`,
   `_reversible_arrow`, `_FUNCTIONAL_GROUPS`, `_wrap_conditions`). **1025 green.**
-- [ ] **R4–R6** — as tabled above (nucleic_acids, compositor, loader).
+- [x] **R4 — `primitives/nucleic_acids.py`** (796 → 78 ln shim) — split into
+  `_dna.py` (470 ln: shared `DEFAULT_STYLE` + helix geometry helpers, `dna_segment`,
+  `gene_helix`, `_broken_dna_segment`) and `_rna.py` (344 ln: `rna_segment`,
+  `rna_helix`, `mrna_helix`, `primer_helix`, `chromatin`). One-directional dep
+  (`_rna` → `_dna` for `DEFAULT_STYLE`, `_axis_frame`, `_sample_strand_on_path`,
+  `_add_strand_polyline`, `dna_segment`); no cycle. AST-verified pure move (all 14
+  funcs byte-identical to HEAD); shim re-exports every HEAD-defined name. **1025 green.**
+- [ ] **R5–R6** — as tabled above (compositor, loader).
 - [ ] **R2** — `schema.py` split; **blocked on sign-off.**
 
 > **Dead code spotted during R1** (not fixed — pure-move discipline): `_label_extent_w`
