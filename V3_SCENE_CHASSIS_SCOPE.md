@@ -11,7 +11,7 @@ user 2026-06-08:
   blobs, TS partial bonds, icons) are **the #1 follow-on workstream**, specced
   separately, after the placement chassis is proven.
 
-Reference target: `aspirin_COX1_figure_spec.md` + `ChatGPT Image Jun 8, 2026 …`
+Reference target: `references/aspirin_COX1_figure_spec.md` + `ChatGPT Image Jun 8, 2026 …`
 — the "perfect figure" we are building toward.
 
 ---

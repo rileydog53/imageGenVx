@@ -6,7 +6,7 @@ then adversarially verified by three reviewers (schema-safety, render-feasibilit
 target-coverage). This doc folds their fixes in.
 
 Prereq doc: `V3_SCENE_CHASSIS_SCOPE.md` (agreed 3-layer plan).
-Target figure: `aspirin_COX1_figure_spec.md`.
+Target figure: `references/aspirin_COX1_figure_spec.md`.
 
 ---
 

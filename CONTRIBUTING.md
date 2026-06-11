@@ -5,6 +5,14 @@ architect, and a builder (often an AI agent). This file is the entry point
 for anyone extending the project. For *using* imageGen, see
 [README.md](README.md); for the LLM-facing interface, see [SKILL.md](SKILL.md).
 
+## Session workflow
+
+1. **Read current state** — this file, [BACKLOG.md](BACKLOG.md), and (if doing V3 work) [V3_STATUS.md](V3_STATUS.md).
+2. **Write a plan** — describe what you are going to do in prose before writing any code. Share it.
+3. **Execute the plan** — implement, run tests (`~/Desktop/.venv/bin/pytest tests/ -v`), verify.
+4. **Report back** — what was done, what passed, any issues or blockers hit.
+5. **Wait** — Joey will say either "here's what's next" or "push to GitHub and run `/simplify`."
+
 ## Start here
 
 Before writing code, read in order:
@@ -13,8 +21,7 @@ Before writing code, read in order:
    (D1/D3/D4: IR-id tagging, label auto-invoke, `smiles_map`; D2 watermarking
    was retired).
 2. **[BACKLOG.md](BACKLOG.md)** — open, in-scope defects.
-3. **[V3_FEATURES.md](V3_FEATURES.md)** — larger features parked for a
-   possible v3.
+3. **[V3_STATUS.md](V3_STATUS.md)** — current V3 build step and what's next (if doing V3 work).
 4. **The pattern file for the area you're touching** — e.g. `primitives/proteins.py`
    for a primitive, `layout/reaction_layout.py` for a layout engine. Copy its style.
 

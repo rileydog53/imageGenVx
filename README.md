@@ -158,9 +158,11 @@ change regenerate with `IMAGEGEN_REGEN_GOLDEN=1 pytest`.
 
 - **[SKILL.md](SKILL.md)** — the model-facing interface (when to trigger, the
   classify → IR → render → verify workflow, IR reference, cookbook).
-- **[LIMITATIONS.md](LIMITATIONS.md)** — known v1 limitations.
-- **[FEEDBACK.md](FEEDBACK.md)** — log a wrong or low-quality figure here.
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** — for developers and AI agents
-  extending the project: workflow, conventions, hard rules.
-- **[V3_FEATURES.md](V3_FEATURES.md)** — out-of-scope features parked for a possible v3.
-- **[DECISIONS.md](DECISIONS.md)** — cross-phase architectural decisions.
+  extending the project: session workflow, conventions, hard rules.
+- **[DECISIONS.md](DECISIONS.md)** — cross-phase architectural decisions (append-only).
+- **[LIMITATIONS.md](LIMITATIONS.md)** — known v1/v2 limitations.
+- **[FEEDBACK.md](FEEDBACK.md)** — log a wrong or low-quality figure here.
+- **[BACKLOG.md](BACKLOG.md)** — open in-scope defects.
+- **[V3_STATUS.md](V3_STATUS.md)** — current V3 build step and what's next.
+- **[V3_FEATURES.md](V3_FEATURES.md)** — out-of-scope features parked for v3.
