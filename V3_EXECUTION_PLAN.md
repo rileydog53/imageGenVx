@@ -90,7 +90,13 @@ Keep the suite green at every check (currently **1025**).
 
 ### Phase 0a — pre-Step-5 seams (land before any solver work)
 
-- [ ] **P0a.1 — Promote the archetype→engine table to one source.**
+- [x] **P0a.1 — Promote the archetype→engine table to one source.** ✅ 2026-06-12.
+  New leaf `layout/_archetype_plan.py` holds `_ARCHETYPE_PLAN: dict[Archetype,
+  ArchetypePlan(engine, canvas_fn, label_fn, canvas_key, inject_canvas)]`.
+  `panel_layout.ARCHETYPE_TO_LAYOUT` derives from it; `_override_subengine_canvas`
+  reads it (duplicate if/elif deleted); `_dispatch_layout` / `_canvas_size` /
+  `_label_requests_fn` read it (no more `_PATHWAY_COMPATIBLE_ARCHETYPES` membership
+  tests in the compositor). Pure refactor, no golden diffs, +6 structural tests.
   Lift `ARCHETYPE_TO_LAYOUT` (`panel_layout.py:82`) into a single
   `_ARCHETYPE_PLAN: dict[Archetype, tuple[engine, canvas_fn, label_fn]]`. Make
   `_dispatch_layout` (`compositor.py:356`), `_canvas_size` (`:528`) and
@@ -98,7 +104,13 @@ Keep the suite green at every check (currently **1025**).
   `panel_layout.py:210`** so REACTION_SCHEME is encoded once. Pure refactor.
   *Done when:* the 4 sites share one table; golden suite unchanged.
 
-- [ ] **P0a.2 — Introduce `LoweringPlan` + `_lowering_plan(ir)`.**
+- [x] **P0a.2 — Introduce `LoweringPlan` + `_lowering_plan(ir)`.** ✅ 2026-06-12.
+  `LabelStrategy` enum + `LoweringPlan(engine, canvas_fn, label_strategy,
+  style_base, archetype_plan)` resolved once at the top of `render_figure`
+  (container-mode-first). `render_figure` reads `plan.style_base` / `plan.canvas_fn`
+  / `plan.label_strategy`; the PH.1 coercion stays a pre-plan normalise; the
+  `_dispatch_layout` / `_canvas_size` signatures are untouched (pinned by tests).
+  Behaviour identical (canvas_fn == _canvas_size verified for every mode).
   Add a small record `(engine, canvas_fn, label_strategy, style_base)` resolved
   once at the top of `render_figure`. Container-mode-first (`tiers` → `elif
   panels` → `else leaf`, archetype-second via P0a.1's table). Route

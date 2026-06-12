@@ -42,29 +42,26 @@ Step coupling:
 from __future__ import annotations
 
 import warnings
+from enum import Enum
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Callable, Literal, NamedTuple
 
 import svgwrite
 
 from imageGen.ir.schema import Archetype, Figure
+from imageGen.layout._archetype_plan import _ARCHETYPE_PLAN, ArchetypePlan
 from imageGen.layout.label_placement import place_labels
 from imageGen.layout.panel_layout import (
     PANEL_DEFAULT_PARAMS,
     layout_panel,
 )
 from imageGen.layout.pathway_layout import (
-    _PATHWAY_COMPATIBLE_ARCHETYPES,
     compute_pathway_canvas,
-    layout_pathway,
     pathway_extlabel_leaders,
-    pathway_label_requests,
 )
 from imageGen.layout.reaction_layout import (
-    REACTION_DEFAULT_PARAMS,
     is_linear_chain_reaction,
     layout_reaction,
-    reaction_label_requests,
 )
 from imageGen.layout.tier_layout import layout_tiers, tier_canvas
 from imageGen.layout.types import LayoutEntry
@@ -98,6 +95,64 @@ from imageGen.render._svg_post import (
 _DEFAULT_CANVAS = (800.0, 600.0)
 
 Format = Literal["svg", "png", "pdf"]
+
+
+# ---------------------------------------------------------------------------
+# Lowering plan (P0a.2) — resolve the dispatch axis ONCE, container-mode-first.
+# ---------------------------------------------------------------------------
+
+
+class LabelStrategy(Enum):
+    """How a figure's labels are placed.
+
+    BAKED   — the engine emits its own labels (tiers: scene-local placement).
+    PER_PANEL — one collision-isolated placement pass per panel.
+    LEAF    — a single figure-wide placement pass.
+    """
+    BAKED = "baked"
+    PER_PANEL = "panel"
+    LEAF = "leaf"
+
+
+class LoweringPlan(NamedTuple):
+    """The single record that decides how an IR Figure lowers to a render.
+
+    Resolved once at the top of ``render_figure`` by ``_lowering_plan`` so the
+    container/archetype precedence is decided in exactly one place
+    (container-mode-first, archetype-second via ``_ARCHETYPE_PLAN``) instead of
+    being re-tested at each concern. ``engine``/``archetype_plan`` are carried
+    for introspection + the Step 6/7 adapters; ``render_figure`` itself reads
+    ``canvas_fn`` / ``label_strategy`` / ``style_base`` (dispatch keeps going
+    through ``_dispatch_layout`` so its pinned signature is untouched).
+    """
+    engine: Callable[..., list[LayoutEntry]] | None
+    canvas_fn: Callable[[Figure], tuple[float, float]]
+    label_strategy: LabelStrategy
+    style_base: dict[str, Any]
+    archetype_plan: ArchetypePlan | None
+
+
+def _lowering_plan(ir: Figure, style_name: str | None) -> LoweringPlan:
+    """Resolve the lowering plan once, container-mode-first.
+
+    The schema's at-most-one-of-{leaf, panels, tiers} guard
+    (``Figure._validate_structure``) makes this ``if/elif/else`` provably unable
+    to mis-route. Archetype is resolved second, only for the leaf arm, via the
+    single ``_ARCHETYPE_PLAN`` table. Call AFTER any archetype normalisation
+    (e.g. the PH.1 multi-step coercion) so the plan sees the final archetype.
+    """
+    style_base = _resolve_style(ir, style_name)
+    if ir.tiers:
+        return LoweringPlan(layout_tiers, tier_canvas, LabelStrategy.BAKED,
+                            style_base, None)
+    if ir.panels:
+        return LoweringPlan(layout_panel, lambda _fig: PANEL_DEFAULT_PARAMS["panel_canvas"],
+                            LabelStrategy.PER_PANEL, style_base, None)
+    plan = _ARCHETYPE_PLAN.get(ir.archetype)
+    canvas_fn = plan.canvas_fn if plan is not None else (lambda _fig: _DEFAULT_CANVAS)
+    engine = plan.engine if plan is not None else None
+    return LoweringPlan(engine, canvas_fn, LabelStrategy.LEAF, style_base, plan)
+
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -170,21 +225,16 @@ def render_figure(
     """
     output_path = Path(output_path)
     fmt = _resolve_format(output_path, format)
-    style_dict = _resolve_style(ir, style_name)
-    # ST4: build per-panel style dicts for panels whose preset differs from top-level.
-    panel_styles = _build_panel_styles(ir, style_name) if ir.panels else {}
-    # R6: a multi-step reaction (one entity is both source and target) that
-    # forms a single linear chain is rendered as a molecule sequence by
-    # layout_reaction (keeping skeletal structures + the reaction_0 group).
-    # Only non-linear multi-step graphs (branching / convergence / cycles)
-    # can't be drawn as a reaction. PH.1: those FAIL LOUD by default (matching
-    # layout_reaction's own NotImplementedError) — the pathway fallback is an
-    # explicit opt-in (pathway_fallback=True). When taken it *always* warns
-    # (not just when a smiles_map is present, which previously made the
-    # no-smiles downgrade silent) and names the original + coerced archetype.
-    # Coercing the archetype routes every downstream consumer that keys off it
-    # -- layout dispatch, label-request selection, canvas sizing -- through the
-    # pathway path in one decision.
+    # R6/PH.1: a multi-step reaction (one entity is both source and target) that
+    # forms a single linear chain renders as a molecule sequence by
+    # layout_reaction. Only non-linear multi-step graphs (branching / convergence
+    # / cycles) can't be drawn as a reaction. Those FAIL LOUD by default (matching
+    # layout_reaction's own NotImplementedError); the pathway fallback is an
+    # explicit opt-in (pathway_fallback=True) that *always* warns (not just when a
+    # smiles_map is present, which previously made the no-smiles downgrade silent)
+    # and names the original + coerced archetype. This normalise runs BEFORE the
+    # lowering plan resolves, so the plan + every downstream consumer (dispatch,
+    # label strategy, canvas sizing) see the final archetype in one decision.
     if _is_multistep_reaction(ir) and not is_linear_chain_reaction(ir):
         if not pathway_fallback:
             raise NotImplementedError(
@@ -205,17 +255,25 @@ def render_figure(
             stacklevel=2,
         )
         ir = ir.model_copy(update={"archetype": Archetype.PATHWAY})
+
+    # P0a.2: resolve the lowering plan ONCE (container-mode-first); route style,
+    # canvas, and the label strategy through it. Dispatch keeps going through
+    # _dispatch_layout (pinned signature) which makes the same container decision.
+    plan = _lowering_plan(ir, style_name)
+    style_dict = plan.style_base
+    # ST4: build per-panel style dicts for panels whose preset differs from top-level.
+    panel_styles = _build_panel_styles(ir, style_name) if ir.panels else {}
     entries = _dispatch_layout(ir, style_dict, smiles_map, panel_styles=panel_styles)
 
     # L18: compute canvas before label placement so the bounds can be forwarded
     # to place_labels, preventing labels from rendering outside the SVG viewport.
-    computed_canvas = _canvas_size(ir, entries)
+    computed_canvas = plan.canvas_fn(ir)
 
     # Tiered figures bake their scene labels / captions / badges in the tier
     # engine itself (scene-local placement, not the pathway collision pass), so
-    # the compositor's label step is skipped for them.
-    if labels and not ir.tiers:
-        if ir.panels:
+    # the compositor's label step is skipped for them (LabelStrategy.BAKED).
+    if labels and plan.label_strategy is not LabelStrategy.BAKED:
+        if plan.label_strategy is LabelStrategy.PER_PANEL:
             entries = _place_labels_per_panel(
                 ir, entries, style_dict, strict_labels=strict_labels,
                 canvas=computed_canvas, panel_styles=panel_styles,
@@ -417,9 +475,13 @@ def _dispatch_layout(
             ir, smiles_maps=smiles_maps, style_dict=style_dict,
             style_dicts=panel_styles or None,
         )
-    if ir.archetype in _PATHWAY_COMPATIBLE_ARCHETYPES:
-        return layout_pathway(ir, style_dict=style_dict)
-    if ir.archetype == Archetype.REACTION_SCHEME:
+    plan = _ARCHETYPE_PLAN.get(ir.archetype)
+    if plan is None:
+        raise NotImplementedError(
+            f"Archetype {ir.archetype!r} is not yet wired in the compositor "
+            "(and the figure has no panels)."
+        )
+    if plan.engine is layout_reaction:
         if smiles_map is None:
             missing = [e.id for e in ir.entities]
             raise ValueError(
@@ -427,10 +489,7 @@ def _dispatch_layout(
                 f"missing entity ids: {missing}"
             )
         return layout_reaction(ir, smiles_map=smiles_map, style_dict=style_dict)
-    raise NotImplementedError(
-        f"Archetype {ir.archetype!r} is not yet wired in the compositor "
-        "(and the figure has no panels)."
-    )
+    return plan.engine(ir, style_dict=style_dict)
 
 
 def _panel_cell_bounds(ir: Figure) -> dict[str, tuple[float, float]]:
@@ -541,13 +600,11 @@ def _label_requests_fn(archetype: Archetype) -> Any | None:
 
     Pathway-family archetypes (PATHWAY / WORKFLOW / CELLULAR_SCHEMATIC /
     MECHANISM_CARTOON) all dispatch through `layout_pathway` and share
-    `pathway_label_requests`.
+    `pathway_label_requests`; REACTION_SCHEME has `reaction_label_requests`.
+    The mapping is read from the single `_ARCHETYPE_PLAN` table.
     """
-    if archetype in _PATHWAY_COMPATIBLE_ARCHETYPES:
-        return pathway_label_requests
-    if archetype == Archetype.REACTION_SCHEME:
-        return reaction_label_requests
-    return None
+    plan = _ARCHETYPE_PLAN.get(archetype)
+    return plan.label_fn if plan is not None else None
 
 
 def _canvas_size(ir: Figure, entries: list[LayoutEntry]) -> tuple[float, float]:
@@ -565,10 +622,9 @@ def _canvas_size(ir: Figure, entries: list[LayoutEntry]) -> tuple[float, float]:
         return tier_canvas(ir)
     if ir.panels:
         return PANEL_DEFAULT_PARAMS["panel_canvas"]
-    if ir.archetype in _PATHWAY_COMPATIBLE_ARCHETYPES:
-        return _compute_pathway_canvas(ir)
-    if ir.archetype == Archetype.REACTION_SCHEME:
-        return REACTION_DEFAULT_PARAMS["reaction_canvas"]
+    plan = _ARCHETYPE_PLAN.get(ir.archetype)
+    if plan is not None:
+        return plan.canvas_fn(ir)
     return _DEFAULT_CANVAS
 
 

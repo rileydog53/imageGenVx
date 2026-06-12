@@ -47,8 +47,7 @@ import svgwrite.shapes
 import svgwrite.text
 
 from imageGen.ir.schema import Archetype, Figure
-from imageGen.layout.pathway_layout import layout_pathway
-from imageGen.layout.reaction_layout import layout_reaction
+from imageGen.layout._archetype_plan import _ARCHETYPE_PLAN
 from imageGen.layout.types import LayoutEntry
 
 
@@ -79,12 +78,11 @@ PANEL_DEFAULT_PARAMS: dict[str, Any] = {
 # Archetype dispatch (public so callers can introspect; tests pin the table).
 # ---------------------------------------------------------------------------
 
+# Derived from the single source of truth (_ARCHETYPE_PLAN). Kept as a plain
+# mutable dict so callers/tests can introspect and mutate it (e.g. pop an entry
+# to exercise the "no engine registered" path).
 ARCHETYPE_TO_LAYOUT: dict[Archetype, Callable[..., list[LayoutEntry]]] = {
-    Archetype.PATHWAY:             layout_pathway,
-    Archetype.WORKFLOW:            layout_pathway,
-    Archetype.CELLULAR_SCHEMATIC:  layout_pathway,
-    Archetype.MECHANISM_CARTOON:   layout_pathway,
-    Archetype.REACTION_SCHEME:     layout_reaction,
+    archetype: plan.engine for archetype, plan in _ARCHETYPE_PLAN.items()
 }
 
 
@@ -199,16 +197,11 @@ def _override_subengine_canvas(
     intentionally clobbered — panels must fit their cell).
     """
     overrides = dict(base_params or {})
-    if archetype in {
-        Archetype.PATHWAY,
-        Archetype.WORKFLOW,
-        Archetype.CELLULAR_SCHEMATIC,
-        Archetype.MECHANISM_CARTOON,
-    }:
-        overrides["pathway_canvas"] = canvas
-        overrides["pathway_origin"] = origin
-    elif archetype is Archetype.REACTION_SCHEME:
-        overrides["reaction_origin"] = origin
+    plan = _ARCHETYPE_PLAN.get(archetype)
+    if plan is not None:
+        if plan.inject_canvas:
+            overrides[f"{plan.canvas_key}_canvas"] = canvas
+        overrides[f"{plan.canvas_key}_origin"] = origin
     return overrides
 
 
