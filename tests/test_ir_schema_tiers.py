@@ -296,6 +296,27 @@ def test_tier_transition_unknown_rail_ref_rejected():
             "transitions": [{"from_ref": "a@right", "to_ref": "rail:ghost"}]})
 
 
+def test_tier_transition_unknown_slot_rejected():
+    # P0a.6: a 'scene.slot.anchor' transition naming a nonexistent SLOT fails at
+    # Figure/Tier construction (the scene exists, but the slot token does not) —
+    # not at render. The scene token is checked separately above.
+    with pytest.raises(ValidationError, match="unknown slot"):
+        Tier.model_validate({"id": "t", "role": "scene_row",
+            "scenes": [{"id": "a", "slots": [{"id": "mol", "kind": "molecule"}]},
+                       {"id": "b", "slots": [{"id": "mol", "kind": "molecule"}]}],
+            "transitions": [{"from_ref": "a.ghost.x", "to_ref": "b.mol.y"}]})
+
+
+def test_tier_transition_known_slot_dynamic_anchor_ok():
+    # P0a.6 boundary: a 'scene.slot.anchor' ref with a KNOWN slot builds fine —
+    # the dynamic atom segment is validated at layout time (P0a.5), not at build.
+    t = Tier.model_validate({"id": "t", "role": "scene_row",
+        "scenes": [{"id": "a", "slots": [{"id": "mol", "kind": "molecule"}]},
+                   {"id": "b", "slots": [{"id": "mol", "kind": "molecule"}]}],
+        "transitions": [{"from_ref": "a.mol.carbonyl", "to_ref": "b.mol.acetyl"}]})
+    assert len(t.transitions) == 1
+
+
 # ---------------------------------------------------------------------------
 # Step sequence
 # ---------------------------------------------------------------------------

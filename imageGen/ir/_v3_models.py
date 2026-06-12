@@ -351,6 +351,14 @@ class Tier(_IRBase):
         if self.step_sequence is not None:
             scene_ids.add(self.step_sequence.base.id)
             scene_ids |= {st.id for st in self.step_sequence.steps}
+        # P0a.6: statically-known slot ids per scene (scenes + overlays only).
+        # step_sequence scenes are excluded — their slot set is built by step
+        # deltas at expansion time, so a transition's slot token into one stays a
+        # layout-time concern. The dynamic atom segment of every ref is likewise
+        # left for layout (P0a.5 aggregates those); only the slot token is known
+        # at build, mirroring Scene._validate_scene's connect-ref check.
+        scene_slots = {s.id: set(_collect_slot_ids(s.slots))
+                       for s in (*self.scenes, *self.overlays)}
         for te in self.transitions:
             if te.on_rail is not None and te.on_rail not in rail_set:
                 raise ValueError(
@@ -371,4 +379,13 @@ class Tier(_IRBase):
                             f"Tier '{self.id}' transition references unknown "
                             f"scene '{scene_token}' in '{ref}'"
                         )
+                    # A 'scene.slot.anchor' ref also names a slot; validate that
+                    # token now ('scene@edge' frame refs have no slot token).
+                    if "@" not in ref and "." in ref and scene_token in scene_slots:
+                        slot_token = ref.split(".")[1]
+                        if slot_token not in scene_slots[scene_token]:
+                            raise ValueError(
+                                f"Tier '{self.id}' transition references unknown "
+                                f"slot '{slot_token}' in '{ref}'"
+                            )
         return self

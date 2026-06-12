@@ -171,13 +171,20 @@ Keep the suite green at every check (currently **1025**).
   instead of dying on the first typo at `resolve` (`anchors.py:132`).
   *Done when:* a figure with two bad refs reports both in one error.
 
-- [ ] **P0a.6 — Validate the static slot token of anchor refs at IR-build time.**
-  ⚠️ IR change — needs sign-off. Extend `Tier._validate_tier` (`schema.py:~561`)
-  and `Scene._validate_scene` (`:374`) to also check the **slot** token of
-  `"scene.slot.anchor"` refs (slot ids are known at build), leaving only the
-  truly-dynamic atom segment for layout time. Catches a whole typo class early;
-  matters more once Step 7 explodes anchor cardinality. Preserve existing
-  error-string substrings.
+- [x] **P0a.6 — Validate the static slot token of anchor refs at IR-build time.**
+  ✅ 2026-06-12 (C4, sign-off given). The **Scene** side already existed
+  (`Scene._validate_scene` checks every `connect` ref's slot token) and `Tier`
+  already validated the **scene** token of `transition` refs — so the only gap
+  was the **slot** token of a `"scene.slot.anchor"` `TierEdge` ref. `Tier._validate_tier`
+  now builds a static per-scene slot map (scenes + overlays; step_sequence scenes
+  excluded — their slots arrive via deltas at expansion, so they stay a
+  layout-time concern) and rejects a `scene.slot.anchor` transition whose slot
+  token is unknown (`@`-frame refs have no slot token; the dynamic atom segment
+  is still left for P0a.5 at layout). Purely **additive** — zero pre-existing
+  lines changed, every test-matched error substring byte-preserved; new string
+  "transition references unknown slot". +2 tests (reject nonexistent slot at
+  build; known-slot + dynamic-anchor still builds). Adversarially verified
+  (4-lens workflow → safe, 0 defects). 1060 green.
   *Done when:* a `TierEdge` naming a nonexistent slot fails at `Figure(...)`
   construction, not at render.
 
