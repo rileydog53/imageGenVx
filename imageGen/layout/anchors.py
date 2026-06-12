@@ -27,7 +27,10 @@ unique (the schema forbids ``.`` / ``__`` in scene/slot/rail ids so the
 """
 from __future__ import annotations
 
+import contextlib
+import copy
 import math
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 
 from imageGen.primitives._anchors import AnchoredGroup
@@ -76,6 +79,85 @@ class AnchorRegistry:
     def __init__(self) -> None:
         self._anchors: dict[str, tuple[float, float]] = {}
         self._rails: dict[str, Rail] = {}
+        # P0a.4: when a ``layer()`` is open these hold buffered writes that
+        # resolve* reads on top of the base; they are None when no layer is open.
+        self._overlay_anchors: dict[str, tuple[float, float]] | None = None
+        self._overlay_rails: dict[str, Rail] | None = None
+
+    # -- snapshot / overlay (P0a.4) ---------------------------------------
+    def copy(self) -> "AnchorRegistry":
+        """Return an independent deep copy of the *committed* registry.
+
+        Copies the base ``_anchors`` / ``_rails`` only (not any open overlay), so
+        a solver can snapshot a known-good state and rebuild from it. Mutating the
+        clone never touches the original.
+        """
+        clone = AnchorRegistry()
+        clone._anchors = copy.deepcopy(self._anchors)
+        clone._rails = copy.deepcopy(self._rails)
+        return clone
+
+    @contextlib.contextmanager
+    def layer(self, *, commit: bool = True) -> Iterator["AnchorRegistry"]:
+        """Open a write overlay: ``publish*`` buffers, ``resolve*`` reads overlay-then-base.
+
+        On clean exit the overlay is merged into the base (when ``commit``); on an
+        exception — or ``commit=False`` — it is dropped, leaving the base exactly
+        as it was. Lets a placement solver try a tentative set of publishes and
+        roll them back if the attempt fails. Not re-entrant.
+        """
+        if self._overlay_anchors is not None:
+            raise RuntimeError("AnchorRegistry.layer() is not re-entrant")
+        self._overlay_anchors, self._overlay_rails = {}, {}
+        merged = True
+        try:
+            yield self
+        except BaseException:
+            merged = False
+            raise
+        finally:
+            overlay_a, overlay_r = self._overlay_anchors, self._overlay_rails
+            self._overlay_anchors = self._overlay_rails = None
+            if merged and commit:
+                self._anchors.update(overlay_a)
+                self._rails.update(overlay_r)
+
+    def _write_anchor(self, key: str, value: tuple[float, float]) -> None:
+        target = self._anchors if self._overlay_anchors is None else self._overlay_anchors
+        target[key] = value
+
+    def _write_rail(self, rail: Rail) -> None:
+        target = self._rails if self._overlay_rails is None else self._overlay_rails
+        target[rail.name] = rail
+
+    def _lookup_anchor(self, key: str) -> tuple[float, float] | None:
+        if self._overlay_anchors is not None and key in self._overlay_anchors:
+            return self._overlay_anchors[key]
+        return self._anchors.get(key)
+
+    def _lookup_rail(self, name: str) -> Rail | None:
+        if self._overlay_rails is not None and name in self._overlay_rails:
+            return self._overlay_rails[name]
+        return self._rails.get(name)
+
+    def _known_anchor_keys(self) -> Iterable[str]:
+        if self._overlay_anchors is None:
+            return self._anchors.keys()
+        return self._anchors.keys() | self._overlay_anchors.keys()
+
+    def _known_rail_keys(self) -> Iterable[str]:
+        if self._overlay_rails is None:
+            return self._rails.keys()
+        return self._rails.keys() | self._overlay_rails.keys()
+
+    def validate_refs(self, refs: Iterable[str]) -> list[str]:
+        """Return the subset of *refs* that do NOT resolve, without raising (P0a.5).
+
+        Lets a caller aggregate every unresolved endpoint into one error instead
+        of dying on the first typo. A ``"rail:<name>"`` ref counts as resolved
+        when that rail is declared.
+        """
+        return [r for r in refs if not self.has(r)]
 
     # -- publish -----------------------------------------------------------
     def publish(
@@ -91,7 +173,7 @@ class AnchorRegistry:
         """
         dx, dy = offset
         for name, (x, y) in anchors.items():
-            self._anchors[f"{scoped_id}.{name}"] = (x + dx, y + dy)
+            self._write_anchor(f"{scoped_id}.{name}", (x + dx, y + dy))
 
     def publish_group(
         self,
@@ -106,20 +188,23 @@ class AnchorRegistry:
         """Record a rail resolved to absolute *value* on its cross *axis*."""
         if axis not in ("x", "y"):
             raise ValueError(f"rail axis must be 'x' or 'y', got {axis!r}")
-        self._rails[name] = Rail(name=name, axis=axis, value=value)
+        self._write_rail(Rail(name=name, axis=axis, value=value))
 
     # -- query -------------------------------------------------------------
     def has(self, ref: str) -> bool:
         """True if *ref* resolves (a known anchor or ``rail:<name>``)."""
         if ref.startswith("rail:"):
-            return ref[len("rail:"):] in self._rails
-        return ref in self._anchors
+            return self._lookup_rail(ref[len("rail:"):]) is not None
+        return self._lookup_anchor(ref) is not None
 
     def rail(self, name: str) -> Rail:
         """Return the named :class:`Rail` or raise KeyError-as-ValueError."""
-        if name not in self._rails:
-            raise ValueError(f"unknown rail {name!r} (known: {sorted(self._rails)})")
-        return self._rails[name]
+        r = self._lookup_rail(name)
+        if r is None:
+            raise ValueError(
+                f"unknown rail {name!r} (known: {sorted(self._known_rail_keys())})"
+            )
+        return r
 
     def resolve(self, ref: str) -> tuple[float, float]:
         """Resolve a ``"scoped_id.anchor"`` reference to an absolute point.
@@ -133,11 +218,12 @@ class AnchorRegistry:
                 f"{ref!r} is a rail (a line); resolve it against a point via "
                 f"resolve_on_rail(point_ref, rail_name)"
             )
-        if ref not in self._anchors:
+        point = self._lookup_anchor(ref)
+        if point is None:
             raise ValueError(
-                f"unknown anchor {ref!r} (known: {sorted(self._anchors)})"
+                f"unknown anchor {ref!r} (known: {sorted(self._known_anchor_keys())})"
             )
-        return self._anchors[ref]
+        return point
 
     def resolve_on_rail(self, ref: str, rail_name: str) -> tuple[float, float]:
         """Resolve *ref* to a point, then clamp its cross-axis to *rail_name*.

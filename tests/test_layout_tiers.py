@@ -170,3 +170,29 @@ def test_rail_endpoint_transition_not_supported():
          "transitions": [{"from_ref": "rail:midline", "to_ref": "a@right"}]}]})
     with pytest.raises(NotImplementedError, match="rail.*endpoint"):
         layout_tiers(fig)
+
+
+def test_scene_connect_aggregates_unresolved_anchor_refs():
+    """P0a.5: two bad connect anchors surface in ONE error naming both (the
+    schema validates the slot token at build time but not the anchor segment)."""
+    fig = Figure.model_validate({"archetype": "mechanism_cartoon", "tiers": [
+        {"id": "row", "role": "scene_row", "scenes": [
+            {"id": "s", "slots": [{"id": "m", "kind": "text", "label": "X"}],
+             "connect": [{"from_anchor": "m.ghost1", "to_anchor": "m.ghost2"}]}]}]})
+    with pytest.raises(ValueError, match="unresolved connect") as exc:
+        layout_tiers(fig)
+    msg = str(exc.value)
+    assert "ghost1" in msg and "ghost2" in msg, msg
+
+
+def test_tier_transition_aggregates_unresolved_refs():
+    """P0a.5: two bad transition endpoints surface in ONE error."""
+    fig = Figure.model_validate({"archetype": "mechanism_cartoon", "tiers": [
+        {"id": "row", "role": "scene_row", "scenes": [
+            {"id": "a", "slots": [{"id": "m", "kind": "text", "label": "A"}]},
+            {"id": "b", "slots": [{"id": "m", "kind": "text", "label": "B"}]}],
+         "transitions": [{"from_ref": "a.m.ghost", "to_ref": "b.m.ghost"}]}]})
+    with pytest.raises(ValueError, match="unresolved transition") as exc:
+        layout_tiers(fig)
+    msg = str(exc.value)
+    assert "a.m.ghost" in msg and "b.m.ghost" in msg, msg

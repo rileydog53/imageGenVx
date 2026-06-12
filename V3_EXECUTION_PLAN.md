@@ -131,7 +131,12 @@ Keep the suite green at every check (currently **1025**).
   *Done when:* 1025 tests still green; render output unchanged; the three label
   paths now live behind one `place()` dispatch.
 
-- [ ] **P0a.4 — Add `AnchorRegistry.copy()` (deep) + a `layer()` overlay.**
+- [x] **P0a.4 — Add `AnchorRegistry.copy()` (deep) + a `layer()` overlay.** ✅
+  2026-06-12. `copy()` deep-copies `_anchors`+`_rails`; `layer(*, commit=True)` is
+  a context manager that buffers `publish*` into an overlay and commits-or-drops
+  on exit (drops on exception or `commit=False`); `resolve*`/`has`/`rail` read
+  overlay-then-base. Not re-entrant. No-layer path byte-identical (5 unit tests:
+  rollback, commit-merge, exception-drops, non-reentrant, copy-independence).
   Today `publish` is mutation-only (`anchors.py:94`, `self._anchors[k]=…`) with
   no versioning, so a re-running solver clobbers earlier writes
   non-deterministically. Add `copy()` (deep-copy both `_anchors` + `_rails`) and
@@ -141,7 +146,13 @@ Keep the suite green at every check (currently **1025**).
   *Done when:* a unit test proves publish-in-layer + rollback leaves base intact,
   and commit merges.
 
-- [ ] **P0a.5 — Aggregate anchor-ref validation in `layout_tiers`.**
+- [x] **P0a.5 — Aggregate anchor-ref validation in `layout_tiers`.** ✅ 2026-06-12.
+  `AnchorRegistry.validate_refs(refs) -> list[str]` (unresolved subset, no raise);
+  `tier_layout` aggregate-validates every intra-scene `connect` endpoint (before
+  the `resolve_edge` loop in `_layout_scene`) and every non-rail `transition`
+  endpoint (before the transitions loop), raising one `ValueError` that names the
+  owning edge `ir_id` + each bad ref. `rail:` endpoints stay screened by the
+  existing `NotImplementedError` guard. 2 tests (connect + transition aggregation).
   Add `AnchorRegistry.validate_refs(refs) -> list[str]` and call it after all
   `publish*` but **before** the first `resolve_edge` (`tier_layout.py`, in the
   tier loop ~`:640`). Aggregate every unresolved `from_ref`/`to_ref`/

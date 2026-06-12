@@ -302,3 +302,76 @@ def test_vertical_slice_renders_with_resolved_geometry():
     ]
     out = render_entries_to_png(entries, "anchor_keystone_slice.png", canvas=(600, 300))
     assert out.exists() and out.stat().st_size > 0
+
+
+# ---------------------------------------------------------------------------
+# P0a.4 / P0a.5 — registry copy() / layer() overlay + validate_refs
+# ---------------------------------------------------------------------------
+
+def _seeded_registry() -> AnchorRegistry:
+    reg = AnchorRegistry()
+    reg.publish("s1.mol", {"a": (10.0, 20.0)})
+    reg.publish_rail("mid", "y", 100.0)
+    return reg
+
+
+def test_layer_rollback_leaves_base_intact():
+    reg = _seeded_registry()
+    with reg.layer(commit=False) as r:
+        r.publish("s1.mol", {"b": (30.0, 40.0)})
+        r.publish_rail("tmp", "x", 5.0)
+        # visible WITHIN the layer (overlay-then-base read)
+        assert r.has("s1.mol.b") and r.resolve("s1.mol.b") == (30.0, 40.0)
+        assert r.has("rail:tmp")
+    # dropped after the layer closes
+    assert not reg.has("s1.mol.b")
+    assert not reg.has("rail:tmp")
+    # base survivors untouched
+    assert reg.resolve("s1.mol.a") == (10.0, 20.0)
+    assert reg.rail("mid").value == 100.0
+
+
+def test_layer_commit_merges_into_base():
+    reg = _seeded_registry()
+    with reg.layer() as r:          # commit=True default
+        r.publish("s1.mol", {"b": (30.0, 40.0)})
+        r.publish_rail("tmp", "x", 5.0)
+    assert reg.resolve("s1.mol.b") == (30.0, 40.0)
+    assert reg.rail("tmp").value == 5.0
+    assert reg._overlay_anchors is None and reg._overlay_rails is None
+
+
+def test_layer_exception_always_drops_even_with_commit():
+    reg = _seeded_registry()
+    with pytest.raises(RuntimeError, match="boom"):
+        with reg.layer(commit=True) as r:
+            r.publish("s1.mol", {"b": (30.0, 40.0)})
+            raise RuntimeError("boom")
+    assert not reg.has("s1.mol.b")          # exception → overlay dropped
+    assert reg.resolve("s1.mol.a") == (10.0, 20.0)
+    assert reg._overlay_anchors is None     # overlay cleared even on exception
+
+
+def test_layer_is_not_reentrant():
+    reg = _seeded_registry()
+    with reg.layer():
+        with pytest.raises(RuntimeError, match="not re-entrant"):
+            with reg.layer():
+                pass
+
+
+def test_copy_is_independent():
+    reg = _seeded_registry()
+    clone = reg.copy()
+    clone.publish("s1.mol", {"c": (1.0, 2.0)})
+    clone.publish_rail("mid", "y", 999.0)   # shadow a base rail in the clone
+    assert not reg.has("s1.mol.c")          # original unaffected by clone writes
+    assert reg.rail("mid").value == 100.0
+    assert clone.resolve("s1.mol.a") == (10.0, 20.0)   # clone carries base values
+
+
+def test_validate_refs_returns_unresolved_subset():
+    reg = _seeded_registry()
+    refs = ["s1.mol.a", "rail:mid", "s1.mol.ghost", "rail:nope"]
+    assert reg.validate_refs(refs) == ["s1.mol.ghost", "rail:nope"]
+    assert reg.validate_refs(["s1.mol.a", "rail:mid"]) == []

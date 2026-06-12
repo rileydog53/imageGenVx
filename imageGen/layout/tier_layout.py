@@ -406,6 +406,25 @@ def _layout_scene(
                 _caption_group(t, x, y, p)),
             (), {}, (0.0, 0.0), ir_id=f"scene_{scene.id}_label"))
 
+    # P0a.5: aggregate-validate every connect endpoint before resolving so all
+    # bad refs in this scene surface in one error. The schema validates the slot
+    # token of a "slot.anchor" ref at build time, but not the dynamic anchor
+    # segment — that's only known once the scene's slots have published.
+    _connect_refs = [
+        (edge, anchor, f"{scene.id}.{anchor}")
+        for edge in scene.connect
+        for anchor in (edge.from_anchor, edge.to_anchor)
+    ]
+    _bad = set(registry.validate_refs(key for _e, _a, key in _connect_refs))
+    if _bad:
+        offenders = "; ".join(
+            f"{edge.ir_id}: {anchor!r}"
+            for edge, anchor, key in _connect_refs if key in _bad
+        )
+        raise ValueError(
+            f"Scene '{scene.id}' has unresolved connect endpoint(s): {offenders}"
+        )
+
     # Intra-scene edges: refs are scene-local ("slot.anchor"); resolve_edge
     # applies (clamped) endpoint standoff so the line clears both atoms.
     for edge in scene.connect:
@@ -629,6 +648,25 @@ def layout_tiers(
                     registry.publish_rail(rail.name, "y", ty + rail.at * th)
                 else:
                     registry.publish_rail(rail.name, "x", tx + rail.at * tw)
+
+            # P0a.5: aggregate-validate non-rail transition endpoints before
+            # resolving so all bad refs surface in one error. 'rail:' endpoints
+            # are screened here and handled by the NotImplementedError guard below
+            # (preserving its ordering for the bare-rail-unsupported contract).
+            _te_refs = [
+                (te, raw, _ref_to_key(raw))
+                for te in tier.transitions
+                if not (te.from_ref.startswith("rail:") or te.to_ref.startswith("rail:"))
+                for raw in (te.from_ref, te.to_ref)
+            ]
+            _bad_te = set(registry.validate_refs(key for _t, _r, key in _te_refs))
+            if _bad_te:
+                offenders = "; ".join(
+                    f"{te.ir_id}: {raw!r}" for te, raw, key in _te_refs if key in _bad_te
+                )
+                raise ValueError(
+                    f"Tier '{tier.id}' has unresolved transition endpoint(s): {offenders}"
+                )
 
             # Cross-cell transition arrows.
             for te in tier.transitions:
