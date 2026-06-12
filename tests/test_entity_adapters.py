@@ -14,7 +14,11 @@ from imageGen.ir.schema import Archetype, Entity, EntityType, Figure, Relation, 
 from imageGen.layout._geom import (
     ENTITY_TO_PRIMITIVE,
     PRIMITIVE_REGISTRY,
+    _INFERENCE_RULES,
+    _load_inference_rules,
+    explain_entity_primitive,
     infer_primitive,
+    infer_primitive_explained,
     resolve_entity_primitive,
 )
 from imageGen.layout.pathway_layout import layout_pathway
@@ -339,3 +343,63 @@ def test_inferred_organelle_passes_convention_check(tmp_path):
     render_figure(fig, out)
     semantic_check(fig, out)
     convention_check(fig, out)   # nucleus→circle, T cell→cell_immune→polygon
+
+
+# ---------------------------------------------------------------------------
+# PH.5: externalised inference table + --explain observability
+# ---------------------------------------------------------------------------
+
+def test_inference_rules_loaded_from_json_match_runtime_table():
+    """The in-memory _INFERENCE_RULES is built by re-reading the JSON, so the
+    loader is deterministic and the data file is the single source of truth."""
+    reloaded = _load_inference_rules()
+    assert reloaded == _INFERENCE_RULES
+    # The four coarse label-agnostic types are present; nothing else is.
+    assert set(_INFERENCE_RULES) == {
+        EntityType.EQUIPMENT, EntityType.ORGANELLE,
+        EntityType.CELL, EntityType.SAMPLE,
+    }
+    # Order is preserved and significant: EQUIPMENT 'blot' precedes 'gel'.
+    eq_primitives = [prim for _kws, prim in _INFERENCE_RULES[EntityType.EQUIPMENT]]
+    assert eq_primitives.index("western_blot") < eq_primitives.index("gel")
+
+
+def test_infer_primitive_explained_reports_matched_keyword():
+    prim, kw = infer_primitive_explained(EntityType.EQUIPMENT, "Western blot")
+    assert (prim, kw) == ("western_blot", "blot")
+    # No match → (None, None); identical primitive to the plain helper either way.
+    assert infer_primitive_explained(EntityType.PROTEIN, "MAPK") == (None, None)
+    assert infer_primitive_explained(EntityType.EQUIPMENT, "Western blot")[0] == \
+        infer_primitive(EntityType.EQUIPMENT, "Western blot")
+
+
+def test_explain_entity_primitive_three_bases():
+    # override
+    e_over = Entity(id="o", label="Whatever", type=EntityType.EQUIPMENT,
+                    style={"primitive": "microscope"})
+    name, basis = explain_entity_primitive(e_over)
+    assert name == "microscope" and basis.startswith("override:")
+    # inferred-by-keyword
+    e_inf = Entity(id="i", label="Western blot", type=EntityType.EQUIPMENT)
+    name, basis = explain_entity_primitive(e_inf)
+    assert name == "western_blot" and "keyword 'blot'" in basis
+    # type default
+    e_def = Entity(id="d", label="MAPK", type=EntityType.PROTEIN)
+    name, basis = explain_entity_primitive(e_def)
+    assert name == "generic_protein" and basis.startswith("default:")
+
+
+def test_explain_entity_primitive_matches_resolver():
+    """explain_entity_primitive must agree with resolve_entity_primitive about
+    the chosen primitive for every branch (override / inferred / default)."""
+    cases = [
+        Entity(id="a", label="Western blot", type=EntityType.EQUIPMENT),         # inferred
+        Entity(id="b", label="Nucleus", type=EntityType.ORGANELLE),              # inferred
+        Entity(id="c", label="MAPK", type=EntityType.PROTEIN),                   # default
+        Entity(id="d", label="x", type=EntityType.EQUIPMENT,
+               style={"primitive": "centrifuge"}),                              # override
+    ]
+    for e in cases:
+        name, _basis = explain_entity_primitive(e)
+        if name is not None:
+            assert resolve_entity_primitive(e) is PRIMITIVE_REGISTRY[name]

@@ -300,7 +300,12 @@ acceptance test, not a chassis milestone.
 
 ### Phase H — independent correctness hardening (no ordering dependency)
 
-- [ ] **PH.1 — Split classification from fallback on the multi-step downgrade.**
+- [x] **PH.1 — Split classification from fallback on the multi-step downgrade.**
+  ✅ 2026-06-12. `render_figure` now fails loud (`NotImplementedError`, matching
+  `layout_reaction`) on a non-linear multi-step REACTION_SCHEME; the PATHWAY
+  fallback is an explicit opt-in kwarg `pathway_fallback=True` (CLI:
+  `--pathway-fallback`) that **always** warns (ungated; names original + coerced
+  archetype). Two tests added (no-smiles-now-fail-loud + `A→B→C→A` cycle).
   ⚠️ `compositor.py:172` downgrades non-linear multi-step REACTION_SCHEME → PATHWAY;
   the `warnings.warn` is gated behind `if smiles_map:` (`:174`) so the no-smiles
   path is **silent**, and `render_figure` is fail-soft while `layout_reaction` is
@@ -311,7 +316,13 @@ acceptance test, not a chassis milestone.
   tests: no-smiles silent path, and an `A→B→C→A` cycle.
   *Done when:* no silent downgrade path remains.
 
-- [ ] **PH.2 — Partition `_validate_structure`.** ⚠️ IR change — needs sign-off.
+- [x] **PH.2 — Partition `_validate_structure`.** ✅ 2026-06-12 (sign-off given).
+  `Figure._validate_structure` (`ir/_v2_models.py`) is now a thin dispatcher
+  (exclusivity guard → dispatch by populated container) + `_validate_leaf` /
+  `_validate_paneled` / `_validate_tiered`. Behaviour-preserving: every non-
+  exclusivity error string + condition is byte-identical; conditional dispatch is
+  equivalent to the monolith's run-all because the at-most-one guard runs first.
+  ⚠️ IR change — needs sign-off.
   Split the 71-line monolith (`schema.py:622`) into a thin `@model_validator`
   dispatcher + `_validate_leaf` / `_validate_paneled` / `_validate_tiered`
   helpers, mirroring the chassis's node-type partitioning. Gives Steps 5/6/7 one
@@ -320,20 +331,31 @@ acceptance test, not a chassis milestone.
   test-matched error-string substring.**
   *Done when:* validators are per-mode; all `test_ir_schema*` pass unchanged.
 
-- [ ] **PH.3 — Correct the exclusivity error string.** ⚠️ IR change — wording
+- [x] **PH.3 — Correct the exclusivity error string.** ✅ 2026-06-12 (sign-off
+  given). Figure exclusivity message now "Figure must use **at most one of**: …";
+  the 3 tests that matched "exactly one of" (`test_ir_schema.py`,
+  `test_ir_schema_tiers.py` ×2) updated to "at most one of". Tier's own message
+  was already "at most one of" — unchanged.
+  ⚠️ IR change — wording
   only. `schema.py:626` says "must use exactly one of" but the guard is
   `sum(...) > 1` (at-most-one; an all-empty figure validates). Soften to
   "at most one of". **Check `test_ir_schema_tiers` doesn't match the changed
   substring first.**
   *Done when:* the message matches the guard; tests green.
 
-- [ ] **PH.4 — Actionable overlap-warning text.** The `data-overlap` `UserWarning`
-  (`label_placement.py:564`) says only "reduce density". Add the concrete escape
-  hatches already documented in `LIMITATIONS.md` (`--no-labels`, `--canvas`,
-  split into panels).
-  *Done when:* the runtime warning names the workarounds.
+- [x] **PH.4 — Actionable overlap-warning text.** ✅ 2026-06-12. The overlap
+  `UserWarning` (`label_placement.py`) now names the concrete escape hatches:
+  larger canvas (`--canvas WxH`), split across panels, reduce entity count, or
+  `--no-labels` — in addition to `strict_labels=True`.
 
-- [ ] **PH.5 — Externalise `_INFERENCE_RULES`.** ⚠️ Silent: `_geom.py:202` changes
+- [x] **PH.5 — Externalise `_INFERENCE_RULES`.** ✅ 2026-06-12. The table is now
+  checked-in declarative data (`layout/inference_rules.json`), loaded by
+  `_geom._load_inference_rules()` into the same in-memory shape (behaviour-
+  identical, order preserved). `infer_primitive` delegates to new
+  `infer_primitive_explained` (returns matched keyword); `explain_entity_primitive`
+  reports the basis (override / inferred-by-keyword / type default); CLI
+  `--explain` prints it per entity. 4 tests added.
+  ⚠️ Silent: `_geom.py:202` changes
   the rendered glyph on a bare label-keyword match with no IR trace and no warning
   (an *unknown* override warns; an *inferred* one doesn't). Step 6 multiplies
   entities, so one mis-tuned keyword propagates across N scenes. Promote the rule

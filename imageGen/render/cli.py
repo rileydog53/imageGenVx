@@ -90,6 +90,15 @@ def _add_render_flags(parser: argparse.ArgumentParser) -> None:
         "without overlap, instead of the default relax-and-retry fallback.",
     )
     parser.add_argument(
+        "--pathway-fallback",
+        dest="pathway_fallback",
+        action="store_true",
+        help="Render a non-linear multi-step REACTION_SCHEME (branching / "
+        "convergence / cycle) through the pathway engine instead of failing "
+        "loud. Entities render as labelled boxes; SMILES structures are not "
+        "drawn.",
+    )
+    parser.add_argument(
         "--legend",
         action="store_true",
         help="Render an inset key (top-right) explaining the glyph conventions "
@@ -102,6 +111,13 @@ def _add_render_flags(parser: argparse.ArgumentParser) -> None:
         help="After rendering, run the three verifiers (semantic, legibility, "
         "convention) on the output SVG and print a one-line report. Lets a "
         "single command render + verify without a second round-trip.",
+    )
+    parser.add_argument(
+        "--explain",
+        action="store_true",
+        help="Before rendering, print how each entity's glyph is chosen "
+        "(explicit override vs label-keyword inference vs entity-type default). "
+        "Diagnostic only — does not change the render.",
     )
     parser.add_argument(
         "--autocrop",
@@ -240,6 +256,27 @@ def _run_verification(ir: Figure, svg_path: Path) -> bool:
     return ok
 
 
+def _explain_entities(ir: Figure) -> None:
+    """Print how each entity's glyph is chosen (PH.5 ``--explain``).
+
+    Walks the leaf entities plus every panel's nested content, reporting the
+    basis (override / inferred-by-keyword / type default) per entity. Diagnostic
+    only — never raises and never alters the render.
+    """
+    from imageGen.layout._geom import explain_entity_primitive  # noqa: PLC0415
+
+    print("EXPLAIN:")
+
+    def walk(fig: Figure, prefix: str) -> None:
+        for e in fig.entities:
+            name, basis = explain_entity_primitive(e)
+            print(f"  {prefix}{e.id} ({e.type.value}, {e.label!r}) -> {name} [{basis}]")
+        for p in fig.panels:
+            walk(p.content, f"{prefix}{p.id}.")
+
+    walk(ir, "")
+
+
 def _spec_to_figure(spec: dict[str, Any]) -> Figure:
     """Map a flat spec dict into a `Figure` via the builder.
 
@@ -288,6 +325,10 @@ def main(argv: list[str] | None = None) -> int:
     if getattr(args, "layout", None) == "circular":
         ir = ir.model_copy(update={"layout_hint": "circular"})
 
+    # PH.5: diagnostic glyph-choice explanation, printed before rendering.
+    if getattr(args, "explain", False):
+        _explain_entities(ir)
+
     smiles_map = None
     if args.smiles_map is not None:
         smiles_map = json.loads(Path(args.smiles_map).read_text())
@@ -315,6 +356,7 @@ def main(argv: list[str] | None = None) -> int:
         strict_labels=args.strict_labels,
         autocrop=args.autocrop,
         legend=args.legend,
+        pathway_fallback=args.pathway_fallback,
     )
     print(out)
 

@@ -1,0 +1,29 @@
+{
+  "_comment": "EW4 / PH.5: label-keyword -> glyph inference for the coarse, label-agnostic entity types (CELL / ORGANELLE / EQUIPMENT / SAMPLE). Each entry is [[keyword, ...], primitive_name]; the first matching keyword wins, evaluation is top-to-bottom (order matters -- e.g. the EQUIPMENT 'blot' rule precedes 'gel' so 'Western blot' maps to western_blot, not gel). Keywords match at a word-start boundary. Only non-default glyphs are listed; a no-match falls through to the ENTITY_TO_PRIMITIVE type default. Keys are EntityType values; loaded by layout/_geom.py into _INFERENCE_RULES.",
+  "equipment": [
+    [["blot", "western", "northern", "southern", "immunoblot"], "western_blot"],
+    [["gel", "sds-page", "agarose", "electrophoresis", "ladder"], "gel"],
+    [["microplate", "well plate", "well-plate", "96-well", "384-well", "multiwell", "microtiter", "elisa"], "well_plate"],
+    [["pipet", "micropipet"], "pipette"],
+    [["eppendorf", "cuvette", "vial"], "tube"],
+    [["mouse", "mice", "murine", "rodent"], "mouse"],
+    [["centrifuge", "spin column"], "centrifuge"],
+    [["flask", "erlenmeyer"], "flask"],
+    [["human", "patient", "subject", "donor", "volunteer", "participant"], "human_figure"]
+  ],
+  "organelle": [
+    [["nucle"], "nucleus"],
+    [["endoplasmic", "reticulum", "sarcoplasmic"], "endoplasmic_reticulum"],
+    [["golgi"], "golgi"],
+    [["lysosom", "endosom"], "lysosome"]
+  ],
+  "cell": [
+    [["neuron", "neural", "neuronal", "nerve", "axon", "dendrit"], "cell_neuron"],
+    [["epitheli"], "cell_epithelial"],
+    [["immun", "lymphocyte", "leukocyte", "macrophage", "neutrophil", "monocyte", "phagocyte", "t cell", "t-cell", "b cell", "b-cell", "nk cell"], "cell_immune"]
+  ],
+  "sample": [
+    [["gel", "blot", "western"], "gel"],
+    [["microplate", "well plate", "96-well", "384-well", "elisa"], "well_plate"]
+  ]
+}

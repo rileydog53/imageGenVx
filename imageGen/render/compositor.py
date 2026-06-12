@@ -119,6 +119,7 @@ def render_figure(
     autocrop: bool = False,
     legend: bool = False,
     credits: bool | str = "auto",
+    pathway_fallback: bool = False,
 ) -> Path:
     """Render an IR Figure to a file and return the resolved output Path.
 
@@ -147,6 +148,13 @@ def render_figure(
             margin, the SVG's ``viewBox`` and ``width``/``height`` are
             rewritten in-place before any PNG/PDF export. Default False
             to preserve canonical dimensions in existing golden tests.
+        pathway_fallback: When a REACTION_SCHEME is a *non-linear* multi-step
+            graph (branching / convergence / cycle) the reaction engine cannot
+            draw it (PH.1). Default False fails loud (NotImplementedError),
+            matching ``layout_reaction``. Pass True to opt into rendering it
+            through the pathway engine instead — entities render as labelled
+            boxes and SMILES structures are dropped; a ``UserWarning`` is always
+            emitted naming the original and coerced archetype.
 
     Returns:
         Resolved Path to the written file. For non-SVG formats a sibling
@@ -154,7 +162,8 @@ def render_figure(
 
     Raises:
         NotImplementedError: For archetypes not yet wired in the
-            compositor.
+            compositor, or a non-linear multi-step REACTION_SCHEME when
+            ``pathway_fallback`` is False.
         ValueError: For unrecognised file suffix when `format` is None.
         LabelPlacementError: Propagated from `place_labels` when a label
             cannot be placed at any candidate position.
@@ -168,20 +177,33 @@ def render_figure(
     # forms a single linear chain is rendered as a molecule sequence by
     # layout_reaction (keeping skeletal structures + the reaction_0 group).
     # Only non-linear multi-step graphs (branching / convergence / cycles)
-    # can't be drawn as a reaction, so those still fall back to the PATHWAY
-    # engine. Coercing the archetype here routes every downstream consumer
-    # that keys off it -- layout dispatch, label-request selection, and canvas
-    # sizing -- through the pathway path in one decision.
+    # can't be drawn as a reaction. PH.1: those FAIL LOUD by default (matching
+    # layout_reaction's own NotImplementedError) — the pathway fallback is an
+    # explicit opt-in (pathway_fallback=True). When taken it *always* warns
+    # (not just when a smiles_map is present, which previously made the
+    # no-smiles downgrade silent) and names the original + coerced archetype.
+    # Coercing the archetype routes every downstream consumer that keys off it
+    # -- layout dispatch, label-request selection, canvas sizing -- through the
+    # pathway path in one decision.
     if _is_multistep_reaction(ir) and not is_linear_chain_reaction(ir):
-        if smiles_map:
-            warnings.warn(
-                "Non-linear multi-step reaction routed through the pathway "
-                "engine; SMILES structures will not be drawn (entities render "
-                "as labelled boxes). Re-encode parallel reactions as separate "
-                "reactant→product edges to keep chemical structures.",
-                UserWarning,
-                stacklevel=2,
+        if not pathway_fallback:
+            raise NotImplementedError(
+                f"{ir.archetype.value!r} figure is a non-linear multi-step "
+                "reaction (branching / convergence / cycle); the reaction "
+                "engine cannot draw it. Re-encode parallel reactions as "
+                "separate reactant→product edges, or pass pathway_fallback=True "
+                "to render it through the pathway engine (SMILES structures "
+                "will not be drawn)."
             )
+        warnings.warn(
+            f"Non-linear multi-step reaction coerced from "
+            f"{ir.archetype.value!r} to {Archetype.PATHWAY.value!r}: SMILES "
+            "structures will not be drawn (entities render as labelled boxes). "
+            "Re-encode parallel reactions as separate reactant→product edges "
+            "to keep chemical structures.",
+            UserWarning,
+            stacklevel=2,
+        )
         ir = ir.model_copy(update={"archetype": Archetype.PATHWAY})
     entries = _dispatch_layout(ir, style_dict, smiles_map, panel_styles=panel_styles)
 

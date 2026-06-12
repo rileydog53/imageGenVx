@@ -8,7 +8,9 @@ style instead of a hard-coded table.
 """
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 from typing import Callable
 
 import svgwrite.container
@@ -185,7 +187,7 @@ PRIMITIVE_TO_BBOX: dict[Callable[..., svgwrite.container.Group], tuple[float, fl
 
 
 # ---------------------------------------------------------------------------
-# EW4: label-keyword → glyph inference for the coarse, label-agnostic types.
+# EW4 / PH.5: label-keyword → glyph inference for the coarse, label-agnostic types.
 #
 # CELL / ORGANELLE / EQUIPMENT / SAMPLE each have a single ``ENTITY_TO_PRIMITIVE``
 # default (a generic cell / mitochondrion / microscope / tube) that ignores the
@@ -198,42 +200,58 @@ PRIMITIVE_TO_BBOX: dict[Callable[..., svgwrite.container.Group], tuple[float, fl
 # when a label actually names a specific glyph. Keywords are matched at a
 # word-start boundary so stems work (``"epitheli"`` → *epithelial*) without
 # false friends mid-word (``\bplate`` does not fire inside *template*).
+#
+# PH.5: the table is now checked-in declarative data (``inference_rules.json``,
+# this directory) so it is diffable and unit-testable. It is loaded here into the
+# same in-memory shape the hardcoded table used, so ``infer_primitive`` and every
+# caller are unchanged. ``infer_primitive_explained`` / ``explain_entity_primitive``
+# expose *why* an entity drew as a given glyph for the CLI ``--explain`` pass.
 # ---------------------------------------------------------------------------
-_INFERENCE_RULES: dict[EntityType, tuple[tuple[tuple[str, ...], str], ...]] = {
-    EntityType.EQUIPMENT: (
-        # blot rule first so "Western blot" → the blot icon, not the gel
-        (("blot", "western", "northern", "southern", "immunoblot"), "western_blot"),
-        (("gel", "sds-page", "agarose", "electrophoresis", "ladder"), "gel"),
-        (("microplate", "well plate", "well-plate", "96-well", "384-well",
-          "multiwell", "microtiter", "elisa"), "well_plate"),
-        (("pipet", "micropipet"), "pipette"),
-        (("eppendorf", "cuvette", "vial"), "tube"),
-        (("mouse", "mice", "murine", "rodent"), "mouse"),
-        (("centrifuge", "spin column"), "centrifuge"),
-        (("flask", "erlenmeyer"), "flask"),
-        (("human", "patient", "subject", "donor", "volunteer", "participant"),
-         "human_figure"),
-    ),
-    EntityType.ORGANELLE: (
-        (("nucle",), "nucleus"),  # nucleus / nuclear / nuclei / nucleolus
-        (("endoplasmic", "reticulum", "sarcoplasmic"), "endoplasmic_reticulum"),
-        (("golgi",), "golgi"),
-        (("lysosom", "endosom"), "lysosome"),
-    ),
-    EntityType.CELL: (
-        (("neuron", "neural", "neuronal", "nerve", "axon", "dendrit"),
-         "cell_neuron"),
-        (("epitheli",), "cell_epithelial"),
-        (("immun", "lymphocyte", "leukocyte", "macrophage", "neutrophil",
-          "monocyte", "phagocyte", "t cell", "t-cell", "b cell", "b-cell",
-          "nk cell"), "cell_immune"),
-    ),
-    EntityType.SAMPLE: (
-        (("gel", "blot", "western"), "gel"),
-        (("microplate", "well plate", "96-well", "384-well", "elisa"),
-         "well_plate"),
-    ),
-}
+
+_INFERENCE_RULES_PATH = Path(__file__).parent / "inference_rules.json"
+
+
+def _load_inference_rules() -> dict[EntityType, tuple[tuple[tuple[str, ...], str], ...]]:
+    """Load ``inference_rules.json`` into ``{EntityType: ((keywords, primitive), …)}``.
+
+    Order is preserved (it is significant — e.g. EQUIPMENT 'blot' precedes 'gel').
+    ``_``-prefixed keys (the file's ``_comment``) are skipped. Returns the same
+    shape the hardcoded table used so ``infer_primitive`` is behaviour-identical.
+    """
+    raw = json.loads(_INFERENCE_RULES_PATH.read_text())
+    return {
+        EntityType(entity_type): tuple(
+            (tuple(keywords), primitive) for keywords, primitive in rules
+        )
+        for entity_type, rules in raw.items()
+        if not entity_type.startswith("_")
+    }
+
+
+_INFERENCE_RULES: dict[EntityType, tuple[tuple[tuple[str, ...], str], ...]] = (
+    _load_inference_rules()
+)
+
+
+def infer_primitive_explained(
+    entity_type: EntityType, label: str | None
+) -> tuple[str | None, str | None]:
+    """Like :func:`infer_primitive`, but also return the keyword that matched.
+
+    Returns ``(primitive, keyword)`` when a rule fires (the first matching
+    keyword, top-to-bottom), else ``(None, None)``. The single source of the
+    matching logic — :func:`infer_primitive` delegates to it. Powers the
+    ``--explain`` pass so an author can see *why* an entity drew as a glyph.
+    """
+    rules = _INFERENCE_RULES.get(entity_type)
+    if not rules or not label:
+        return None, None
+    text = label.lower()
+    for keywords, primitive in rules:
+        for kw in keywords:
+            if re.search(r"\b" + re.escape(kw), text):
+                return primitive, kw
+    return None, None
 
 
 def infer_primitive(entity_type: EntityType, label: str | None) -> str | None:
@@ -243,15 +261,7 @@ def infer_primitive(entity_type: EntityType, label: str | None) -> str | None:
     type (and any unmatched label) returns ``None`` so the caller uses the
     ``ENTITY_TO_PRIMITIVE`` default. See the table comment for the rationale.
     """
-    rules = _INFERENCE_RULES.get(entity_type)
-    if not rules or not label:
-        return None
-    text = label.lower()
-    for keywords, primitive in rules:
-        for kw in keywords:
-            if re.search(r"\b" + re.escape(kw), text):
-                return primitive
-    return None
+    return infer_primitive_explained(entity_type, label)[0]
 
 
 def resolve_entity_primitive(
@@ -272,6 +282,34 @@ def resolve_entity_primitive(
     if inferred is not None:
         return PRIMITIVE_REGISTRY[inferred]
     return ENTITY_TO_PRIMITIVE[entity.type]
+
+
+def explain_entity_primitive(entity: Entity) -> tuple[str | None, str]:
+    """Return ``(primitive_name, basis)`` describing how *entity*'s glyph is
+    chosen — the observable counterpart to :func:`resolve_entity_primitive`,
+    which it mirrors branch-for-branch.
+
+    ``basis`` is one of:
+      - ``"override: style['primitive']=<name>"`` — an explicit, registered override.
+      - ``"inferred: keyword '<kw>' -> <primitive>"`` — a label-keyword match.
+      - ``"default: entity type <type>"`` — the ``ENTITY_TO_PRIMITIVE`` fallback.
+
+    ``primitive_name`` is the registered name when known (``None`` only for a
+    default callable that isn't in ``PRIMITIVE_REGISTRY``). This adds
+    observability for the CLI ``--explain`` pass (PH.5); the *control* over the
+    choice already exists via ``entity.style['primitive']``.
+    """
+    name = (entity.style or {}).get("primitive")
+    if name is not None and name in PRIMITIVE_REGISTRY:
+        return name, f"override: style['primitive']={name!r}"
+    inferred, keyword = infer_primitive_explained(entity.type, entity.label)
+    if inferred is not None:
+        return inferred, f"inferred: keyword {keyword!r} -> {inferred}"
+    default_cb = ENTITY_TO_PRIMITIVE[entity.type]
+    default_name = next(
+        (n for n, cb in PRIMITIVE_REGISTRY.items() if cb is default_cb), None
+    )
+    return default_name, f"default: entity type {entity.type.value!r}"
 
 
 def max_entity_bbox(figure: Figure) -> tuple[float, float]:

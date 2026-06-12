@@ -346,9 +346,8 @@ def test_linear_multistep_reaction_uses_reaction_path(tmp_path):
         assert e.id not in tagged, f"entity {e.id!r} tagged — routed to pathway, not reaction"
 
 
-def test_nonlinear_multistep_reaction_falls_back_to_pathway(tmp_path):
-    """A convergent multi-step graph (not a linear chain) still coerces to the
-    pathway engine: per-entity boxes, no reaction_0, and a SMILES-drop warning."""
+def _convergent_multistep_reaction() -> Figure:
+    """A convergent (non-linear) multi-step REACTION_SCHEME: e0,e1 → e2 → e3."""
     entities = [
         Entity(id=f"e{i}", type=EntityType.METABOLITE, label=f"M{i}") for i in range(4)
     ]
@@ -357,14 +356,57 @@ def test_nonlinear_multistep_reaction_falls_back_to_pathway(tmp_path):
         Relation(source="e1", target="e2", type=RelationType.GENERIC),
         Relation(source="e2", target="e3", type=RelationType.GENERIC),
     ]
-    ir = Figure(archetype=Archetype.REACTION_SCHEME, entities=entities, relations=relations)
-    smiles = {e.id: "C" for e in entities}
+    return Figure(archetype=Archetype.REACTION_SCHEME, entities=entities, relations=relations)
+
+
+def test_nonlinear_multistep_reaction_falls_back_to_pathway(tmp_path):
+    """PH.1: with the explicit opt-in (pathway_fallback=True), a convergent
+    multi-step graph coerces to the pathway engine: per-entity boxes, no
+    reaction_0, and a SMILES-drop warning."""
+    ir = _convergent_multistep_reaction()
+    smiles = {e.id: "C" for e in ir.entities}
     with pytest.warns(UserWarning, match="SMILES structures will not be drawn"):
-        out = render_figure(ir, tmp_path / "fig.svg", smiles_map=smiles)
+        out = render_figure(ir, tmp_path / "fig.svg", smiles_map=smiles,
+                            pathway_fallback=True)
     tagged = _svg_elements_with_attr(out, "data-ir-id")
     assert "reaction_0" not in tagged
     for e in ir.entities:
         assert e.id in tagged, f"entity {e.id!r} not tagged — did not route to pathway"
+
+
+def test_nonlinear_multistep_reaction_fails_loud_by_default(tmp_path):
+    """PH.1: a non-linear multi-step reaction fails loud by default — the
+    previously-silent no-smiles downgrade path now raises instead of quietly
+    rendering as a pathway."""
+    ir = _convergent_multistep_reaction()
+    # No smiles_map, no fallback: previously a SILENT downgrade — now fail-loud.
+    with pytest.raises(NotImplementedError, match="non-linear multi-step"):
+        render_figure(ir, tmp_path / "fig.svg")
+    # Even with a smiles_map, default behaviour is fail-loud (no silent coercion).
+    with pytest.raises(NotImplementedError, match="non-linear multi-step"):
+        render_figure(ir, tmp_path / "fig2.svg",
+                      smiles_map={e.id: "C" for e in ir.entities})
+
+
+def test_cyclic_multistep_reaction_fails_loud(tmp_path):
+    """PH.1: an A→B→C→A cycle is a non-linear multi-step reaction; it fails loud
+    by default and renders (with a warning) only under the explicit opt-in."""
+    entities = [
+        Entity(id=x, type=EntityType.METABOLITE, label=x.upper())
+        for x in ("a", "b", "c")
+    ]
+    relations = [
+        Relation(source="a", target="b", type=RelationType.GENERIC),
+        Relation(source="b", target="c", type=RelationType.GENERIC),
+        Relation(source="c", target="a", type=RelationType.GENERIC),
+    ]
+    ir = Figure(archetype=Archetype.REACTION_SCHEME, entities=entities, relations=relations)
+    smiles = {e.id: "C" for e in ir.entities}
+    with pytest.raises(NotImplementedError, match="non-linear multi-step"):
+        render_figure(ir, tmp_path / "cyc.svg", smiles_map=smiles)
+    with pytest.warns(UserWarning, match="SMILES structures will not be drawn"):
+        render_figure(ir, tmp_path / "cyc2.svg", smiles_map=smiles,
+                      pathway_fallback=True)
 
 
 # ---------------------------------------------------------------------------

@@ -139,14 +139,30 @@ class Figure(_IRBase):
 
     @model_validator(mode="after")
     def _validate_structure(self) -> Self:
+        # PH.2: container-mode exclusivity first (the guard is at-most-one — an
+        # all-empty figure validates), then dispatch to the populated mode's
+        # invariants. After the guard passes at most one of leaf / panels /
+        # tiers carries data, so the three helpers are mutually exclusive and a
+        # new cross-mode invariant has one obvious home (mirrors the chassis's
+        # node-type partitioning).
         leaf_populated = bool(self.entities or self.relations or self.compartments)
         if sum([leaf_populated, bool(self.panels), bool(self.tiers)]) > 1:
             raise ValueError(
-                "Figure must use exactly one of: leaf content "
-                "(entities/compartments/relations), panels, or tiers — "
-                "not more than one"
+                "Figure must use at most one of: leaf content "
+                "(entities/compartments/relations), panels, or tiers"
             )
 
+        if self.tiers:
+            self._validate_tiered()
+        elif self.panels:
+            self._validate_paneled()
+        else:
+            self._validate_leaf()
+        return self
+
+    def _validate_leaf(self) -> None:
+        """Leaf-figure invariants: entity/compartment id uniqueness + the
+        entity-location and relation-endpoint cross-references."""
         entity_ids = [e.id for e in self.entities]
         if len(entity_ids) != len(set(entity_ids)):
             raise ValueError("Entity ids must be unique within a Figure")
@@ -154,10 +170,6 @@ class Figure(_IRBase):
         compartment_ids = [c.id for c in self.compartments]
         if len(compartment_ids) != len(set(compartment_ids)):
             raise ValueError("Compartment ids must be unique within a Figure")
-
-        panel_ids = [p.id for p in self.panels]
-        if len(panel_ids) != len(set(panel_ids)):
-            raise ValueError("Panel ids must be unique within a Figure")
 
         entity_id_set = set(entity_ids)
         compartment_id_set = set(compartment_ids)
@@ -178,6 +190,12 @@ class Figure(_IRBase):
                     f"Relation references unknown target entity '{rel.target}'"
                 )
 
+    def _validate_paneled(self) -> None:
+        """Paneled-figure invariants: panel id uniqueness + grid non-overlap."""
+        panel_ids = [p.id for p in self.panels]
+        if len(panel_ids) != len(set(panel_ids)):
+            raise ValueError("Panel ids must be unique within a Figure")
+
         for i, a in enumerate(self.panels):
             ar0, ac0, arS, acS = a.grid
             ar1, ac1 = ar0 + arS, ac0 + acS
@@ -189,6 +207,9 @@ class Figure(_IRBase):
                         f"Panel '{a.id}' grid overlaps with panel '{b.id}'"
                     )
 
+    def _validate_tiered(self) -> None:
+        """Tiered-figure invariants: tier id uniqueness + figure-wide scene-id
+        uniqueness."""
         tier_ids = [t.id for t in self.tiers]
         if len(tier_ids) != len(set(tier_ids)):
             raise ValueError("Tier ids must be unique within a Figure")
@@ -206,5 +227,3 @@ class Figure(_IRBase):
                 all_scene_ids.extend(st.id for st in tier.step_sequence.steps)
         if len(all_scene_ids) != len(set(all_scene_ids)):
             raise ValueError("Scene ids must be unique across a Figure")
-
-        return self

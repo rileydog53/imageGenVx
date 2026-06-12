@@ -145,7 +145,7 @@ def test_defaults_are_sensible():
 # ---------------------------------------------------------------------------
 
 def test_tiers_and_entities_mutually_exclusive():
-    with pytest.raises(ValidationError, match="exactly one of"):
+    with pytest.raises(ValidationError, match="at most one of"):
         Figure.model_validate({
             "archetype": "pathway",
             "entities": [{"id": "a", "type": "protein", "label": "A"}],
@@ -154,7 +154,7 @@ def test_tiers_and_entities_mutually_exclusive():
 
 
 def test_tiers_and_panels_mutually_exclusive():
-    with pytest.raises(ValidationError, match="exactly one of"):
+    with pytest.raises(ValidationError, match="at most one of"):
         Figure.model_validate({
             "archetype": "pathway",
             "panels": [{"id": "p", "grid": [0, 0, 1, 1],

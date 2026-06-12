@@ -564,7 +564,9 @@ def place_labels(
         warnings.warn(
             f"Placed {len(overflowed)} label(s) with overlap after exhausting "
             f"the placement ladder: {texts}. Pass strict_labels=True to fail "
-            f"loud instead, or reduce entity/label density.",
+            f"loud instead. To clear the crowding, re-render with a larger "
+            f"canvas (--canvas WxH), split the figure across panels, reduce the "
+            f"entity count, or drop labels (--no-labels).",
             stacklevel=2,
         )
     return out
