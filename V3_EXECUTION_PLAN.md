@@ -448,7 +448,18 @@ modules (no cycle); all 7 public re-exports resolve; **AST pure-move proof** —
   surface (incl. `PALETTE_RECIPE`/`apply_palette_recipe`) stays importable from
   `loader`. AST-verified pure move (all 11 funcs/classes byte-identical to HEAD).
   **1025 green.**
-- [ ] **R2** — `schema.py` split; **blocked on sign-off.**
+- [x] **R2 — `ir/schema.py`** (709 → 120 ln aggregator) — split into `_enums.py`
+  (172 ln: all 14 kind enums), `_v2_models.py` (210 ln: `_IRBase` + Entity…Panel,
+  `Figure`), `_v3_models.py` (374 ln: `_check_id_chars`/`_collect_slot_ids` +
+  Slot…Tier). Pure DAG `_enums ← _v2_models ← _v3_models ← schema`; the real
+  `Figure↔Tier` type cycle is resolved without an import cycle by keeping the
+  12-call `model_rebuild()` block in the aggregator, where every model co-resides
+  (exactly how the single-file version resolved forward refs at module end).
+  **Sign-off given 2026-06-11.** AST-verified pure move (all 35 classes/functions
+  byte-identical to HEAD); rebuild block verbatim; every model `__pydantic_complete__`;
+  all test-matched error-string substrings preserved (validators moved byte-identical);
+  full surface re-exported (incl. `_IRBase`/`_check_id_chars`/`_collect_slot_ids`).
+  **1025 green.** Adversarially verified (4-lens workflow).
 
 > **Dead code spotted during R1** (not fixed — pure-move discipline): `_label_extent_w`
 > (`_pathway_rings.py`) is defined but referenced nowhere in the tree. Candidate for a

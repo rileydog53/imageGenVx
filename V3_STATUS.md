@@ -23,14 +23,18 @@ first, then dive into the detail docs linked below.
 > [`V3_EXECUTION_PLAN.md` → Phase R](V3_EXECUTION_PLAN.md). It splits the six
 > largest modules (pathway_layout 2494 → 6 sub-modules, schema, chemistry,
 > nucleic_acids, compositor, loader) into focused files behind re-export shims —
-> pure mechanical, no behaviour change, 1025-green at every step. **R1 + R3–R6
-> all landed 2026-06-11** (R1: `pathway_layout.py` 2494 → 652 ln into
-> `_pathway_{glyphs,common,rings,bands,routing,labels}.py`; R3: `chemistry.py`
+> pure mechanical, no behaviour change, 1025-green at every step. **Phase R
+> COMPLETE — R1–R6 all landed 2026-06-11** (R1: `pathway_layout.py` 2494 → 652 ln
+> into `_pathway_{glyphs,common,rings,bands,routing,labels}.py`; R2: `schema.py`
+> 709 → 120 aggregator + `_enums`/`_v2_models`/`_v3_models`; R3: `chemistry.py`
 > 801 → `_mol_render`/`_reaction_render`; R4: `nucleic_acids.py` 796 → `_dna`/`_rna`;
 > R5: `compositor.py` 766 → 615 + `_svg_post`; R6: `loader.py` 358 → 318 + `_palette`).
 > Each is an AST-verified pure move (every moved fn/class byte-identical to HEAD),
-> no import cycle, full public surface re-exported. **Only R2 (schema) remains —
-> blocked on sign-off.** Runs independently of Steps 5–7.
+> no import cycle, full public surface re-exported. R2 (load-bearing IR) was
+> signed off and adversarially verified (4-lens workflow) — the `model_rebuild()`
+> block kept in the aggregator resolves the `Figure↔Tier` forward-ref cycle.
+> Runs independently of Steps 5–7. **Remaining Phase-R deferrals:** `tier_layout.py`
+> (after Step 6) and `lab_equipment.py` (low payoff).
 
 > **Steps 5–7 are now planned in detail in [`V3_EXECUTION_PLAN.md`](V3_EXECUTION_PLAN.md).**
 > That doc is the active forward plan: it folds in a verified 17-agent
