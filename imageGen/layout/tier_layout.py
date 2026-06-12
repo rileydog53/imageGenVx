@@ -7,9 +7,9 @@ hand-assembled keystone slice).
 Scope is deliberately a SLICE, not the finished chassis:
   - Tiers: a TITLE band (title + subtitle) and a SCENE_ROW of equal columns;
     SUMMARY_BAR / BAND render only their band background (no inner content yet).
-  - Scenes: MOLECULE and TEXT slots, placed by a MINIMAL relative solver
-    (roots centred, attach = parent-edge + offset). The full topological
-    constraint solver and scene-local label collision are Step 5.
+  - Scenes: MOLECULE and TEXT slots, placed by the topological attach/offset
+    solver (roots centred, attach = parent-edge + offset, then co-located boxes
+    de-overlapped — P5.1). Scene-local label collision is still pending (P5.2).
   - Edges: intra-scene ``SceneEdge`` (dashed / curved H-bond) and cross-cell
     ``TierEdge`` (transition arrow), resolved through the ``AnchorRegistry`` with
     endpoint standoff and optional rail clamping.
@@ -33,7 +33,7 @@ now the engine is exercised directly (like the other layout engines in tests).
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import Any, Callable
 
 import svgwrite.container
 import svgwrite.path
@@ -270,30 +270,100 @@ def _edge_group(
 _SLOT_EDGE_OFFSETS = {
     "top": (0.0, -0.5), "bottom": (0.0, 0.5),
     "left": (-0.5, 0.0), "right": (0.5, 0.0), "center": (0.0, 0.0),
+    # cavity_* drop a child INSIDE the parent box (a ligand in a binding
+    # pocket) — a quarter-extent off centre, never at the rim.
+    "cavity_top": (0.0, -0.25), "cavity_bottom": (0.0, 0.25),
+    "cavity_center": (0.0, 0.0),
 }
+
+# Gap left between two slot boxes that the attach solve landed on the same
+# point and that ``_deoverlap_coincident`` then pushes apart.
+_DEOVERLAP_MARGIN = 8.0
+
+
+def _coincident_key(center: tuple[float, float]) -> tuple[int, int]:
+    """Bucket a centre to ~0.5px so genuinely co-located slots group together
+    while the historic half-step attach chain (distinct centres) does not."""
+    return (round(center[0] * 2.0), round(center[1] * 2.0))
+
+
+def _deoverlap_coincident(
+    scene: Scene, centers: dict[str, tuple[float, float]],
+    extent: Callable[[str], tuple[float, float]],
+) -> None:
+    """Spread slots whose centres coincide so their boxes are disjoint (MF-3).
+
+    Only *coincident* centres are separated — the genuine stacked-on-top
+    pathology (e.g. two slots both attached ``center`` to one parent: the
+    His513-vs-ligand tangle). Distinct centres whose boxes merely overlap (the
+    Step-3 half-step ``right`` attach chain) are left untouched, so the existing
+    attach behaviour and every single-slot scene stay byte-identical.
+
+    Members of a coincident group are laid side by side, centred on the shared
+    point, in scene declaration order (deterministic). The spread is vertical
+    when every member binds via a horizontal edge (left/right) — stacking
+    same-edge siblings — and horizontal otherwise, which covers center/cavity
+    co-location, the common case.
+    """
+    order = [s.id for s in scene.slots if s.id in centers]
+    groups: dict[tuple[int, int], list[str]] = {}
+    for sid in order:
+        groups.setdefault(_coincident_key(centers[sid]), []).append(sid)
+    edge_of = {a.child: a.edge.value for a in scene.attach}
+    for members in groups.values():
+        if len(members) < 2:
+            continue
+        shared = centers[members[0]]
+        all_horizontal = all(edge_of.get(m) in ("left", "right") for m in members)
+        axis = 1 if all_horizontal else 0
+        sizes = [extent(m)[axis] for m in members]
+        total = sum(sizes) + _DEOVERLAP_MARGIN * (len(members) - 1)
+        run = shared[axis] - total / 2.0
+        for sid, size in zip(members, sizes):
+            pos = run + size / 2.0
+            centers[sid] = (pos, shared[1]) if axis == 0 else (shared[0], pos)
+            run += size + _DEOVERLAP_MARGIN
 
 
 def _solve_slot_centers(
     scene: Scene, rect: tuple[float, float, float, float],
     slot_size: tuple[float, float],
+    *,
+    slot_extents: dict[str, tuple[float, float]] | None = None,
 ) -> dict[str, tuple[float, float]]:
-    """Minimal relative solver: root slots centred, attached slots placed at the
-    parent's edge + offset.
+    """Topological attach/offset solver: root slots centred, attached slots
+    placed at the parent's edge + offset, then co-located boxes de-overlapped.
 
     Attaches resolve in DEPENDENCY order (a parent is placed before its child),
     so author declaration order is irrelevant; a cyclic or unresolvable chain
-    raises rather than silently overlapping. Only the basic edges in
-    ``_SLOT_EDGE_OFFSETS`` are honoured here — cavity_*/anchor/custom and
-    ``Attach.parent_anchor`` arrive with the full constraint solver (Step 5) and
-    raise NotImplementedError until then.
+    raises rather than silently overlapping. The child slide uses the *parent's*
+    extent (``slot_extents[parent]`` when supplied, else the uniform
+    ``slot_size``), so a wide parent pushes its child clear of its real box.
+
+    After placement, ``_deoverlap_coincident`` separates any slots the solve
+    landed on the same point (two children center-attached to one parent — the
+    His513-vs-ligand tangle, **MF-3**) so their boxes never overlap; distinct
+    centres are untouched.
+
+    Supported edges: the face edges (top/bottom/left/right/center) and the
+    cavity edges (cavity_top/cavity_bottom/cavity_center). ``anchor``/``custom``
+    edges (and ``Attach.parent_anchor`` resolution) arrive with the primitive
+    refresh (Step 7) and raise ``NotImplementedError`` until then.
     """
     cx, cy = rect[0] + rect[2] / 2.0, rect[1] + rect[3] / 2.0
     sw, sh = slot_size
+
+    def extent(sid: str | None) -> tuple[float, float]:
+        if sid is not None and slot_extents and sid in slot_extents:
+            return slot_extents[sid]
+        return (sw, sh)
+
     for att in scene.attach:
         if att.edge.value not in _SLOT_EDGE_OFFSETS:
             raise NotImplementedError(
-                f"scene '{scene.id}' attach edge '{att.edge.value}' is not "
-                "supported by the Step-3 slice (top/bottom/left/right/center only)")
+                f"scene '{scene.id}' attach edge '{att.edge.value}' is not yet "
+                "supported (face/cavity edges only; anchor/custom arrive with "
+                "the primitive refresh, Step 7)")
     attached = {a.child for a in scene.attach}
     roots = [s.id for s in scene.slots if s.id not in attached]
     centers: dict[str, tuple[float, float]] = {}
@@ -317,15 +387,17 @@ def _solve_slot_centers(
                 still.append(att)  # parent not placed yet — retry next pass
                 continue
             ex, ey = _SLOT_EDGE_OFFSETS[att.edge.value]
+            pw, ph = extent(att.parent)
             ox, oy = att.offset
-            centers[att.child] = (parent_center[0] + ex * sw + ox,
-                                  parent_center[1] + ey * sh + oy)
+            centers[att.child] = (parent_center[0] + ex * pw + ox,
+                                  parent_center[1] + ey * ph + oy)
             progressed = True
         if not progressed:
             raise ValueError(
                 f"scene '{scene.id}' has a cyclic or unresolvable attach chain: "
                 f"{[a.child for a in still]}")
         pending = still
+    _deoverlap_coincident(scene, centers, extent)
     return centers
 
 
@@ -640,7 +712,14 @@ def layout_tiers(
                     "Step 6 (not in the Step-3 slice)")
             cols = _column_rects(rect, len(tier.scenes), gutter)
             for scene, cell in zip(tier.scenes, cols):
-                entries.extend(_layout_scene(scene, cell, registry, params))
+                # P5.1: solve + publish each scene inside a registry layer so a
+                # mid-scene failure rolls back its partial anchor publishes
+                # rather than leaving half a scene in the figure-global table; a
+                # clean scene commits to the base for the cross-cell transitions
+                # resolved (outside any layer) after the whole row is laid out.
+                with registry.layer():
+                    scene_entries = _layout_scene(scene, cell, registry, params)
+                entries.extend(scene_entries)
 
             # Rails: resolve a fraction of the tier extent to an absolute scalar.
             for rail in tier.rails:

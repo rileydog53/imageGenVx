@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from imageGen.ir import Figure
+from imageGen.ir import Figure, Scene
 from imageGen.layout.tier_layout import layout_tiers
 from tests._helpers import render_entries_to_png
 
@@ -155,10 +155,79 @@ def test_attach_cycle_raises():
 
 
 def test_unsupported_attach_edge_raises():
+    # P5.1: cavity_* is now resolvable, so the unsupported-edge contract is
+    # pinned by `custom` (anchor/custom + parent_anchor resolution land in Step 7).
     from imageGen.layout.tier_layout import _solve_slot_centers
-    scene = _scene_with_attach([{"child": "b", "parent": "a", "edge": "cavity_top"}])
+    scene = _scene_with_attach([{"child": "b", "parent": "a", "edge": "custom"}])
     with pytest.raises(NotImplementedError, match="attach edge"):
         _solve_slot_centers(scene, (0.0, 0.0, 300.0, 100.0), (50.0, 40.0))
+
+
+def test_cavity_edges_resolve_inside_parent():
+    # P5.1: cavity_top / cavity_bottom drop a child a quarter-extent off the
+    # parent centre (inside the parent box, a binding-pocket region).
+    from imageGen.layout.tier_layout import _solve_slot_centers
+    scene = _scene_with_attach([
+        {"child": "b", "parent": "a", "edge": "cavity_top"},
+        {"child": "c", "parent": "a", "edge": "cavity_bottom"},
+    ])
+    centers = _solve_slot_centers(scene, (0.0, 0.0, 300.0, 100.0), (50.0, 40.0))
+    assert centers["a"] == (150.0, 50.0)            # sole root → cell centre
+    assert centers["b"] == (150.0, 50.0 - 0.25 * 40.0)  # quarter up, inside
+    assert centers["c"] == (150.0, 50.0 + 0.25 * 40.0)  # quarter down, inside
+
+
+def test_two_center_attached_slots_do_not_overlap():
+    # MF-3: two slots both bound at `center` previously landed on the same point
+    # (the His513-vs-ligand tangle). The solver now spreads co-located boxes so
+    # they are disjoint, centred symmetrically on the shared point.
+    from imageGen.layout.tier_layout import _solve_slot_centers
+    sw, sh = 60.0, 40.0
+    scene = Scene.model_validate({
+        "id": "s",
+        "slots": [{"id": "his", "kind": "text"}, {"id": "lig", "kind": "text"}],
+        "attach": [{"child": "his", "edge": "center"},
+                   {"child": "lig", "edge": "center"}],
+    })
+    centers = _solve_slot_centers(scene, (0.0, 0.0, 300.0, 200.0), (sw, sh))
+    his_maxx = centers["his"][0] + sw / 2.0
+    lig_minx = centers["lig"][0] - sw / 2.0
+    assert his_maxx <= lig_minx                                  # disjoint boxes
+    assert (centers["his"][0] + centers["lig"][0]) / 2.0 == pytest.approx(150.0)
+    assert centers["his"][1] == 100.0 and centers["lig"][1] == 100.0
+
+
+def test_solve_slot_centers_is_deterministic():
+    # Co-location de-overlap must be order-stable: solving twice yields an
+    # identical dict (Kahn order + declaration tiebreak, no set iteration).
+    from imageGen.layout.tier_layout import _solve_slot_centers
+    scene = Scene.model_validate({
+        "id": "s",
+        "slots": [{"id": "his", "kind": "text"}, {"id": "lig", "kind": "text"}],
+        "attach": [{"child": "his", "edge": "center"},
+                   {"child": "lig", "edge": "center"}],
+    })
+    rect, size = (0.0, 0.0, 300.0, 200.0), (60.0, 40.0)
+    assert _solve_slot_centers(scene, rect, size) == _solve_slot_centers(scene, rect, size)
+
+
+def test_slot_extents_widen_the_parent_slide():
+    # P5.1: when a per-slot extent is supplied, the child slide uses the
+    # *parent's* real width (not the uniform slot size) so a wide parent pushes
+    # its child clear of its actual box. Absent extents → uniform fallback.
+    from imageGen.layout.tier_layout import _solve_slot_centers
+    scene = Scene.model_validate({
+        "id": "s",
+        "slots": [{"id": "a", "kind": "text"}, {"id": "b", "kind": "text"}],
+        "attach": [{"child": "b", "parent": "a", "edge": "right"}],
+    })
+    rect = (0.0, 0.0, 300.0, 100.0)
+    # a sole root → cell centre 150; uniform: b = a + 0.5 * 50
+    assert _solve_slot_centers(scene, rect, (50.0, 40.0))["b"][0] == 150.0 + 25.0
+    # wide parent extent: b = a + 0.5 * 200
+    wide = _solve_slot_centers(scene, rect, (50.0, 40.0),
+                               slot_extents={"a": (200.0, 40.0)})
+    assert wide["b"][0] == 150.0 + 100.0
 
 
 def test_rail_endpoint_transition_not_supported():

@@ -188,10 +188,21 @@ Builds on P0a.3 (label seam), P0a.4 (registry rollback), P0a.5 (ref validation).
 `place_labels`. (⚠️ verified: `tier_layout` imports nothing from
 `label_placement`; that's the seam P0a.3 exists to close.)
 
-- [ ] **P5.1 — Topological attach/offset pass.** Replace the current
-  dependency-ordered attach solve with a real topological offset solver over the
-  `Attach` graph; resolve co-located slots so they do not overlap. Run it inside
-  a registry `layer()` (P0a.4) so iterations can roll back.
+- [x] **P5.1 — Topological attach/offset pass.** ✅ 2026-06-12 (C5).
+  `_solve_slot_centers` rewritten: dependency-ordered (topological) attach solve
+  with the child slide now using the *parent's* extent (new keyword-only
+  `slot_extents`, uniform fallback → existing tests byte-identical), then a new
+  `_deoverlap_coincident` pass that separates slots the solve landed on the SAME
+  point (the His513-vs-ligand tangle) — *coincident* centres only, so the
+  historic half-step `right` chain (distinct centres, overlapping boxes) and
+  every single-slot scene are untouched (zero golden diffs). `_SLOT_EDGE_OFFSETS`
+  gains `cavity_top/cavity_bottom/cavity_center` (quarter-extent inside the
+  parent); `anchor`/`custom` still raise `NotImplementedError` (Step 7). Each
+  scene's solve+publish now runs inside `registry.layer()` so a mid-scene
+  failure rolls back partial publishes; a clean scene commits for the cross-cell
+  transitions. `test_unsupported_attach_edge_raises` updated (`cavity_top` →
+  `custom`); +4 tests (cavity resolves, MF-3 disjoint boxes, determinism,
+  slot_extents widen-slide). 1050 green.
   *Done when:* the His513-vs-ligand tangle (**MF-3**, `V3_FEATURES.md`) cannot
   occur — a test with two center-attached slots produces non-overlapping boxes.
 
