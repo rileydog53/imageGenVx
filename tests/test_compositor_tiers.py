@@ -80,6 +80,18 @@ def test_dispatch_layout_no_longer_raises_for_tiers():
         e.primitive(*e.args, **e.kwargs), svgwrite.container.Group) for e in entries)
 
 
+def test_label_coordinator_tier_branch_is_inert():
+    # P0a.3 seam: the tier arm of LabelCoordinator.place is an identity
+    # pass-through today (tier captions are baked by the tier engine). This
+    # pins the inert seam so P5.2 flipping it to scene-local placement is a
+    # *deliberate*, reviewable change rather than a silent drift.
+    from imageGen.render.label_coordinator import LabelCoordinator
+    fig = _hydrolysis_figure()
+    entries = _dispatch_layout(fig, style_dict={}, smiles_map=None)
+    placed = LabelCoordinator.place(fig, entries, {}, canvas=tier_canvas(fig))
+    assert placed is entries
+
+
 def test_canvas_size_matches_tier_canvas():
     fig = _hydrolysis_figure()
     # The viewport the compositor picks must equal what the engine sized to,

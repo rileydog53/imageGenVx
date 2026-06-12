@@ -120,7 +120,18 @@ Keep the suite green at every check (currently **1025**).
   resolver needs no second touch.
   *Done when:* dispatch + canvas read one plan; behaviour identical; tests green.
 
-- [ ] **P0a.3 — Extract `LabelCoordinator.place()` (minimum-viable, byte-identical).**
+- [x] **P0a.3 — Extract `LabelCoordinator.place()` (minimum-viable, byte-identical).**
+  ✅ 2026-06-12 (C2). New `render/label_coordinator.py` holds `LabelScope`
+  (NamedTuple: entries-as-subset-AND-occupancy-seed, requests, canvas,
+  style_dict, panel_chain, position, emit_leaders) + `LabelCoordinator.place()`
+  dispatching container-mode-first (`if ir.tiers: return entries` inert seam;
+  `ir.panels` → `_run_panels`; else `_run_leaf` via a shared `_place_scope`).
+  Moved `_label_requests_fn` (re-exported from `compositor` so the
+  `test_archetype_plan` import — added by C1, post-blueprint — still resolves)
+  and `_panel_cell_bounds`; deleted `_place_labels_per_panel`. `render_figure`'s
+  label step is now one `LabelCoordinator.place(...)` call under `if labels:`.
+  One-directional import (coordinator imports nothing from compositor → no
+  cycle). Zero golden diffs; +1 identity test (`place(tiers) is entries`).
   Move the inlined label `if/else` (`compositor.py:~192`) and
   `_place_labels_per_panel` (`:443`) into a `LabelCoordinator` keyed on a
   first-class `LabelScope = (entry-subset, canvas-bound, occupancy-seed)`.
