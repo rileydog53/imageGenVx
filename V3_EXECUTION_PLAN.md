@@ -236,10 +236,18 @@ Builds on P0a.3 (label seam), P0a.4 (registry rollback), P0a.5 (ref validation).
   *Done when:* a regression figure that previously overlapped a scene label with
   a global annotation now separates them.
 
-- [ ] **P5.4 — Close the Step-4 deferred placement nits** (from `V3_STATUS.md`):
-  non-molecule attach-parent extent (use slot bbox, not scene frame); sub-pixel
-  molecule centering from `int()` render size; text `center` anchor = midline not
-  baseline. These are now in-scope because the solver owns extents.
+- [x] **P5.4 — Close the Step-4 deferred placement nits** ✅ 2026-06-12 (C7).
+  **Nit-1** (non-molecule attach-parent extent): `_layout_scene` now threads
+  per-slot extents (`_slot_bbox_size`, reusing `_slot_bbox`) into the solver, so
+  a child slides by the *parent's* real box and de-overlaps by the *child's* —
+  a TEXT parent no longer pushes a child a full molecule-width away. **Nit-2**
+  (sub-pixel molecule centering): the molecule renders at `int(round(sw/sh))`
+  and centres on that SAME rounded size (default `(180,140)` rounds to itself →
+  no golden change; fractional sizes no longer drift by the `int()` floor).
+  **Nit-3** (text `center` = midline not baseline): a TEXT slot's published
+  `center` anchor is the visual midline and the rendered baseline drops 0.35 em
+  (mirrors the `_badge_group` fix), so an edge to a text slot's centre meets its
+  middle. +3 regression tests. 1058 green.
   *Done when:* each nit has a regression test.
 
 ### Phase 0b — pre-Step-6 seams (land before step expansion)

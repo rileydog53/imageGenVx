@@ -312,3 +312,65 @@ def test_tier_transition_aggregates_unresolved_refs():
         layout_tiers(fig)
     msg = str(exc.value)
     assert "a.m.ghost" in msg and "b.m.ghost" in msg, msg
+
+
+# ---------------------------------------------------------------------------
+# P5.4 placement nits
+# ---------------------------------------------------------------------------
+
+def test_text_parent_slide_uses_text_width():
+    # Nit-1: a child attached to a TEXT parent slides by the parent's measured
+    # text width (threaded via slot_extents), not the full molecule slot width.
+    from imageGen.layout.anchors import AnchorRegistry
+    from imageGen.layout.tier_layout import (
+        TIER_DEFAULT_PARAMS, _layout_scene, _slot_bbox_size,
+    )
+    params = dict(TIER_DEFAULT_PARAMS)
+    scene = Scene.model_validate({"id": "s", "slots": [
+        {"id": "p", "kind": "text", "label": "His"},
+        {"id": "c", "kind": "text", "label": "x"}],
+        "attach": [{"child": "c", "parent": "p", "edge": "right"}]})
+    reg = AnchorRegistry()
+    _layout_scene(scene, (0.0, 0.0, 400.0, 200.0), reg, params)
+    px, _py = reg.resolve("s.p.center")
+    cx_c, _cy = reg.resolve("s.c.center")
+    sw, _sh = params["tier_slot_size"]
+    parent_w = _slot_bbox_size(scene.slots[0], (sw, _sh), params)[0]
+    assert cx_c == pytest.approx(px + 0.5 * parent_w)
+    assert cx_c < px + 0.5 * sw  # strictly less than the old molecule-width slide
+
+
+def test_molecule_centering_uses_rounded_render_size():
+    # Nit-2: a fractional slot size rounds for BOTH the render size and the
+    # centring offset, so the rendered molecule box stays centred on the cell
+    # centre (no int()-floor drift).
+    from imageGen.layout.anchors import AnchorRegistry
+    from imageGen.layout.tier_layout import TIER_DEFAULT_PARAMS, _layout_scene
+    params = {**TIER_DEFAULT_PARAMS, "tier_slot_size": (181.6, 141.4)}
+    scene = Scene.model_validate({"id": "s", "slots": [
+        {"id": "mol", "kind": "molecule", "style": {"smiles": "CCO"}}]})
+    reg = AnchorRegistry()
+    entries = _layout_scene(scene, (0.0, 0.0, 400.0, 200.0), reg, params)
+    mol = next(e for e in entries if e.ir_id == "s.mol")
+    rw = round(181.6)
+    # the rendered box (top_left .. top_left + rw) is centred on the cell centre
+    assert mol.position[0] + rw / 2.0 == pytest.approx(200.0)
+
+
+def test_text_slot_center_anchor_is_midline():
+    # Nit-3: a text slot's published `center` anchor is the visual midline, and
+    # the rendered baseline drops 0.35 em below it.
+    from imageGen.layout.anchors import AnchorRegistry
+    from imageGen.layout.tier_layout import TIER_DEFAULT_PARAMS, _layout_scene
+    params = dict(TIER_DEFAULT_PARAMS)
+    scene = Scene.model_validate({"id": "s", "slots": [
+        {"id": "t", "kind": "text", "label": "His"}]})
+    reg = AnchorRegistry()
+    entries = _layout_scene(scene, (0.0, 0.0, 200.0, 100.0), reg, params)
+    _cx, cy_anchor = reg.resolve("s.t.center")
+    assert (_cx, cy_anchor) == (100.0, 50.0)            # midline at cell centre
+    text_entry = next(e for e in entries if e.ir_id == "s.t")
+    g = text_entry.primitive(*text_entry.args, **text_entry.kwargs)
+    txt = next(el for el in g.elements if el.elementname == "text")
+    fs = int(params["tier_text_font_size"])
+    assert float(txt["y"]) == pytest.approx(cy_anchor + fs * 0.35)

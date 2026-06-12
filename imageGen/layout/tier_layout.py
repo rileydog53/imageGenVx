@@ -480,11 +480,14 @@ def _layout_scene(
     cx, cy, cw, ch = rect
     entries: list[LayoutEntry] = []
 
-    centers = _solve_slot_centers(scene, rect, (sw, sh))
+    # P5.4 Nit-1: give the solver each slot's real extent so the child slide
+    # uses the *parent's* box (a TEXT parent no longer pushes a child a full
+    # molecule-width away) and de-overlap uses the child's own width.
+    slot_extents = {s.id: _slot_bbox_size(s, (sw, sh), params) for s in scene.slots}
+    centers = _solve_slot_centers(scene, rect, (sw, sh), slot_extents=slot_extents)
     boxes: list[tuple[float, float, float, float]] = []
     for slot in scene.slots:
         center = centers.get(slot.id, (cx + cw / 2.0, cy + ch / 2.0))
-        top_left = (center[0] - sw / 2.0, center[1] - sh / 2.0)
         scoped = f"{scene.id}.{slot.id}"
         if slot.kind == SlotKind.MOLECULE:
             style = slot.style or {}
@@ -493,16 +496,27 @@ def _layout_scene(
                 raise ValueError(
                     f"molecule slot '{scene.id}.{slot.id}' needs style['smiles']")
             names = {int(k): v for k, v in (style.get("anchor_names") or {}).items()}
-            ag = render_molecule_anchored(str(smiles), size=(int(sw), int(sh)),
+            # P5.4 Nit-2: render at the integer pixel size actually used and
+            # centre on that SAME rounded size, so the molecule (and its
+            # published anchors) sit dead-centre instead of drifting up to half a
+            # pixel from the int() floor. Default (180, 140) rounds to itself.
+            rw, rh = int(round(sw)), int(round(sh))
+            top_left = (center[0] - rw / 2.0, center[1] - rh / 2.0)
+            ag = render_molecule_anchored(str(smiles), size=(rw, rh),
                                           anchor_names=names)
             registry.publish(scoped, ag.anchors, offset=top_left)
             entries.append(LayoutEntry(
                 (lambda g=ag.group: g), (), {}, top_left, ir_id=scoped))
         elif slot.kind == SlotKind.TEXT:
+            # P5.4 Nit-3: publish the `center` anchor at the visual MIDLINE (so an
+            # edge to a text slot's centre meets its middle), and drop the
+            # rendered baseline 0.35 em so the glyphs straddle that midline (SVG
+            # <text> y is the baseline; mirrors the _badge_group cy + r*0.35 fix).
+            fs = int(params["tier_text_font_size"])
             registry.publish(scoped, {"center": (0.0, 0.0)}, offset=center)
             entries.append(LayoutEntry(
-                (lambda t=slot.label or "", c=center, p=params: _text_group(
-                    t, c, int(p["tier_text_font_size"]), str(p["tier_text_color"]),
+                (lambda t=slot.label or "", c=center, p=params, f=fs: _text_group(
+                    t, (c[0], c[1] + f * 0.35), f, str(p["tier_text_color"]),
                     str(p["tier_font_family"]), anchor="middle")),
                 (), {}, (0.0, 0.0), ir_id=scoped))
         else:
@@ -704,6 +718,19 @@ def _slot_bbox(
         half_h = fs * 0.7
         return (cxc - w / 2.0, cyc - half_h, cxc + w / 2.0, cyc + half_h)
     return (cxc, cyc, cxc, cyc)
+
+
+def _slot_bbox_size(
+    slot: Slot, slot_size: tuple[float, float], params: dict[str, Any],
+) -> tuple[float, float]:
+    """The ``(w, h)`` a slot occupies (P5.4 Nit-1).
+
+    The per-kind extent the solver slides a child by (the parent's box) and
+    de-overlaps by (the child's own box). Reuses ``_slot_bbox``'s per-kind logic
+    at a neutral origin, so a TEXT parent reports its measured width rather than
+    the full molecule slot size."""
+    minx, miny, maxx, maxy = _slot_bbox(slot, (0.0, 0.0), slot_size, params)
+    return (maxx - minx, maxy - miny)
 
 
 def _ref_to_key(ref: str) -> str:
