@@ -30,6 +30,11 @@ import svgwrite.shapes
 import svgwrite.text
 
 from imageGen.ir.schema import Annotation, AnnotationType, Figure, NamedSlot
+from imageGen.layout.label_placement import (
+    Bbox,
+    LabelRequest,
+    _place_with_fallback,
+)
 from imageGen.layout.types import LayoutEntry
 from imageGen.render._measure import estimate_text_w as _estimate_text_w
 
@@ -208,28 +213,81 @@ _RENDERERS = {
 
 def annotation_group(
     ann: Annotation, canvas: tuple[float, float], style_dict: dict | None = None,
+    *, position_override: tuple[float, float] | None = None,
 ) -> svgwrite.container.Group:
-    """Render a single annotation to an svgwrite Group positioned on the canvas."""
+    """Render a single annotation to an svgwrite Group positioned on the canvas.
+
+    ``position_override`` (P5.3): when set, the resolved ``(x, y)`` is replaced
+    by this point — the occupancy-aware nudge that keeps a figure-level
+    annotation off the scene-local labels. The slot's ``text_anchor`` /
+    vertical placement are kept. ``None`` (default) renders at the authored
+    position verbatim, so every non-tier path is byte-identical.
+    """
     style_dict = style_dict or {}
     x, y, anchor, vertical = _resolve_position(ann.position, canvas)
+    if position_override is not None:
+        x, y = position_override
     return _RENDERERS[ann.type](ann, x, y, anchor, vertical, style_dict)
+
+
+def _avoid_occupied(
+    ann: Annotation, canvas: tuple[float, float], style_dict: dict,
+    occupied: list[Bbox],
+) -> tuple[float, float] | None:
+    """Find a position override that keeps *ann* off *occupied*, reserving it.
+
+    Reuses ``place_labels._place_with_fallback`` (not a second solver): the
+    authored point is the anchor, with ``center`` tried first so a clear
+    annotation stays exactly put — no override → byte-identical render — then
+    the shrink / nudge ladder pushes a colliding one clear. The chosen bbox is
+    appended to *occupied* so later annotations avoid it too. Returns the new
+    point, or ``None`` when the annotation does not move (already clear, or the
+    ladder exhausted to a last-resort overlap → keep the authored spot).
+    """
+    x, y, _anchor, _vertical = _resolve_position(ann.position, canvas)
+    font_size = float(style_dict.get(
+        "annotation_label_font_size", style_dict.get("label_font_size", 11)))
+    req = LabelRequest(
+        text=ann.text, anchor=(x, y), anchor_size=(0.0, 0.0),
+        priority=("center", "below", "above", "right", "left"),
+    )
+    center, bbox, _font, overlap = _place_with_fallback(
+        req, occupied, gap=4.0, margin=1.0, font_size=font_size, canvas=None)
+    occupied.append(bbox)
+    if overlap or center == (x, y):
+        return None
+    return center
 
 
 def annotation_entries(
     figure: Figure, canvas: tuple[float, float], style_dict: dict | None = None,
+    *, occupied: list[Bbox] | None = None,
 ) -> list[LayoutEntry]:
     """Return one ``LayoutEntry`` per ``figure.annotations`` entry (drawn last).
 
     Each entry calls :func:`annotation_group`, which positions the annotation in
     absolute canvas coordinates — so the entry's own ``position`` stays ``(0, 0)``.
     IR ids are synthetic (``annotation_0``, …) since annotations carry no id.
+
+    ``occupied`` (P5.3): bboxes already taken by scene-local labels. When it is
+    non-empty, LABEL / CAPTION annotations are nudged off those boxes (and off
+    each other) via :func:`_avoid_occupied`; SCALE_BAR stays fixed. ``None`` /
+    empty (every non-tier path, and tier figures with no scene labels) leaves
+    every annotation at its authored position — byte-identical to before.
     """
     entries: list[LayoutEntry] = []
+    occ: list[Bbox] = list(occupied) if occupied else []
+    seed_active = bool(occ)
     for i, ann in enumerate(figure.annotations):
+        kwargs: dict = {"style_dict": style_dict or {}}
+        if seed_active and ann.type in (AnnotationType.LABEL, AnnotationType.CAPTION):
+            override = _avoid_occupied(ann, canvas, style_dict or {}, occ)
+            if override is not None:
+                kwargs["position_override"] = override
         entries.append(LayoutEntry(
             annotation_group,
             (ann, canvas),
-            {"style_dict": style_dict or {}},
+            kwargs,
             position=(0.0, 0.0),
             ir_id=f"annotation_{i}",
         ))

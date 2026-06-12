@@ -287,7 +287,17 @@ def render_figure(
     # and these were silent no-ops despite fixtures relying on them.
     if ir.annotations:
         from imageGen.render.annotations import annotation_entries  # noqa: PLC0415
-        entries = entries + annotation_entries(ir, final_canvas, style_dict)
+        # P5.3: for tiered figures, seed the annotation pass with the bboxes of
+        # the scene-local labels the tier engine already placed, so a global
+        # annotation and a scene label can no longer silently overlap. Every
+        # other path passes occupied=None → annotations render verbatim.
+        occupied = None
+        if ir.tiers:
+            from imageGen.layout.label_placement import label_entry_bbox  # noqa: PLC0415
+            occupied = [b for e in entries
+                        if (b := label_entry_bbox(e)) is not None]
+        entries = entries + annotation_entries(
+            ir, final_canvas, style_dict, occupied=occupied)
 
     # Render the spec title as a heading above the figure for the archetypes
     # that otherwise ship headless. Placed in negative-y headroom that the FR3

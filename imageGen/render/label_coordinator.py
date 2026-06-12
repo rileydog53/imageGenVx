@@ -6,9 +6,10 @@ mode (container-mode-first, exactly like ``_lowering_plan``):
 
   * **leaf** — one figure-wide placement pass (``_run_leaf``);
   * **per-panel** — one collision-isolated pass per panel (``_run_panels``);
-  * **tier** — currently *inert* (``return entries``). Tier captions are still
-    baked by the tier engine (``tier_layout._caption_group``); Step 5 (P5.2)
-    flips **only** this arm to scene-local placement.
+  * **tier** — *inert* (``return entries``). Tiered figures place their scene
+    labels inside the tier engine (``tier_layout.scene_label_requests`` +
+    ``place_labels``, P5.2), which is where the per-scene geometry lives, so the
+    coordinator passes their entries through unchanged.
 
 This is a behaviour-preserving extraction of the label logic that previously
 lived inline in ``render_figure`` plus ``_place_labels_per_panel`` /
@@ -120,14 +121,15 @@ class LabelCoordinator:
         """Place labels for *entries*, dispatching container-mode-first.
 
         Tiers: inert pass-through (``return entries``) — captions are baked by
-        the tier engine today; P5.2 flips this arm. Panels: one collision-
+        the tier engine (scene-local placement, P5.2). Panels: one collision-
         isolated scope per panel. Leaf: a single figure-wide scope. The
         ``labels=False`` short-circuit stays in the caller (``if labels:``).
         """
         if ir.tiers:
-            # Inert seam: tier captions/labels are baked by the tier engine
-            # (tier_layout._caption_group). P5.2 swaps this arm to per-scene
-            # placement. The `is entries` identity is pinned by a unit test.
+            # Tiered figures place their scene labels inside the tier engine
+            # (tier_layout.scene_label_requests + place_labels), where the
+            # per-scene geometry lives — so the coordinator passes their entries
+            # through unchanged. The `is entries` identity is pinned by a test.
             return entries
         if ir.panels:
             return cls._run_panels(

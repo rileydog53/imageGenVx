@@ -206,21 +206,33 @@ Builds on P0a.3 (label seam), P0a.4 (registry rollback), P0a.5 (ref validation).
   *Done when:* the His513-vs-ligand tangle (**MF-3**, `V3_FEATURES.md`) cannot
   occur — a test with two center-attached slots produces non-overlapping boxes.
 
-- [ ] **P5.2 — Scene-local label placement via the coordinator.** Add a
-  `scene_label_requests(scene, scene_entries)` in `tier_layout` that emits
-  `LabelRequest`s for `scene.label` (replacing the fixed `_caption_group`),
-  **plus the currently-unrendered `SceneEdge.label` (`schema.py:338`) and
-  non-TEXT `Slot.label` (`schema.py:301`)**. Swap *only* the tier branch of
-  `LabelCoordinator` from emit-caption to a per-scene scope whose canvas bound is
-  the scene cell rect. `place_labels`' existing canvas-clip enforces
-  scene-locality for free.
+- [x] **P5.2 — Scene-local label placement via the coordinator.** ✅ 2026-06-12
+  (C6). New `tier_layout.scene_label_requests` emits `LabelRequest`s for the
+  scene caption (`scene.label`, one per `\n` line, ids preserved) plus the
+  previously-unrendered non-TEXT `Slot.label` and `SceneEdge.label`. `_layout_scene`
+  now places them through the shared `place_labels` pass (replacing the fixed
+  `_caption_group` call — the fn stays for its direct test), with the caption
+  gap carried over as the anchor gap. ⚠️ **Implementation note (deviates from
+  the slice sketch):** placement is **engine-side** (wiring point A — where the
+  per-scene cell/extent/boxes live), so the `LabelCoordinator` tier branch stays
+  the inert `return entries` pass-through (its `BAKED` strategy = "engine places
+  its own"); the "canvas = cell rect" clip in the sketch is geometrically wrong
+  for the engine's *absolute* coords (cells have non-zero origins), so canvas is
+  left unbounded and FR3 grows the frame as the fixed caption relied on. ids
+  preserved → `label_scene_<id>_label` keeps matching token assertions; no tier
+  pixel-goldens exist so nothing to regen. 1055 green.
   *Done when:* tier captions route through `place_labels`; scene-edge / slot
   labels render; no fixed-coordinate caption path remains.
 
-- [ ] **P5.3 — Seed the figure-level annotation pass with occupied bboxes.** After
-  scene scopes place, hand their bboxes to the annotation pass
-  (`compositor.py:~216`) as occupancy so a scene-local label and a global
-  annotation can no longer silently overlap.
+- [x] **P5.3 — Seed the figure-level annotation pass with occupied bboxes.** ✅
+  2026-06-12 (C6). `place_labels` gains a public `label_entry_bbox(entry)`;
+  `render_figure` (tier path only) collects the placed scene-label bboxes and
+  passes them as `occupied=` to `annotation_entries`. The annotation pass gains
+  `occupied` + a `position_override`: LABEL/CAPTION annotations are nudged off
+  the occupied boxes (and each other) via the reused `place_with_fallback`
+  ladder; SCALE_BAR stays fixed. `occupied` None/empty (every non-tier path, and
+  tier figures with no scene labels) → annotations render verbatim
+  (byte-identical). +1 test.
   *Done when:* a regression figure that previously overlapped a scene label with
   a global annotation now separates them.
 

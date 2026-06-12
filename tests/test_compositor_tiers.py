@@ -81,10 +81,10 @@ def test_dispatch_layout_no_longer_raises_for_tiers():
 
 
 def test_label_coordinator_tier_branch_is_inert():
-    # P0a.3 seam: the tier arm of LabelCoordinator.place is an identity
-    # pass-through today (tier captions are baked by the tier engine). This
-    # pins the inert seam so P5.2 flipping it to scene-local placement is a
-    # *deliberate*, reviewable change rather than a silent drift.
+    # P0a.3/P5.2 seam: tiered figures place their scene labels inside the tier
+    # engine (scene_label_requests + place_labels), where the per-scene geometry
+    # lives, so the coordinator's tier arm is an identity pass-through. Pinning
+    # it keeps any future move of placement out of the engine a deliberate change.
     from imageGen.render.label_coordinator import LabelCoordinator
     fig = _hydrolysis_figure()
     entries = _dispatch_layout(fig, style_dict={}, smiles_map=None)
@@ -198,6 +198,67 @@ def test_transition_endpoints_lie_in_the_molecule_gap():
     assert p0[0] < p1[0]                      # left-to-right
     assert p1[1] == pytest.approx(p0[1])      # level on the midline rail
     assert (p1[0] - p0[0]) > 40.0             # a real gap, not a gutter sliver
+
+
+# ---------------------------------------------------------------------------
+# Scene-local labels (P5.2) + annotation occupancy seed (P5.3)
+# ---------------------------------------------------------------------------
+
+def test_scene_captions_stay_in_their_scene_cells():
+    # P5.2: each caption is placed local to its own scene — the left scene's
+    # caption sits left of the figure centre, the right scene's right of it.
+    fig = _hydrolysis_figure()
+    entries = layout_tiers(fig)
+    w, _h = tier_canvas(fig)
+    caps = {e.ir_id: e.args[1] for e in entries
+            if e.ir_id in ("label_scene_s_aspirin_label",
+                           "label_scene_s_salicylic_label")}
+    assert set(caps) == {"label_scene_s_aspirin_label",
+                         "label_scene_s_salicylic_label"}
+    assert (caps["label_scene_s_aspirin_label"][0] < w / 2.0
+            < caps["label_scene_s_salicylic_label"][0])
+
+
+def test_scene_edge_and_slot_labels_render(tmp_path):
+    # P5.2: a non-TEXT Slot.label and a SceneEdge.label (both previously
+    # unrendered) now appear in the SVG, placed by the scene-local pass.
+    fig = Figure.model_validate({
+        "archetype": "mechanism_cartoon",
+        "tiers": [{"id": "row", "role": "scene_row", "scenes": [
+            {"id": "s", "slots": [
+                {"id": "mol", "kind": "molecule", "label": "ligand",
+                 "style": {"smiles": ASPIRIN,
+                           "anchor_names": {"1": "a1", "3": "a3"}}}],
+             "connect": [{"from_anchor": "mol.a1", "to_anchor": "mol.a3",
+                          "type": "dashed", "label": "Hbond"}]}]}]})
+    out = render_figure(fig, tmp_path / "scene_labels.svg")
+    svg = out.read_text()
+    assert "label_slot_s_mol_label" in svg and ">ligand<" in svg
+    assert "label_edge_mol.a1_mol.a3_label" in svg and "Hbond" in svg
+
+
+def test_annotation_is_nudged_off_a_scene_label():
+    # P5.3: a figure-level annotation authored on top of a scene-local label is
+    # pushed clear of it (occupancy seed). With occupied=None it stays put.
+    from imageGen.layout.label_placement import (
+        _bbox_from_center, _estimate_text_bbox, _overlaps,
+    )
+    from imageGen.render.annotations import annotation_entries
+    fig = Figure.model_validate({
+        "archetype": "mechanism_cartoon",
+        "entities": [{"id": "e", "type": "protein", "label": "E"}],
+        "annotations": [{"type": "caption", "text": "note", "position": [0.5, 0.5]}],
+    })
+    canvas = (400.0, 300.0)
+    occ = _bbox_from_center((200.0, 150.0), _estimate_text_bbox("note", 11))
+    # seeded: the annotation moves off the occupied box.
+    seeded = annotation_entries(fig, canvas, {}, occupied=[occ])
+    override = seeded[0].kwargs.get("position_override")
+    assert override is not None
+    moved = _bbox_from_center(override, _estimate_text_bbox("note", 11))
+    assert not _overlaps(moved, occ, 1.0)
+    # unseeded (every non-tier path): no override → authored position verbatim.
+    assert "position_override" not in annotation_entries(fig, canvas, {})[0].kwargs
 
 
 # ---------------------------------------------------------------------------

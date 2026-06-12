@@ -53,6 +53,7 @@ from imageGen.ir.schema import (
     TierRole,
 )
 from imageGen.layout.anchors import AnchorRegistry
+from imageGen.layout.label_placement import LabelRequest, place_labels
 from imageGen.layout.types import LayoutEntry
 from imageGen.primitives.chemistry import render_molecule_anchored
 
@@ -401,6 +402,67 @@ def _solve_slot_centers(
     return centers
 
 
+def scene_label_requests(
+    scene: Scene,
+    *,
+    content_extent: tuple[float, float, float, float],
+    centers: dict[str, tuple[float, float]],
+    slot_size: tuple[float, float],
+    edge_anchors: dict[str, tuple[float, float]],
+    params: dict[str, Any],
+) -> list[LabelRequest]:
+    """Emit the scene's ``LabelRequest``s for the scene-local placement pass (P5.2).
+
+    Sibling of ``pathway_label_requests`` for the tier engine. Covers the scene
+    caption (``scene.label``, one request per ``\\n`` line, stacked below the
+    content extent — replacing the old fixed ``_caption_group``) plus the two
+    previously-unrendered label channels: a non-TEXT ``Slot.label`` (a TEXT slot
+    already renders its label as its body, so it is skipped) and a
+    ``SceneEdge.label`` at the edge midpoint. ``ir_id``s are preserved so the
+    emitted ``label_<ir_id>`` ids keep matching existing token assertions
+    (line 0 of the caption stays ``scene_<id>_label``).
+    """
+    minx, _miny, maxx, maxy = content_extent
+    fcx = (minx + maxx) / 2.0
+    width = maxx - minx
+    sw, sh = slot_size
+    fs = int(params["tier_caption_font_size"])
+    step = fs * float(params["tier_caption_line_step"])
+    requests: list[LabelRequest] = []
+
+    if scene.label:
+        for i, line in enumerate(scene.label.split("\n")):
+            requests.append(LabelRequest(
+                text=line,
+                anchor=(fcx, maxy + i * step),
+                anchor_size=(width, 0.0),
+                priority=("below", "above"),
+                ir_id=(f"scene_{scene.id}_label" if i == 0
+                       else f"scene_{scene.id}_label_l{i}"),
+            ))
+
+    for slot in scene.slots:
+        if slot.label and slot.kind != SlotKind.TEXT and slot.id in centers:
+            requests.append(LabelRequest(
+                text=slot.label,
+                anchor=centers[slot.id],
+                anchor_size=(sw, sh),
+                priority=("below", "right", "above", "left"),
+                ir_id=f"slot_{scene.id}_{slot.id}_label",
+            ))
+
+    for edge in scene.connect:
+        if edge.label and edge.ir_id in edge_anchors:
+            requests.append(LabelRequest(
+                text=edge.label,
+                anchor=edge_anchors[edge.ir_id],
+                anchor_size=(0.0, 0.0),
+                priority=("above", "below", "right", "left"),
+                ir_id=f"{edge.ir_id}_label",
+            ))
+    return requests
+
+
 def _layout_scene(
     scene: Scene, rect: tuple[float, float, float, float],
     registry: AnchorRegistry, params: dict[str, Any],
@@ -410,8 +472,9 @@ def _layout_scene(
     Order matters: slots are solved and placed first so the scene-frame anchors
     can be published from the *content* extent (the union of slot boxes) rather
     than the cell rect — a cross-cell transition arrow then spans the visible
-    molecule gap, not the narrow inter-cell gutter. Badge / caption chrome and
-    intra-scene edges are emitted last (edges need the atom anchors above)."""
+    molecule gap, not the narrow inter-cell gutter. The badge is emitted next,
+    then intra-scene edges (which need the atom anchors above), and finally the
+    scene labels are placed by the shared greedy pass (P5.2)."""
     sw, sh = params["tier_slot_size"]
     standoff = float(params["tier_edge_standoff"])
     cx, cy, cw, ch = rect
@@ -462,7 +525,7 @@ def _layout_scene(
         "center": (fcx, fcy),
     })
 
-    # Step badge (top-left of the cell, so badges align across a row) + caption.
+    # Step badge (top-left of the cell, so badges align across a row).
     if scene.badge:
         inset = float(params["tier_badge_inset"])
         r = float(params["tier_badge_radius"])
@@ -470,13 +533,6 @@ def _layout_scene(
             (lambda b=scene.badge, c=(cx + inset + r, cy + inset + r), p=params:
                 _badge_group(b, c, p)),
             (), {}, (0.0, 0.0), ir_id=f"scene_{scene.id}_badge"))
-    if scene.label:
-        gap = float(params["tier_caption_gap"])
-        base_y = maxy + gap + int(params["tier_caption_font_size"])
-        entries.append(LayoutEntry(
-            (lambda t=scene.label, x=fcx, y=base_y, p=params:
-                _caption_group(t, x, y, p)),
-            (), {}, (0.0, 0.0), ir_id=f"scene_{scene.id}_label"))
 
     # P0a.5: aggregate-validate every connect endpoint before resolving so all
     # bad refs in this scene surface in one error. The schema validates the slot
@@ -498,7 +554,9 @@ def _layout_scene(
         )
 
     # Intra-scene edges: refs are scene-local ("slot.anchor"); resolve_edge
-    # applies (clamped) endpoint standoff so the line clears both atoms.
+    # applies (clamped) endpoint standoff so the line clears both atoms. The
+    # midpoint of any labelled edge is captured for its scene-local label.
+    edge_anchors: dict[str, tuple[float, float]] = {}
     for edge in scene.connect:
         q0, q1 = registry.resolve_edge(
             f"{scene.id}.{edge.from_anchor}", f"{scene.id}.{edge.to_anchor}",
@@ -506,6 +564,32 @@ def _layout_scene(
         entries.append(LayoutEntry(
             (lambda a=q0, b=q1, t=edge.type, s=edge.style: _edge_group(a, b, t, s)),
             (), {}, (0.0, 0.0), ir_id=edge.ir_id))
+        if edge.label:
+            edge_anchors[edge.ir_id] = ((q0[0] + q1[0]) / 2.0,
+                                        (q0[1] + q1[1]) / 2.0)
+
+    # P5.2: scene-local label placement through the shared greedy pass instead
+    # of the old fixed-coordinate caption. Molecule / text / badge / edge
+    # entries are zero-footprint to place_labels, so the caption lands just
+    # below the content extent (the caption gap carried over as the anchor gap),
+    # and the previously-unrendered slot / edge labels place around their
+    # anchors. canvas is left unbounded: the FR3 frame expansion grows the page
+    # to include a caption below the bottom row, exactly as the fixed caption
+    # relied on.
+    requests = scene_label_requests(
+        scene, content_extent=(minx, miny, maxx, maxy), centers=centers,
+        slot_size=(sw, sh), edge_anchors=edge_anchors, params=params)
+    if requests:
+        label_style = {
+            "label_font_size": int(params["tier_caption_font_size"]),
+            "label_font_family": str(params["tier_font_family"]),
+            "label_font_color": str(params["tier_text_color"]),
+        }
+        entries = place_labels(
+            entries, requests,
+            layout_params={"label_anchor_gap": float(params["tier_caption_gap"])},
+            style_dict=label_style,
+        )
     return entries
 
 

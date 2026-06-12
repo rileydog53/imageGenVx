@@ -230,6 +230,53 @@ def test_slot_extents_widen_the_parent_slide():
     assert wide["b"][0] == 150.0 + 100.0
 
 
+def test_scene_label_requests_covers_caption_slot_and_edge():
+    # P5.2: scene_label_requests emits the caption, a non-TEXT Slot.label, and a
+    # SceneEdge.label (the latter two previously unrendered); a TEXT slot's label
+    # is the body, never a separate request. ir_ids are preserved.
+    from imageGen.layout.tier_layout import (
+        TIER_DEFAULT_PARAMS, scene_label_requests,
+    )
+    scene = Scene.model_validate({
+        "id": "s", "label": "caption",
+        "slots": [
+            {"id": "blob", "kind": "molecule", "label": "His513",
+             "style": {"smiles": "CCO"}},
+            {"id": "note", "kind": "text", "label": "ignored"},
+        ],
+        "connect": [{"from_anchor": "blob.center", "to_anchor": "note.center",
+                     "type": "dashed", "label": "H-bond"}],
+    })
+    reqs = scene_label_requests(
+        scene, content_extent=(0.0, 0.0, 100.0, 80.0),
+        centers={"blob": (50.0, 40.0), "note": (50.0, 40.0)},
+        slot_size=(60.0, 40.0),
+        edge_anchors={"edge_blob.center_note.center": (50.0, 40.0)},
+        params=dict(TIER_DEFAULT_PARAMS))
+    ids = {r.ir_id for r in reqs}
+    assert "scene_s_label" in ids                        # caption (line 0)
+    assert "slot_s_blob_label" in ids                    # non-TEXT slot label
+    assert "edge_blob.center_note.center_label" in ids   # scene-edge label
+    assert not any(r.text == "ignored" for r in reqs)    # TEXT slot label skipped
+
+
+def test_scene_caption_multiline_emits_one_request_per_line():
+    # P5.2: a multi-line caption stacks one request per line; line 0 keeps the
+    # canonical id so token assertions survive, later lines get a distinct id.
+    from imageGen.layout.tier_layout import (
+        TIER_DEFAULT_PARAMS, scene_label_requests,
+    )
+    scene = Scene.model_validate({"id": "s", "label": "line one\nline two",
+                                  "slots": [{"id": "m", "kind": "text"}]})
+    reqs = scene_label_requests(
+        scene, content_extent=(0.0, 0.0, 100.0, 80.0),
+        centers={"m": (50.0, 40.0)}, slot_size=(60.0, 40.0),
+        edge_anchors={}, params=dict(TIER_DEFAULT_PARAMS))
+    ids = [r.ir_id for r in reqs]
+    assert ids == ["scene_s_label", "scene_s_label_l1"]
+    assert reqs[1].anchor[1] > reqs[0].anchor[1]   # second line anchored lower
+
+
 def test_rail_endpoint_transition_not_supported():
     fig = Figure.model_validate({"archetype": "mechanism_cartoon", "tiers": [
         {"id": "row", "role": "scene_row",

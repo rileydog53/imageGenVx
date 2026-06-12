@@ -570,3 +570,22 @@ def place_labels(
             stacklevel=2,
         )
     return out
+
+
+def label_entry_bbox(entry: LayoutEntry) -> Bbox | None:
+    """Return the estimated bbox of a placed-label ``LayoutEntry``, else None.
+
+    Lets a later pass treat already-placed labels as obstacles — e.g. the P5.3
+    annotation occupancy seed, which keeps a figure-level annotation off the
+    scene-local labels the tier engine already placed. Recomputes the same
+    estimate ``place_labels`` used (``_estimate_text_bbox`` centred on the
+    placed point), so the obstacle matches what renders. Non-label entries
+    (anything whose primitive is not :func:`_label_primitive`) return None.
+    """
+    if entry.primitive is not _label_primitive or len(entry.args) < 2:
+        return None
+    text, center = entry.args[0], entry.args[1]
+    font_size = float(
+        (entry.kwargs.get("style_dict") or {}).get("label_font_size", 11)
+    )
+    return _bbox_from_center(center, _estimate_text_bbox(str(text), font_size))
