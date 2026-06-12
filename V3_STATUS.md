@@ -13,11 +13,23 @@ first, then dive into the detail docs linked below.
 | 2 | **Schema additions** — 7 enums + 10 models (`Tier`, `Rail`, `TierEdge`, `Scene`, `Slot`, `Attach`, `SceneEdge`, `StepSequence`, `Step`, `StepDelta`) + `Figure.tiers` + validators. Suite: 1000 green. | ✅ LANDED (2026-06-08) |
 | 3 | **Vertical slice end-to-end** — `layout/tier_layout.py::layout_tiers`, proven with 11 tests. Suite: 1012 green. | ✅ LANDED (2026-06-08) |
 | 4 | **Tier compositor + band chrome** — `render_figure` wired for tiered figures; band chrome, scene badges, content-gap arrow fix. Suite: 1025 green. | ✅ LANDED (2026-06-10) |
-| **5** | **Scene solver** — topological attach/offset pass + scene-local label placement. Acceptance: no overlapping slots (MF-3: His513-vs-ligand-tangle class of bug). | **← NEXT** |
-| 6 | **Step expansion** — builder-layer slot-granular step delta expand to N concrete scenes. | Pending |
+| 5 | **Scene solver** — topological attach/offset pass + co-location de-overlap (MF-3), scene-local label placement via `place_labels`, annotation occupancy seed, and the 3 placement nits. Suite: 1060 green. | ✅ LANDED (2026-06-12) |
+| **6** | **Step expansion** — builder-layer slot-granular step delta expand to N concrete scenes. | **← NEXT** |
 | 7 | **Primitive refresh + expansion** — curly arrows (V3-C4), TS partial bonds, organic shaded blobs, per-atom anchors. **Aspirin/COX-1 reproduction is the acceptance test** (gated by MF-1/2/3). | Pending |
 
-**Current test count:** 1025 passing.
+**Current test count:** 1060 passing.
+
+> **Chassis Phase 0a + Step 5 COMPLETE — landed 2026-06-12.** The chassis arc
+> (`V3_CHASSIS_ARC_BLUEPRINT.md`) shipped in commit boundaries C1–C7:
+> **C1** `_ARCHETYPE_PLAN` + `LoweringPlan` (P0a.1/P0a.2); **C2** `LabelCoordinator`
+> seam (P0a.3); **C3** `AnchorRegistry.copy()`/`layer()` + `validate_refs`
+> (P0a.4/P0a.5); **C5** topological attach/offset solver + co-location de-overlap
+> (P5.1, MF-3); **C6** scene-local labels + annotation occupancy seed (P5.2/P5.3);
+> **C7** the three placement nits (P5.4); **C4** build-time `TierEdge` slot-token
+> validation (P0a.6, load-bearing IR, adversarially verified). The
+> `LabelCoordinator` tier branch stays the inert pass-through by design — tiered
+> figures place their scene labels in the tier engine (where the per-scene
+> geometry lives), so `BAKED` means "the engine places its own."
 
 > **Phase R (module decomposition)** is now tracked in
 > [`V3_EXECUTION_PLAN.md` → Phase R](V3_EXECUTION_PLAN.md). It splits the six
@@ -47,9 +59,9 @@ first, then dive into the detail docs linked below.
 
 ## Deferred nits (from Step 4 review — revisit during Step 5/6)
 
-- Sub-pixel molecule centering from `int()` render size.
-- Non-molecule attach-parent extent (currently uses scene frame, not slot bbox).
-- Text `center` anchor = baseline, not midline.
+- ✅ ~~Sub-pixel molecule centering from `int()` render size.~~ (P5.4 / C7)
+- ✅ ~~Non-molecule attach-parent extent (currently uses scene frame, not slot bbox).~~ (P5.4 / C7 — now per-slot `_slot_bbox_size`)
+- ✅ ~~Text `center` anchor = baseline, not midline.~~ (P5.4 / C7)
 - Duplicate-edge `ir_id` uniquifier.
 - Partial `height_frac` fallback.
 - `rail:` bare endpoints in `TierEdge.from_ref`/`to_ref`.
