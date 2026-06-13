@@ -374,3 +374,37 @@ def test_text_slot_center_anchor_is_midline():
     txt = next(el for el in g.elements if el.elementname == "text")
     fs = int(params["tier_text_font_size"])
     assert float(txt["y"]) == pytest.approx(cy_anchor + fs * 0.35)
+
+
+def test_base_preset_drives_tier_text_colour_and_family():
+    # P0b.1: the journal preset's label_font_color / label_font_family map onto
+    # the tier text params so a tiered figure honours its journal (it previously
+    # dropped style_dict entirely). cell_press is byte-identical to the engine
+    # defaults; acs (Times serif, #000000) visibly differs. Font SIZE is NOT
+    # remapped (the engine owns title/subtitle/caption sizes).
+    from imageGen.layout.tier_layout import _preset_tier_params
+    from imageGen.styles.loader import load_style
+
+    mapped = _preset_tier_params(load_style("acs"))
+    assert mapped == {"tier_text_color": "#000000",
+                      "tier_font_family": "Times, Times New Roman, serif"}
+    assert "tier_text_font_size" not in mapped     # size is engine-owned
+    assert _preset_tier_params(None) == {}
+    assert _preset_tier_params({}) == {}
+
+    fig = _aspirin_hydrolysis_figure()
+
+    def _cap_attrs(style_dict):
+        entries = layout_tiers(fig, layout_params={"tier_canvas": (600, 300)},
+                               style_dict=style_dict)
+        e = next(x for x in entries if x.ir_id == "s_aspirin.cap")  # TEXT slot
+        g = e.primitive(*e.args, **e.kwargs)
+        t = next(el for el in g.elements if el.elementname == "text")
+        return t["fill"], t["font-family"]
+
+    # acs visibly differs; cell_press (the default preset) is byte-identical to
+    # passing no preset at all — so the default render is unchanged.
+    assert _cap_attrs(load_style("acs")) == (
+        "#000000", "Times, Times New Roman, serif")
+    assert _cap_attrs(load_style("cell_press")) == _cap_attrs(None)
+    assert _cap_attrs(None) == ("#1A1A1A", "Helvetica, Arial, sans-serif")

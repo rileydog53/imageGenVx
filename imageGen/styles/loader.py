@@ -216,6 +216,28 @@ def _load_and_warn(name: str) -> StylePreset:
     return preset
 
 
+def merge_style(*layers: dict | None) -> dict:
+    """Shallow, later-wins merge of style layers — the one chassis/preset idiom.
+
+    Each later layer's keys win over earlier ones (``{**a, **b, **c}``), and
+    ``None``/empty layers are skipped. This is the *same* shallow semantics the
+    preset ``inherits`` chain uses (`_resolve_preset`) and the V3 chassis style
+    cascade (`base preset → tier → scene → slot/step`) uses — kept in one place
+    so there is never a second merge implementation to drift.
+
+    NOTE: the merge is intentionally SHALLOW. A nested dict value (e.g. a
+    molecule slot's ``anchor_names``) is replaced wholesale by a later layer,
+    not deep-merged. Chassis style keys must therefore stay flat scalars; the
+    moment a real nested style sub-dict is introduced this clobbers it. (No
+    preset or chassis layer sets such a key today — see V3 "Do not" list.)
+    """
+    out: dict = {}
+    for layer in layers:
+        if layer:
+            out.update(layer)
+    return out
+
+
 def _resolve_preset(name: str, chain: tuple[str, ...]) -> StylePreset:
     """Recursively load a preset, merging ancestor ``overrides`` under child keys.
 
@@ -239,8 +261,8 @@ def _resolve_preset(name: str, chain: tuple[str, ...]) -> StylePreset:
             else parent.palette_recipe
         ),
         inherits=None,  # inheritance already resolved
-        overrides={**parent.overrides, **preset.overrides},
-        layout_overrides={**parent.layout_overrides, **preset.layout_overrides},
+        overrides=merge_style(parent.overrides, preset.overrides),
+        layout_overrides=merge_style(parent.layout_overrides, preset.layout_overrides),
     )
 
 
@@ -290,7 +312,7 @@ def load_style(name: str = DEFAULT_PRESET) -> dict:
     """
     preset = load_preset_full(name)
     recipe_style = apply_palette_recipe(preset.palette, preset.palette_recipe)
-    return {**recipe_style, **preset.overrides}
+    return merge_style(recipe_style, preset.overrides)
 
 
 def load_layout_params(name: str = DEFAULT_PRESET) -> dict:

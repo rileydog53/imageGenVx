@@ -56,6 +56,7 @@ from imageGen.layout.anchors import AnchorRegistry
 from imageGen.layout.label_placement import LabelRequest, place_labels
 from imageGen.layout.types import LayoutEntry
 from imageGen.primitives.chemistry import render_molecule_anchored
+from imageGen.styles.loader import merge_style
 
 
 # ---------------------------------------------------------------------------
@@ -101,6 +102,31 @@ TIER_DEFAULT_PARAMS: dict[str, Any] = {
     "tier_divider_color": "#BBBBBB",
     "tier_divider_width": 1.0,
 }
+
+# P0b.1: project the base journal preset's text keys onto the tier engine's
+# param names, so a tiered figure honours its journal preset (the engine
+# previously dropped ``style_dict`` entirely). Only colour + family are mapped —
+# NOT ``label_font_size``: the tier engine uses three distinct sizes
+# (title/subtitle/caption) that a single preset size would wrongly collapse, and
+# remapping it can flip the geometric legibility check. Structural styling (edge
+# colours, band chrome) deliberately keeps its own per-type defaults — the base
+# preset's primitive vocabulary (bare ``stroke``/``stroke_width``) collides with
+# the chassis edge keys, so it must NOT bleed there (see the content/structural
+# split in :func:`_layout_scene` — P0b.2).
+_PRESET_TO_TIER_PARAM: dict[str, str] = {
+    "label_font_color": "tier_text_color",
+    "label_font_family": "tier_font_family",
+}
+
+
+def _preset_tier_params(style_dict: dict[str, Any] | None) -> dict[str, Any]:
+    """Map the base preset's text keys onto tier param names (P0b.1)."""
+    if not style_dict:
+        return {}
+    return {param: style_dict[key]
+            for key, param in _PRESET_TO_TIER_PARAM.items()
+            if key in style_dict}
+
 
 # Per-SceneEdgeType drawing defaults; ``edge.style`` overrides "stroke".
 _EDGE_DEFAULTS: dict[str, dict[str, Any]] = {
@@ -751,7 +777,10 @@ def layout_tiers(
         layout_params: overrides merged onto ``TIER_DEFAULT_PARAMS``. Pin
             ``tier_canvas`` for a fixed envelope; otherwise the canvas is
             content-aware via :func:`tier_canvas`.
-        style_dict: reserved for the Step-4 preset union (unused in the slice).
+        style_dict: the base journal preset (flat style dict). Its text keys
+            (``label_font_color`` / ``label_font_family``) are layered under the
+            tier params so captions/text follow the journal; molecule slots and
+            the scene cascade consume it as the content-channel base (P0b.1/0b.2).
 
     Returns:
         Entries with baked absolute coordinates, ready for ``_write_svg`` /
@@ -764,7 +793,9 @@ def layout_tiers(
     """
     if not figure.tiers:
         raise ValueError("layout_tiers requires a Figure with tiers populated")
-    params = {**TIER_DEFAULT_PARAMS, **(layout_params or {})}
+    # Defaults < base-preset text keys < explicit layout_params (caller wins).
+    params = merge_style(
+        TIER_DEFAULT_PARAMS, _preset_tier_params(style_dict), layout_params)
     # Self-size through tier_canvas so the baked coords match the compositor's
     # SVG viewport (which sizes through the same function).
     canvas = tier_canvas(figure, layout_params)
