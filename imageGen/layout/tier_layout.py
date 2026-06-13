@@ -492,6 +492,9 @@ def scene_label_requests(
 def _layout_scene(
     scene: Scene, rect: tuple[float, float, float, float],
     registry: AnchorRegistry, params: dict[str, Any],
+    *,
+    base_style: dict[str, Any] | None = None,
+    tier_style: dict[str, Any] | None = None,
 ) -> list[LayoutEntry]:
     """Render a scene's slots into ``rect``, publish anchors, emit connect edges.
 
@@ -500,11 +503,29 @@ def _layout_scene(
     than the cell rect — a cross-cell transition arrow then spans the visible
     molecule gap, not the narrow inter-cell gutter. The badge is emitted next,
     then intra-scene edges (which need the atom anchors above), and finally the
-    scene labels are placed by the shared greedy pass (P5.2)."""
+    scene labels are placed by the shared greedy pass (P5.2).
+
+    P0b.2 — two-channel additive style cascade:
+      * ``base_style`` (the *content* base = preset ⊕ tier.style) layers under
+        ``scene.style`` then each ``slot.style`` to style molecules + text, so
+        tiered content follows the journal preset exactly as the leaf path does.
+      * ``tier_style`` (the *structural* base, NO preset) layers under
+        ``scene.style`` then ``edge.style`` for connect edges — the preset's
+        bare ``stroke``/``stroke_width`` (set by acs/nature) must NOT bleed onto
+        the per-``SceneEdgeType`` semantic colours, so edges take no preset base.
+    For Step 6, an expanded step folds ``step.style`` into ``scene.style``, so it
+    rides this same cascade as the outermost (most-specific) layer — no new path.
+    """
     sw, sh = params["tier_slot_size"]
     standoff = float(params["tier_edge_standoff"])
     cx, cy, cw, ch = rect
     entries: list[LayoutEntry] = []
+
+    # Scene-level effective styles for the two channels (slot/edge layer added
+    # at each site). With both bases None (the direct-call path), these collapse
+    # to ``scene.style or {}`` → byte-identical to the pre-cascade behaviour.
+    scene_content = merge_style(base_style, scene.style)
+    scene_struct = merge_style(tier_style, scene.style)
 
     # P5.4 Nit-1: give the solver each slot's real extent so the child slide
     # uses the *parent's* box (a TEXT parent no longer pushes a child a full
@@ -528,8 +549,16 @@ def _layout_scene(
             # pixel from the int() floor. Default (180, 140) rounds to itself.
             rw, rh = int(round(sw)), int(round(sh))
             top_left = (center[0] - rw / 2.0, center[1] - rh / 2.0)
+            # Content cascade: preset ⊕ tier ⊕ scene ⊕ this slot's style
+            # overrides (content keys smiles/anchor_names dropped). Empty → the
+            # renderer's DEFAULT_STYLE, byte-identical to the no-style call.
+            mol_style = merge_style(
+                scene_content,
+                {k: v for k, v in style.items()
+                 if k not in ("smiles", "anchor_names")})
             ag = render_molecule_anchored(str(smiles), size=(rw, rh),
-                                          anchor_names=names)
+                                          anchor_names=names,
+                                          style_dict=mol_style or None)
             registry.publish(scoped, ag.anchors, offset=top_left)
             entries.append(LayoutEntry(
                 (lambda g=ag.group: g), (), {}, top_left, ir_id=scoped))
@@ -539,11 +568,14 @@ def _layout_scene(
             # rendered baseline 0.35 em so the glyphs straddle that midline (SVG
             # <text> y is the baseline; mirrors the _badge_group cy + r*0.35 fix).
             fs = int(params["tier_text_font_size"])
+            # Content cascade overrides the preset-derived param default.
+            col = str(scene_content.get("label_font_color", params["tier_text_color"]))
+            fam = str(scene_content.get("label_font_family", params["tier_font_family"]))
             registry.publish(scoped, {"center": (0.0, 0.0)}, offset=center)
             entries.append(LayoutEntry(
-                (lambda t=slot.label or "", c=center, p=params, f=fs: _text_group(
-                    t, (c[0], c[1] + f * 0.35), f, str(p["tier_text_color"]),
-                    str(p["tier_font_family"]), anchor="middle")),
+                (lambda t=slot.label or "", c=center, f=fs, col=col, fam=fam:
+                    _text_group(t, (c[0], c[1] + f * 0.35), f, col, fam,
+                                anchor="middle")),
                 (), {}, (0.0, 0.0), ir_id=scoped))
         else:
             raise NotImplementedError(
@@ -601,8 +633,10 @@ def _layout_scene(
         q0, q1 = registry.resolve_edge(
             f"{scene.id}.{edge.from_anchor}", f"{scene.id}.{edge.to_anchor}",
             from_standoff=standoff, to_standoff=standoff)
+        # Structural cascade: tier ⊕ scene ⊕ edge (NO preset base).
+        edge_style = merge_style(scene_struct, edge.style)
         entries.append(LayoutEntry(
-            (lambda a=q0, b=q1, t=edge.type, s=edge.style: _edge_group(a, b, t, s)),
+            (lambda a=q0, b=q1, t=edge.type, s=edge_style: _edge_group(a, b, t, s)),
             (), {}, (0.0, 0.0), ir_id=edge.ir_id))
         if edge.label:
             edge_anchors[edge.ir_id] = ((q0[0] + q1[0]) / 2.0,
@@ -622,8 +656,10 @@ def _layout_scene(
     if requests:
         label_style = {
             "label_font_size": int(params["tier_caption_font_size"]),
-            "label_font_family": str(params["tier_font_family"]),
-            "label_font_color": str(params["tier_text_color"]),
+            "label_font_family": str(scene_content.get(
+                "label_font_family", params["tier_font_family"])),
+            "label_font_color": str(scene_content.get(
+                "label_font_color", params["tier_text_color"])),
         }
         entries = place_labels(
             entries, requests,
@@ -852,6 +888,10 @@ def layout_tiers(
                 raise NotImplementedError(
                     f"Tier '{tier.id}' uses step_sequence; step expansion is "
                     "Step 6 (not in the Step-3 slice)")
+            # P0b.2 cascade bases: the content channel layers the base preset
+            # under tier.style; the structural channel (edges) takes tier.style
+            # alone (no preset, so bare preset stroke can't recolour edges).
+            content_base = merge_style(style_dict, tier.style)
             cols = _column_rects(rect, len(tier.scenes), gutter)
             for scene, cell in zip(tier.scenes, cols):
                 # P5.1: solve + publish each scene inside a registry layer so a
@@ -860,7 +900,9 @@ def layout_tiers(
                 # clean scene commits to the base for the cross-cell transitions
                 # resolved (outside any layer) after the whole row is laid out.
                 with registry.layer():
-                    scene_entries = _layout_scene(scene, cell, registry, params)
+                    scene_entries = _layout_scene(
+                        scene, cell, registry, params,
+                        base_style=content_base, tier_style=tier.style)
                 entries.extend(scene_entries)
 
             # Rails: resolve a fraction of the tier extent to an absolute scalar.
@@ -902,8 +944,10 @@ def layout_tiers(
                     to_standoff=float(params["tier_edge_standoff"]),
                     on_rail=te.on_rail,
                 )
+                # Structural cascade: tier ⊕ this transition's style (no preset).
+                te_style = merge_style(tier.style, te.style)
                 entries.append(LayoutEntry(
-                    (lambda a=p0, b=p1, t=te.type, s=te.style: _edge_group(a, b, t, s)),
+                    (lambda a=p0, b=p1, t=te.type, s=te_style: _edge_group(a, b, t, s)),
                     (), {}, (0.0, 0.0), ir_id=te.ir_id))
             continue
 

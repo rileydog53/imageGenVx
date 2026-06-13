@@ -408,3 +408,81 @@ def test_base_preset_drives_tier_text_colour_and_family():
         "#000000", "Times, Times New Roman, serif")
     assert _cap_attrs(load_style("cell_press")) == _cap_attrs(None)
     assert _cap_attrs(None) == ("#1A1A1A", "Helvetica, Arial, sans-serif")
+
+
+def _two_text_scene(extra=None):
+    spec = {"id": "s",
+            "slots": [{"id": "a", "kind": "text", "label": "A"},
+                      {"id": "b", "kind": "text", "label": "B"}],
+            "connect": [{"from_anchor": "a.center", "to_anchor": "b.center",
+                         "type": "dashed"}]}
+    if extra:
+        spec.update(extra)
+    return Scene.model_validate(spec)
+
+
+def _drawn_stroke(entry):
+    g = entry.primitive(*entry.args, **entry.kwargs)
+    el = next(e for e in g.elements if e.elementname in ("path", "line"))
+    return el["stroke"]
+
+
+def test_cascade_preset_does_not_recolour_semantic_edges():
+    # P0b.2 correctness guard: the base preset's bare `stroke` (acs/nature) must
+    # NOT bleed onto chassis edges — a dashed edge keeps its semantic red even
+    # though acs sets a black bare stroke. (The literal {**preset, **edge.style}
+    # fold the plan sketched would have blackened every semantic edge.)
+    from imageGen.layout.anchors import AnchorRegistry
+    from imageGen.layout.tier_layout import (
+        TIER_DEFAULT_PARAMS, _EDGE_DEFAULTS, _layout_scene)
+    from imageGen.styles.loader import load_style
+
+    acs = load_style("acs")
+    assert acs.get("stroke") == "#1A1A1A"            # the colliding preset key
+    reg = AnchorRegistry()
+    entries = _layout_scene(_two_text_scene(), (0.0, 0.0, 300.0, 120.0), reg,
+                            dict(TIER_DEFAULT_PARAMS), base_style=acs)
+    edge = next(e for e in entries if e.ir_id.startswith("edge_"))
+    assert _drawn_stroke(edge) == _EDGE_DEFAULTS["dashed"]["stroke"]  # #CC2222
+    assert _drawn_stroke(edge) != acs["stroke"]                       # not black
+
+
+def test_cascade_scene_style_overrides_content_and_edge():
+    # P0b.2 content + structural channels: scene.style layers over the base for
+    # text colour (content) and an explicit edge stroke (structural).
+    from imageGen.layout.anchors import AnchorRegistry
+    from imageGen.layout.tier_layout import TIER_DEFAULT_PARAMS, _layout_scene
+
+    scene = _two_text_scene({"style": {"label_font_color": "#FF0000",
+                                       "stroke": "#00FF00"}})
+    reg = AnchorRegistry()
+    entries = _layout_scene(scene, (0.0, 0.0, 300.0, 120.0), reg,
+                            dict(TIER_DEFAULT_PARAMS))
+    a = next(e for e in entries if e.ir_id == "s.a")
+    txt = next(el for el in a.primitive(*a.args, **a.kwargs).elements
+               if el.elementname == "text")
+    assert txt["fill"] == "#FF0000"                  # content channel
+    edge = next(e for e in entries if e.ir_id.startswith("edge_"))
+    assert _drawn_stroke(edge) == "#00FF00"          # structural channel
+
+
+def test_cascade_preset_reaches_molecules():
+    # P0b.2: tier molecules follow the journal preset (like the leaf path) —
+    # acs recolours bonds; cell_press (the default) is byte-identical to no
+    # preset, so the default tier render is unchanged.
+    from imageGen.layout.anchors import AnchorRegistry
+    from imageGen.layout.tier_layout import TIER_DEFAULT_PARAMS, _layout_scene
+    from imageGen.styles.loader import load_style
+
+    scene = Scene.model_validate({"id": "s", "slots": [
+        {"id": "mol", "kind": "molecule", "style": {"smiles": ASPIRIN}}]})
+
+    def _mol_svg(style_dict):
+        reg = AnchorRegistry()
+        entries = _layout_scene(scene, (0.0, 0.0, 300.0, 200.0), reg,
+                                dict(TIER_DEFAULT_PARAMS), base_style=style_dict)
+        e = next(x for x in entries if x.ir_id == "s.mol")
+        return e.primitive(*e.args, **e.kwargs).tostring()
+
+    assert _mol_svg(load_style("acs")) != _mol_svg(None)          # journal reaches bonds
+    assert _mol_svg(load_style("cell_press")) == _mol_svg(None)   # default unchanged
