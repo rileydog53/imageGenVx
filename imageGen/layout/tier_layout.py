@@ -13,9 +13,11 @@ Scope is deliberately a SLICE, not the finished chassis:
   - Edges: intra-scene ``SceneEdge`` (dashed / curved H-bond) and cross-cell
     ``TierEdge`` (transition arrow), resolved through the ``AnchorRegistry`` with
     endpoint standoff and optional rail clamping.
-  - ``step_sequence`` and unsupported ``SlotKind``s raise ``NotImplementedError``
-    (mirrors the compositor's unregistered-archetype guard) — they arrive in
-    Steps 5/6 and the primitive refresh.
+  - ``step_sequence`` expands to one concrete ``Scene`` per step
+    (``expand_step_sequence`` — Step 6), which then flows through the same
+    column layout as authored scenes. Unsupported ``SlotKind``s still raise
+    ``NotImplementedError`` (mirrors the compositor's unregistered-archetype
+    guard) — they arrive with the primitive refresh.
 
 Coordinate model: every entry carries baked absolute coordinates. ``position``
 is the slot's top-left for MOLECULE slots (the only entry whose primitive draws
@@ -32,6 +34,7 @@ now the engine is exercised directly (like the other layout engines in tests).
 """
 from __future__ import annotations
 
+import copy
 import math
 from typing import Any, Callable
 
@@ -48,6 +51,8 @@ from imageGen.ir.schema import (
     SceneEdgeType,
     Slot,
     SlotKind,
+    StepOp,
+    StepSequence,
     Tier,
     TierEdge,
     TierRole,
@@ -214,7 +219,7 @@ def tier_canvas(
     sw, _sh = params["tier_slot_size"]
     cell_w = float(sw) + 2 * float(params["tier_cell_pad_x"])
     max_cols = max(
-        (len(t.scenes) for t in figure.tiers if t.role == TierRole.SCENE_ROW),
+        (_tier_scene_count(t) for t in figure.tiers if t.role == TierRole.SCENE_ROW),
         default=1,
     ) or 1
     width = 2 * margin + max_cols * cell_w + (max_cols - 1) * gutter
@@ -801,6 +806,140 @@ def _ref_to_key(ref: str) -> str:
     return ref.replace("@", ".")
 
 
+# ---------------------------------------------------------------------------
+# Step 6 — StepSequence expansion (slot-granular, produces real Scenes)
+# ---------------------------------------------------------------------------
+
+def _delta_slot_dict(
+    value: dict[str, Any] | None,
+) -> tuple[dict[str, Any], str | None]:
+    """Pull a slot dict + optional parent id from an ADD/REPLACE delta value.
+
+    Accepts both shapes the schema validates: a flat slot dict
+    (``{"id": ..., "kind": ...}``, optionally with ``"parent"``) or
+    ``{"slot": {...}, "parent": ...}``. ``parent`` is the attach target and is
+    never a ``Slot`` field, so it is stripped from the slot dict in BOTH shapes
+    (a stray ``parent`` inside the inner ``slot`` dict would otherwise trip
+    ``Slot``'s ``extra='forbid'``)."""
+    value = value or {}
+    inner = value["slot"] if isinstance(value.get("slot"), dict) else value
+    slot = {k: v for k, v in inner.items() if k != "parent"}
+    return slot, value.get("parent")
+
+
+def _apply_step_delta(state: dict[str, Any], delta: Any) -> None:
+    """Apply one slot-granular ``StepDelta`` to a mutable scene-dict in place.
+
+    ``target`` is slot-oriented (a slot id or ``slot.anchor``) so REMOVE /
+    REPLACE / ADD_LABEL act on that slot; REMOVE also drops every attach/connect
+    that referenced it, so the rebuilt Scene never carries a dangling edge.
+    Anything outside the four slot-granular ops (e.g. the GENERIC escape hatch)
+    raises — there is no sub-atom mutation of opaque primitive groups (P6.2).
+
+    The ``StepSequence`` validator's ``known`` set is looser than what these ops
+    can honour: it registers nested GROUP-slot ids (recursive collect) and never
+    discards an id after a REMOVE. A target that resolves to a nested slot, or to
+    a slot a prior cumulative step deleted, therefore passes build-time
+    validation but has no live top-level slot here — so we **fail loud** rather
+    than silently dropping the author's mutation."""
+    op = delta.op
+    slots = state.setdefault("slots", [])
+    if op == StepOp.ADD:
+        slot, parent = _delta_slot_dict(delta.value)
+        slots.append(slot)
+        if parent is not None:
+            state.setdefault("attach", []).append(
+                {"child": slot.get("id"), "parent": parent})
+        return
+    target = (delta.target or "").split(".", 1)[0]
+    if not any(s.get("id") == target for s in slots):
+        raise ValueError(
+            f"step delta {op.value!r} target {delta.target!r} does not resolve "
+            "to a live top-level slot in the expanded scene (nested or already "
+            "removed)")
+    if op == StepOp.ADD_LABEL:
+        label = (delta.value or {}).get("label")
+        if label is None:
+            raise ValueError(
+                f"step add_label delta for {delta.target!r} requires "
+                "value['label']")
+        for s in slots:
+            if s.get("id") == target:
+                s["label"] = label
+        return
+    if op == StepOp.REMOVE:
+        state["slots"] = [s for s in slots if s.get("id") != target]
+        state["attach"] = [
+            a for a in state.get("attach", [])
+            if a.get("child") != target and a.get("parent") != target]
+        state["connect"] = [
+            e for e in state.get("connect", [])
+            if e.get("from_anchor", "").split(".", 1)[0] != target
+            and e.get("to_anchor", "").split(".", 1)[0] != target]
+        return
+    if op == StepOp.REPLACE:
+        new_slot, _parent = _delta_slot_dict(delta.value)
+        new_slot["id"] = target  # REPLACE keeps the slot's identity
+        state["slots"] = [new_slot if s.get("id") == target else s for s in slots]
+        return
+    raise ValueError(
+        f"step delta op {op.value!r} is not supported by expansion "
+        "(slot-granular add / remove / replace / add_label only)")
+
+
+def expand_step_sequence(seq: StepSequence) -> list[Scene]:
+    """Expand a ``StepSequence`` to one concrete, validated ``Scene`` per step.
+
+    Each step's scene is the base scene with that step's deltas applied; with
+    ``cumulative=True`` (default) deltas accumulate across steps, otherwise each
+    step re-derives from the base. The produced ``Scene.id`` IS the step id —
+    the Tier validator already reserves step ids as scene tokens, so cross-step
+    transitions (``s1@right`` -> ``s2@left``) resolve and label/badge ir_ids keep
+    the ``scene_<step.id>_*`` convention. ``step.badge``/``step.label`` override
+    the base; ``step.style`` folds into the scene ``style`` as the cascade's
+    outermost layer (P6.4), so per-step restyle rides the P0b.2 cascade with no
+    fourth path. Building real ``Scene`` models means each expanded scene
+    re-runs ``_validate_scene`` — a delta leaving a dangling attach/connect
+    fails loud here.
+
+    Pure (no I/O, no registry) so the layout loop and the canvas sizer can both
+    call it and get identical scene lists."""
+    base_dict = seq.base.model_dump()
+    scenes: list[Scene] = []
+    state = copy.deepcopy(base_dict)
+    for step in seq.steps:
+        if not seq.cumulative:
+            state = copy.deepcopy(base_dict)
+        for delta in step.deltas:
+            _apply_step_delta(state, delta)
+        spec = {
+            **state,
+            "id": step.id,
+            "badge": step.badge if step.badge is not None else base_dict.get("badge"),
+            "label": step.label if step.label is not None else base_dict.get("label"),
+            "style": merge_style(base_dict.get("style"), step.style) or None,
+        }
+        scenes.append(Scene.model_validate(copy.deepcopy(spec)))
+    return scenes
+
+
+def _tier_scene_list(tier: Tier) -> list[Scene]:
+    """The concrete scenes a SCENE_ROW tier lays out — expanding a
+    ``step_sequence`` (Step 6) or returning the authored ``scenes``."""
+    if tier.step_sequence is not None:
+        return expand_step_sequence(tier.step_sequence)
+    return list(tier.scenes)
+
+
+def _tier_scene_count(tier: Tier) -> int:
+    """Column count for a SCENE_ROW tier without building Scene models — a
+    ``step_sequence`` contributes one column per step (so the canvas sizer
+    matches the expanded layout)."""
+    if tier.step_sequence is not None:
+        return len(tier.step_sequence.steps)
+    return len(tier.scenes)
+
+
 def layout_tiers(
     figure: Figure,
     layout_params: dict[str, Any] | None = None,
@@ -823,9 +962,10 @@ def layout_tiers(
         ``render_entries_to_png``.
 
     Raises:
-        ValueError: the figure has no tiers, or a molecule slot lacks SMILES.
-        NotImplementedError: a tier uses ``step_sequence`` (Step 6) or a slot
-            uses a kind beyond molecule/text (primitive refresh).
+        ValueError: the figure has no tiers, a molecule slot lacks SMILES, or a
+            step delta uses an unsupported op.
+        NotImplementedError: a slot uses a kind beyond molecule/text (primitive
+            refresh).
     """
     if not figure.tiers:
         raise ValueError("layout_tiers requires a Figure with tiers populated")
@@ -884,16 +1024,15 @@ def layout_tiers(
             continue
 
         if tier.role == TierRole.SCENE_ROW:
-            if tier.step_sequence is not None:
-                raise NotImplementedError(
-                    f"Tier '{tier.id}' uses step_sequence; step expansion is "
-                    "Step 6 (not in the Step-3 slice)")
+            # Step 6: a step_sequence expands to one concrete Scene per step,
+            # then feeds the identical column-layout path as authored scenes.
+            row_scenes = _tier_scene_list(tier)
             # P0b.2 cascade bases: the content channel layers the base preset
             # under tier.style; the structural channel (edges) takes tier.style
             # alone (no preset, so bare preset stroke can't recolour edges).
             content_base = merge_style(style_dict, tier.style)
-            cols = _column_rects(rect, len(tier.scenes), gutter)
-            for scene, cell in zip(tier.scenes, cols):
+            cols = _column_rects(rect, len(row_scenes), gutter)
+            for scene, cell in zip(row_scenes, cols):
                 # P5.1: solve + publish each scene inside a registry layer so a
                 # mid-scene failure rolls back its partial anchor publishes
                 # rather than leaving half a scene in the figure-global table; a

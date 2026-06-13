@@ -12,7 +12,8 @@ from __future__ import annotations
 import pytest
 
 from imageGen.ir import Figure, Scene
-from imageGen.layout.tier_layout import layout_tiers
+from imageGen.ir.schema import StepSequence
+from imageGen.layout.tier_layout import expand_step_sequence, layout_tiers
 from tests._helpers import render_entries_to_png
 
 ASPIRIN = "C[C:1](=O)[O:3]c1ccccc1C(=O)O"   # :1 acetyl C, :3 ester O
@@ -92,12 +93,221 @@ def test_empty_tiers_rejected():
              "entities": [{"id": "a", "type": "protein", "label": "A"}]}))
 
 
-def test_step_sequence_not_yet_supported():
-    fig = Figure.model_validate({"archetype": "mechanism_cartoon", "tiers": [
+# --- Step 6: StepSequence expansion (P6.1–P6.4) ---------------------------
+
+def _step_seq(*, cumulative=True, steps=None, base=None):
+    base = base or {"id": "base", "badge": "0",
+                    "slots": [{"id": "a", "kind": "text", "label": "A"}]}
+    if steps is None:
+        steps = [
+            {"id": "s1", "badge": "1", "label": "one"},
+            {"id": "s2", "badge": "2", "label": "two", "deltas": [
+                {"op": "add", "value": {"id": "b", "kind": "text", "label": "B"}}]},
+        ]
+    return StepSequence.model_validate(
+        {"id": "q", "base": base, "cumulative": cumulative, "steps": steps})
+
+
+def _step_seq_figure(**kw):
+    seq = _step_seq(**kw).model_dump()
+    return Figure.model_validate({"archetype": "mechanism_cartoon", "tiers": [
         {"id": "row", "role": "scene_row",
-         "step_sequence": {"id": "q", "base": {"id": "b"}, "steps": []}}]})
-    with pytest.raises(NotImplementedError, match="step_sequence"):
-        layout_tiers(fig)
+         "rails": [{"name": "m", "axis": "y", "at": 0.5}],
+         "step_sequence": seq,
+         "transitions": [{"from_ref": "s1@right", "to_ref": "s2@left",
+                          "type": "transition", "on_rail": "m"}]}]})
+
+
+def test_step_sequence_expands_to_concrete_scenes():
+    # P6.1: a step_sequence lowers to one concrete scene per step (scene id ==
+    # step id), feeding the same column-layout path; the cross-step transition
+    # (which references the step ids) resolves.
+    entries = layout_tiers(_step_seq_figure(),
+                           layout_params={"tier_canvas": (600, 300)})
+    ids = {e.ir_id for e in entries}
+    assert {"s1.a", "s2.a"} <= ids               # base slot present in both steps
+    assert "s2.b" in ids and "s1.b" not in ids   # only s2 added slot "b"
+    assert {"scene_s1_badge", "scene_s2_badge"} <= ids
+    assert "tedge_s1@right_s2@left" in ids        # cross-step transition resolved
+
+
+def test_step_sequence_cumulative_accumulates_deltas():
+    # cumulative (default): each step builds on the previous.
+    seq = _step_seq(steps=[
+        {"id": "s1", "deltas": [{"op": "add",
+                                 "value": {"id": "b", "kind": "text", "label": "B"}}]},
+        {"id": "s2", "deltas": [{"op": "add",
+                                 "value": {"id": "c", "kind": "text", "label": "C"}}]}])
+    scenes = expand_step_sequence(seq)
+    assert [s.id for s in scenes] == ["s1", "s2"]
+    assert {sl.id for sl in scenes[0].slots} == {"a", "b"}        # base + s1
+    assert {sl.id for sl in scenes[1].slots} == {"a", "b", "c"}   # + s2 (cumulative)
+
+
+def test_step_sequence_non_cumulative_resets_to_base():
+    seq = _step_seq(cumulative=False, steps=[
+        {"id": "s1", "deltas": [{"op": "add",
+                                 "value": {"id": "b", "kind": "text", "label": "B"}}]},
+        {"id": "s2", "deltas": [{"op": "add",
+                                 "value": {"id": "c", "kind": "text", "label": "C"}}]}])
+    scenes = expand_step_sequence(seq)
+    assert {sl.id for sl in scenes[1].slots} == {"a", "c"}        # base + s2 only
+
+
+def test_step_delta_remove_drops_slot_and_dependent_edges():
+    # P6.2: REMOVE also drops attach/connect referencing the slot, so the
+    # rebuilt Scene re-validates (no dangling edge).
+    base = {"id": "base", "slots": [
+        {"id": "a", "kind": "text", "label": "A"},
+        {"id": "b", "kind": "text", "label": "B"}],
+        "attach": [{"child": "b", "parent": "a", "edge": "bottom"}],
+        "connect": [{"from_anchor": "a.center", "to_anchor": "b.center",
+                     "type": "dashed"}]}
+    seq = StepSequence.model_validate({"id": "q", "base": base, "steps": [
+        {"id": "s1", "deltas": [{"op": "remove", "target": "b"}]}]})
+    scene = expand_step_sequence(seq)[0]
+    assert {sl.id for sl in scene.slots} == {"a"}
+    assert scene.attach == [] and scene.connect == []
+
+
+def test_step_delta_replace_swaps_slot_keeping_id():
+    base = {"id": "base", "slots": [{"id": "a", "kind": "text", "label": "old"}]}
+    seq = StepSequence.model_validate({"id": "q", "base": base, "steps": [
+        {"id": "s1", "deltas": [{"op": "replace", "target": "a",
+                                 "value": {"kind": "text", "label": "new"}}]}]})
+    a = expand_step_sequence(seq)[0].slots[0]
+    assert a.id == "a" and a.label == "new"
+
+
+def test_step_delta_add_label_sets_slot_label():
+    # P6.3: ADD_LABEL lands as a Slot.label, so it rides scene_label_requests /
+    # place_labels (the P5.2 pass) — not a fourth placement path.
+    base = {"id": "base", "slots": [
+        {"id": "a", "kind": "molecule", "style": {"smiles": "CCO"}}]}
+    seq = StepSequence.model_validate({"id": "q", "base": base, "steps": [
+        {"id": "s1", "deltas": [{"op": "add_label", "target": "a",
+                                 "value": {"label": "ethanol"}}]}]})
+    assert expand_step_sequence(seq)[0].slots[0].label == "ethanol"
+
+
+def test_step_added_label_is_placed_by_the_scene_label_pass():
+    # P6.3 end-to-end: a step-added molecule label shows up as a placed label
+    # entry (same greedy pass as native scene labels).
+    fig = Figure.model_validate({"archetype": "mechanism_cartoon", "tiers": [
+        {"id": "row", "role": "scene_row", "step_sequence": {
+            "id": "q", "base": {"id": "base", "slots": [
+                {"id": "m", "kind": "molecule", "style": {"smiles": "CCO"}}]},
+            "steps": [{"id": "s1", "deltas": [
+                {"op": "add_label", "target": "m", "value": {"label": "ethanol"}}]}]}}]})
+    entries = layout_tiers(fig, layout_params={"tier_canvas": (400, 300)})
+    assert any(e.ir_id == "label_slot_s1_m_label" for e in entries)
+
+
+def test_step_delta_unsupported_op_fails_loud():
+    # P6.2: an op outside add/remove/replace/add_label (the GENERIC escape
+    # hatch) raises rather than silently no-op'ing.
+    base = {"id": "base", "slots": [{"id": "a", "kind": "text", "label": "A"}]}
+    seq = StepSequence.model_validate({"id": "q", "base": base, "steps": [
+        {"id": "s1", "deltas": [{"op": "generic", "target": "a"}]}]})
+    with pytest.raises(ValueError, match="not supported by expansion"):
+        expand_step_sequence(seq)
+
+
+# --- Step 6 review-hardening (adversarial-verify findings) -----------------
+
+def test_step_delta_replace_keeps_target_id_over_value_id():
+    # REPLACE keeps the slot's identity even when value supplies a different id —
+    # otherwise the original id silently vanishes and base refs to it dangle.
+    base = {"id": "base", "slots": [{"id": "orig", "kind": "text", "label": "old"}]}
+    seq = StepSequence.model_validate({"id": "q", "base": base, "steps": [
+        {"id": "s1", "deltas": [{"op": "replace", "target": "orig",
+                                 "value": {"id": "different", "kind": "text",
+                                           "label": "new"}}]}]})
+    slots = expand_step_sequence(seq)[0].slots
+    assert [s.id for s in slots] == ["orig"]     # id preserved, not "different"
+    assert slots[0].label == "new"
+
+
+def test_step_delta_on_removed_slot_fails_loud():
+    # Cumulative: a later delta targeting a slot a prior step removed validates
+    # (the validator's `known` never drops it) but must fail loud, not no-op.
+    base = {"id": "base", "slots": [{"id": "a", "kind": "text", "label": "A"},
+                                    {"id": "b", "kind": "text", "label": "B"}]}
+    seq = StepSequence.model_validate({"id": "q", "base": base, "steps": [
+        {"id": "s1", "deltas": [{"op": "remove", "target": "a"}]},
+        {"id": "s2", "deltas": [{"op": "replace", "target": "a",
+                                 "value": {"kind": "text", "label": "back"}}]}]})
+    with pytest.raises(ValueError, match="does not resolve to a live"):
+        expand_step_sequence(seq)
+
+
+def test_step_delta_on_nested_slot_fails_loud():
+    # A target that resolves to a nested GROUP-slot id validates but the
+    # slot-granular ops only act on the top level — fail loud, not silent no-op.
+    base = {"id": "base", "slots": [
+        {"id": "g", "kind": "group", "slots": [
+            {"id": "inner", "kind": "text", "label": "orig"}]}]}
+    seq = StepSequence.model_validate({"id": "q", "base": base, "steps": [
+        {"id": "s1", "deltas": [{"op": "add_label", "target": "inner",
+                                 "value": {"label": "x"}}]}]})
+    with pytest.raises(ValueError, match="does not resolve to a live"):
+        expand_step_sequence(seq)
+
+
+def test_step_add_label_without_label_fails_loud():
+    # add_label with no value['label'] must NOT silently erase an existing label.
+    base = {"id": "base", "slots": [{"id": "t", "kind": "text", "label": "keep"}]}
+    seq = StepSequence.model_validate({"id": "q", "base": base, "steps": [
+        {"id": "s1", "deltas": [{"op": "add_label", "target": "t", "value": {}}]}]})
+    with pytest.raises(ValueError, match="requires value"):
+        expand_step_sequence(seq)
+
+
+def test_step_delta_add_nested_slot_shape_strips_stray_parent():
+    # The {"slot": {...}, "parent": ...} value shape strips a stray inner
+    # 'parent' (not a Slot field) just like the flat shape, so it doesn't trip
+    # Slot's extra='forbid'.
+    base = {"id": "base", "slots": [{"id": "a", "kind": "text", "label": "A"}]}
+    seq = StepSequence.model_validate({"id": "q", "base": base, "steps": [
+        {"id": "s1", "deltas": [{"op": "add", "value": {
+            "slot": {"id": "x", "kind": "text", "label": "X", "parent": "junk"},
+            "parent": "a"}}]}]})
+    scene = expand_step_sequence(seq)[0]
+    assert {s.id for s in scene.slots} == {"a", "x"}
+    assert [(at.child, at.parent) for at in scene.attach] == [("x", "a")]
+
+
+def test_step_style_restyles_only_that_step():
+    # P6.4: Step.style folds into the expanded scene's style → rides the P0b.2
+    # content cascade as the outermost layer, with no per-step preset name.
+    fig = _step_seq_figure(steps=[
+        {"id": "s1"},
+        {"id": "s2", "style": {"label_font_color": "#FF0000"}}])
+
+    def _cap_fill(scene_slot_id):
+        entries = layout_tiers(fig, layout_params={"tier_canvas": (600, 300)})
+        e = next(x for x in entries if x.ir_id == scene_slot_id)
+        g = e.primitive(*e.args, **e.kwargs)
+        return next(el for el in g.elements if el.elementname == "text")["fill"]
+
+    assert _cap_fill("s2.a") == "#FF0000"          # restyled step
+    assert _cap_fill("s1.a") == "#1A1A1A"          # untouched step keeps default
+
+
+def test_step_sequence_canvas_counts_steps():
+    # The canvas sizer counts steps (a step_sequence tier has empty .scenes);
+    # more steps → a wider canvas.
+    from imageGen.layout.tier_layout import _tier_scene_count, tier_canvas
+
+    def _bare(n):  # no transitions, so any step count is buildable
+        return Figure.model_validate({"archetype": "mechanism_cartoon", "tiers": [
+            {"id": "row", "role": "scene_row", "step_sequence": {
+                "id": "q", "base": {"id": "base", "slots": [
+                    {"id": "a", "kind": "text", "label": "A"}]},
+                "steps": [{"id": f"s{i}"} for i in range(1, n + 1)]}}]})
+
+    assert _tier_scene_count(_bare(3).tiers[0]) == 3
+    assert tier_canvas(_bare(3))[0] > tier_canvas(_bare(1))[0]
 
 
 def test_unsupported_slot_kind_raises():
