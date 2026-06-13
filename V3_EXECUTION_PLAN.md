@@ -259,21 +259,38 @@ Builds on P0a.3 (label seam), P0a.4 (registry rollback), P0a.5 (ref validation).
 
 ### Phase 0b — pre-Step-6 seams (land before step expansion)
 
-- [ ] **P0b.1 — Apply `style_dict` inside `tier_layout`.** ⚠️ The base preset
-  reaches `layout_tiers` but is never layered onto nodes. Merge it as the base
-  under each per-node dict: `{**style_dict, **(tier.style or {})}` (`:578`),
-  `{**style_dict, **(slot.style or {})}` (`:355`), `{**style_dict, **(edge.style
-  or {})}` (`:416`/`:647`). Remove the "unused in the slice" note at
-  `tier_layout.py:552`.
-  *Done when:* a tiered figure rendered under two presets visibly differs;
-  regression golden per preset.
+- [x] **P0b.1 — Apply `style_dict` inside `tier_layout`.** ✅ 2026-06-13.
+  The base preset reached `layout_tiers` but was dropped ("unused in the slice").
+  ⚠️ **Deviation (the literal sketch was a no-op-or-regression — verified by a
+  cascade-design workflow):** `{**style_dict, **node.style}` is (a) a *no-op* for
+  molecule slots (`slot.style` is mined only for `smiles`/`anchor_names` and never
+  forwarded to the renderer) and band chrome (the preset carries no `band_*`
+  keys), and (b) a *regression* for edges (the preset's bare `stroke`/`stroke_width`
+  — set by acs/nature — would clobber the per-`SceneEdgeType` semantic colours,
+  blackening every hbond). The real preset lever for tiers is the **params** dict.
+  So P0b.1 projects the preset's text keys onto the tier params
+  (`label_font_color → tier_text_color`, `label_font_family → tier_font_family`;
+  `_preset_tier_params`), layered below explicit `layout_params`. Font **size** is
+  deliberately not remapped (the engine owns title/subtitle/caption sizes; a single
+  preset size flips the geometric legibility check). Hoisted one shared
+  `merge_style()` (shallow, later-wins, None-safe) into `styles/loader` and reused
+  it in `_resolve_preset`/`load_style` (pure refactor). cell_press maps
+  byte-identically; acs (Times serif, `#000000`) visibly differs. No tier pixel
+  golden exists; +1 test. 1061 green.
 
-- [ ] **P0b.2 — One additive style cascade for the chassis.** Establish
-  `base preset → tier.style → scene.style → step.style`, reusing
-  `_resolve_preset`'s inherits-merge idiom (`styles/loader.py:259`) — **not** a
-  second merge implementation. `Step.style` (`schema.py:432`, currently **dead** —
-  consumed nowhere) becomes the last additive layer.
-  *Done when:* a `Step.style` override changes only that step's render.
+- [x] **P0b.2 — One additive style cascade for the chassis.** ✅ 2026-06-13.
+  `merge_style` is the single merge implementation (P0b.1). ⚠️ **Deviation:** the
+  cascade is **two channels**, because the base preset's vocabulary collides with
+  chassis structure: **content channel** (molecules, text/captions) =
+  `preset → tier.style → scene.style → slot.style`, with tier molecules now
+  forwarding the merged style to `render_molecule_anchored` exactly as the leaf
+  path does; **structural channel** (connect edges, tier transitions) =
+  `tier.style → scene.style → edge.style` with **NO preset base** (so bare preset
+  `stroke` can't recolour semantic edges). `scene.style` (was dead) is the scene
+  layer; `Step.style` is the outermost layer and activates in Step 6 by folding
+  into the expanded scene's `style` — no fourth path. Verified byte-identical
+  under cell_press for both molecules and text; +4 tests incl. the edge-recolour
+  regression guard. 1064 green.
 
 - [ ] **P0b.3 — Make `_build_panel_styles` dense.** ⚠️ `smiles_map` is broadcast
   dense `{p.id: …}` (`compositor.py:388`) while `panel_styles` is sparse/
@@ -282,12 +299,13 @@ Builds on P0a.3 (label seam), P0a.4 (registry rollback), P0a.5 (ref validation).
   convention.
   *Done when:* both broadcasts use the same dense shape; panel tests green.
 
-- [ ] **P0b.4 — Guardrail: no preset-NAME axis below `Figure`.** Document (and
-  enforce in review) that chassis overrides are additive freeform `style` dicts
-  only — never a second axis of preset *names*. `Panel.content.style_preset`
-  stays the lone exception (already shipped). This is what prevents a panel×step
-  matrix.
-  *Done when:* the rule is in this doc's "Do not" list and Step 6 honours it.
+- [x] **P0b.4 — Guardrail: no preset-NAME axis below `Figure`.** ✅ 2026-06-13.
+  Chassis overrides are additive freeform `style` dicts only — never a second
+  axis of preset *names*. `Panel.content.style_preset` stays the lone exception.
+  Recorded in the §5 "Do not" list (now also naming the exception + the
+  content/structural channel split from P0b.2). Step 6 honours it: `Step.style`
+  is a freeform `dict`, folded into the expanded scene's `style` as the cascade's
+  outermost layer — there is no per-step/per-scene preset *name* anywhere.
 
 ### Step 6 — Step expansion (builder-layer, slot-granular)
 
@@ -572,8 +590,18 @@ modules (no cycle); all 7 public re-exports resolve; **AST pure-move proof** —
   that forks the `data-overlap=true` contract, the strict/lenient toggle and the
   warning path. Reuse `place_labels` via the P0a.3 seam.
 - **Do not add a preset-NAME axis below `Figure`** (per-step or per-scene preset
-  names) — additive freeform `style` dicts only. That's what prevents the
-  panel×step matrix.
+  names) — additive freeform `style` dicts only. `Panel.content.style_preset` is
+  the lone exception (already shipped). That's what prevents the panel×step matrix.
+- **Do not fold the base preset into the chassis *structural* channel** (connect
+  edges / tier transitions). The preset's primitive vocabulary sets bare
+  `stroke`/`stroke_width` (acs/nature), which collide with `_edge_group`'s keys
+  and would clobber the per-`SceneEdgeType` semantic colours (an hbond's red →
+  black). The cascade (P0b.2) is two channels: **content** (molecules, text)
+  takes the preset base; **structural** (edges) takes `tier.style → scene.style →
+  edge.style` only. A journal preset must never recolour a semantic edge.
+- **Keep chassis `style` keys flat scalars.** `merge_style` is shallow
+  (later-wins, like preset `inherits`); a nested style sub-dict would be clobbered
+  wholesale, not deep-merged. No preset/chassis layer sets a nested key today.
 - **Do not touch `schema.py` without sign-off**, and **preserve every
   test-matched error-string substring** (`CONTRIBUTING.md`).
 - **Do not remove the `model_rebuild()` block** — it's load-bearing under
