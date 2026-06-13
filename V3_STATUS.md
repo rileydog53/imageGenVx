@@ -14,10 +14,11 @@ first, then dive into the detail docs linked below.
 | 3 | **Vertical slice end-to-end** — `layout/tier_layout.py::layout_tiers`, proven with 11 tests. Suite: 1012 green. | ✅ LANDED (2026-06-08) |
 | 4 | **Tier compositor + band chrome** — `render_figure` wired for tiered figures; band chrome, scene badges, content-gap arrow fix. Suite: 1025 green. | ✅ LANDED (2026-06-10) |
 | 5 | **Scene solver** — topological attach/offset pass + co-location de-overlap (MF-3), scene-local label placement via `place_labels`, annotation occupancy seed, and the 3 placement nits. Suite: 1060 green. | ✅ LANDED (2026-06-12) |
-| **6** | **Step expansion** — builder-layer slot-granular step delta expand to N concrete scenes. | **← NEXT** |
-| 7 | **Primitive refresh + expansion** — curly arrows (V3-C4), TS partial bonds, organic shaded blobs, per-atom anchors. **Aspirin/COX-1 reproduction is the acceptance test** (gated by MF-1/2/3). | Pending |
+| 0b | **Pre-Step-6 style seams** — tiered figures honour the journal preset; two-channel additive cascade (content vs structural); dense `_build_panel_styles`; preset-name-axis guardrail. Suite: 1064 → 1078. | ✅ LANDED (2026-06-13) |
+| 6 | **Step expansion** — slot-granular `StepSequence` → N concrete validated `Scene`s (add/remove/replace/add_label), per-step style via the cascade, adversarially hardened. Suite: 1078 green. | ✅ LANDED (2026-06-13) |
+| 7 | **Primitive refresh + expansion** — curly arrows (V3-C4), TS partial bonds, organic shaded blobs, per-atom anchors. **Aspirin/COX-1 reproduction is the acceptance test** (gated by MF-1/2/3). | **← NEXT** |
 
-**Current test count:** 1060 passing.
+**Current test count:** 1078 passing.
 
 > **Chassis Phase 0a + Step 5 COMPLETE — landed 2026-06-12.** The chassis arc
 > (`V3_CHASSIS_ARC_BLUEPRINT.md`) shipped in commit boundaries C1–C7:
@@ -30,6 +31,27 @@ first, then dive into the detail docs linked below.
 > `LabelCoordinator` tier branch stays the inert pass-through by design — tiered
 > figures place their scene labels in the tier engine (where the per-scene
 > geometry lives), so `BAKED` means "the engine places its own."
+
+> **Phase 0b + Step 6 COMPLETE — landed 2026-06-13.** Pre-Step-6 style seams
+> (P0b.1/0b.2/0b.3/0b.4) then step expansion (P6.1–P6.4). The cascade is **two
+> channels** (a verified correction to the plan's literal `{**preset, **node}`
+> fold, which was a no-op for slots/chrome and a regression for edges): a
+> **content** channel (molecules + text) takes the journal preset as its base —
+> tier molecules now forward the merged style to `render_molecule_anchored` like
+> the leaf path, closing the "tiers ignore their preset" gap — and a
+> **structural** channel (connect edges / transitions) takes `tier→scene→edge`
+> with NO preset base, so the preset's bare `stroke` can't recolour semantic
+> edges. One shared `merge_style` helper (also reused in `loader`). `StepSequence`
+> now expands to one validated `Scene` per step at layout time (a pure pre-pass;
+> `semantic_check` walks only panels, so the "builder-layer" framing was moot);
+> `step.style` rides the cascade as the outermost layer. The expansion was
+> adversarially hardened (4-lens review): REPLACE keeps `id=target`, and
+> REMOVE/REPLACE/ADD_LABEL fail loud on a nested or already-removed target
+> instead of silently no-op'ing. **Pre-existing gaps surfaced (not Step 6
+> regressions, both fail-loud/silent by prior design):** a `TierEdge` to the
+> step_sequence `base.id` validates but has no laid-out scene; `Tier.overlays`
+> are not yet rendered by the engine. **Now unblocked:** the deferred
+> `tier_layout.py` Phase-R split (it said "revisit after Step 6").
 
 > **Phase R (module decomposition)** is now tracked in
 > [`V3_EXECUTION_PLAN.md` → Phase R](V3_EXECUTION_PLAN.md). It splits the six

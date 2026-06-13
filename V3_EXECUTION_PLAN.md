@@ -292,12 +292,14 @@ Builds on P0a.3 (label seam), P0a.4 (registry rollback), P0a.5 (ref validation).
   under cell_press for both molecules and text; +4 tests incl. the edge-recolour
   regression guard. 1064 green.
 
-- [ ] **P0b.3 — Make `_build_panel_styles` dense.** ⚠️ `smiles_map` is broadcast
-  dense `{p.id: …}` (`compositor.py:388`) while `panel_styles` is sparse/
-  differ-only (`:318`). Resolve every panel's effective style eagerly so
-  downstream `.get(panel.id)` is uniform and Step 6 inherits **one** keying
-  convention.
-  *Done when:* both broadcasts use the same dense shape; panel tests green.
+- [x] **P0b.3 — Make `_build_panel_styles` dense.** ✅ 2026-06-13. Every
+  `panel.id` is now keyed: panels matching the top-level preset reuse the SAME
+  resolved base style object (preserving kwarg overrides + identity), differing
+  panels get their own `load_style`. Downstream `.get(panel.id)` is uniform and
+  matches the dense `smiles_map` broadcast. Behaviour-preserving (every consumer
+  already fell back via `.get(panel.id, base_style)`; nested-grid recursion lands
+  on the same value); the 2 sparse-asserting tests updated to the dense contract.
+  1078 green.
 
 - [x] **P0b.4 — Guardrail: no preset-NAME axis below `Figure`.** ✅ 2026-06-13.
   Chassis overrides are additive freeform `style` dicts only — never a second
@@ -307,29 +309,42 @@ Builds on P0a.3 (label seam), P0a.4 (registry rollback), P0a.5 (ref validation).
   is a freeform `dict`, folded into the expanded scene's `style` as the cascade's
   outermost layer — there is no per-step/per-scene preset *name* anywhere.
 
-### Step 6 — Step expansion (builder-layer, slot-granular)
+### Step 6 — Step expansion (slot-granular) — ✅ LANDED 2026-06-13
 
-Builds on P0b's single style-keying convention and the additive cascade.
+Built on P0b's single style-keying convention and the additive cascade.
+`expand_step_sequence(seq)` (pure, in `tier_layout.py`) produces one validated
+`Scene` per step; the SCENE_ROW loop and the canvas sizer both call it (via
+`_tier_scene_list` / `_tier_scene_count`) so layout and viewport agree.
 
-- [ ] **P6.1 — Expand `StepSequence` → N concrete `Scene`s at the builder layer.**
-  Replace the `NotImplementedError` (`tier_layout.py:618`) by expanding deltas at
-  build time so verification sees real scenes (per `proposal §2.4`). Cumulative
-  deltas apply in order.
-  *Done when:* a 3-step sequence renders as 3 scenes; `semantic_check` audits each.
+- [x] **P6.1 — Expand `StepSequence` → N concrete `Scene`s.** ✅ 2026-06-13.
+  Replaced the `NotImplementedError` (`tier_layout.py:1007`, was the stale
+  `:618`) with the expansion pass. Scene.id == step.id (so reserved transition
+  tokens resolve and label/badge ir_ids keep `scene_<step.id>_*`); cumulative by
+  default. ⚠️ **Deviation:** expansion runs at **layout time** (a pure pre-pass
+  in the engine), not in `ir/builder.py` — verified that `semantic_check` /
+  convention / glossary walk only `figure.panels`, never `figure.tiers`, so
+  "builder-layer so verification sees real scenes" was moot; layout-time
+  expansion also covers every Figure-construction path. Each expanded scene is a
+  real validated `Scene` (re-runs `_validate_scene` → dangling refs fail loud).
+  *Note:* extending `semantic_check` to walk tiers→scenes is a separable
+  cross-cutting follow-up (affects all tier figures, not just expanded ones).
 
-- [ ] **P6.2 — Slot-granular deltas only** (`add`/`remove`/`replace`/`add_label`)
-  — no sub-atom mutation of opaque groups. `delta.target` resolves in `base` or a
-  prior `add` when cumulative.
-  *Done when:* an out-of-scope delta op fails loud at build.
+- [x] **P6.2 — Slot-granular deltas only** (`add`/`remove`/`replace`/`add_label`).
+  ✅ 2026-06-13. REMOVE drops dependent attach/connect; REPLACE force-keeps
+  `id=target`; any other op (GENERIC) raises. A target that resolves to a nested
+  GROUP-slot id or a slot a prior cumulative step removed (both build-valid per
+  the looser validator `known` set) **fails loud** at expansion rather than
+  silently no-op'ing — hardened after the adversarial review.
 
-- [ ] **P6.3 — `ADD_LABEL` deltas route through the label coordinator** as *more
-  `LabelRequest`s in the expanded scene's scope* (P5.2) — **not** a fourth
-  placement path.
-  *Done when:* a step-added label is placed by the same solver as scene labels.
+- [x] **P6.3 — `ADD_LABEL` routes through the label coordinator.** ✅ 2026-06-13.
+  An added label lands as a `Slot.label` on the expanded scene, so it flows
+  through `scene_label_requests` → `place_labels` (the P5.2 pass) — no fourth
+  placement path. `add_label` without `value['label']` raises (never silently
+  erases an existing label).
 
-- [ ] **P6.4 — Per-step style via the additive cascade** (P0b.2) — `Step.style`
-  is the last layer; no per-step preset name.
-  *Done when:* per-step restyle works with zero new branches in the cascade.
+- [x] **P6.4 — Per-step style via the additive cascade** (P0b.2). ✅ 2026-06-13.
+  `step.style` folds into the expanded scene's `style` (outermost layer), so it
+  rides the content cascade with zero new branches and no per-step preset name.
 
 ### Phase 0c — pre-Step-7 seams (land before primitive refresh)
 
