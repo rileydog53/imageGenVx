@@ -682,17 +682,22 @@ def test_panel_figure_missing_smiles_map_raises_for_reaction_panel(tmp_path):
 # V2 / ST4: per-panel preset switching
 # ---------------------------------------------------------------------------
 
-def test_build_panel_styles_empty_when_all_same():
-    """_build_panel_styles returns {} when all panels share the top-level preset."""
+def test_build_panel_styles_dense_matching_panels_reuse_base():
+    """P0b.3: the map is DENSE — every panel keyed — and panels matching the
+    top-level preset map to the SAME resolved base style object."""
+    from imageGen.styles.loader import load_style
     ir = load_fixture(WORKFLOW_FIXTURE)
-    # all panels default to cell_press; top-level style_name is also cell_press
-    result = _build_panel_styles(ir, "cell_press")
-    assert result == {}
+    base = load_style("cell_press")          # all panels default to cell_press
+    result = _build_panel_styles(ir, "cell_press", base)
+    assert set(result) == {p.id for p in ir.panels}        # dense, not {}
+    assert all(result[p.id] is base for p in ir.panels)    # matching → same object
 
 
-def test_build_panel_styles_returns_entry_for_different_preset():
-    """_build_panel_styles includes a panel whose content uses a different preset."""
+def test_build_panel_styles_differing_preset_gets_own_style():
+    """A panel whose content uses a different preset gets its own style; matching
+    panels still reuse the base. Dense keys both."""
     from imageGen.ir.schema import Panel, Figure, Archetype, Entity, EntityType
+    from imageGen.styles.loader import load_style
     # Build a minimal 2-panel figure; p2 uses "nature" instead of the top-level "acs"
     sub_fig_a = Figure(
         archetype=Archetype.PATHWAY,
@@ -711,11 +716,11 @@ def test_build_panel_styles_returns_entry_for_different_preset():
             Panel(id="p2", content=sub_fig_b, grid=(0, 1, 1, 1)),
         ],
     )
-    result = _build_panel_styles(ir, "acs")
-    assert "p1" not in result          # p1 matches top-level "acs"
-    assert "p2" in result              # p2 differs → entry built
+    base = load_style("acs")
+    result = _build_panel_styles(ir, "acs", base)
+    assert result["p1"] is base                       # p1 matches top-level "acs"
+    assert result["p2"] is not base                   # p2 differs → own style
     # Spot-check: nature has a different protein_fill from acs
-    from imageGen.styles.loader import load_style
     assert result["p2"]["protein_fill"] == load_style("nature")["protein_fill"]
 
 

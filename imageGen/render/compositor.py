@@ -261,8 +261,9 @@ def render_figure(
     # _dispatch_layout (pinned signature) which makes the same container decision.
     plan = _lowering_plan(ir, style_name)
     style_dict = plan.style_base
-    # ST4: build per-panel style dicts for panels whose preset differs from top-level.
-    panel_styles = _build_panel_styles(ir, style_name) if ir.panels else {}
+    # ST4/P0b.3: dense per-panel style map (every panel keyed; matching panels
+    # reuse the resolved base style object).
+    panel_styles = _build_panel_styles(ir, style_name, style_dict) if ir.panels else {}
     entries = _dispatch_layout(ir, style_dict, smiles_map, panel_styles=panel_styles)
 
     # L18: compute canvas before label placement so the bounds can be forwarded
@@ -385,23 +386,29 @@ def _resolve_style(ir: Figure, style_name: str | None) -> dict[str, Any]:
 
 
 def _build_panel_styles(
-    ir: Figure, top_style_name: str | None
+    ir: Figure, top_style_name: str | None, base_style: dict[str, Any]
 ) -> dict[str, dict[str, Any]]:
-    """Return per-panel style dicts for panels whose preset differs from the top level.
+    """Return a DENSE per-panel style map: every ``panel.id`` -> its effective style.
 
-    ST4: ``panel.content.style_preset`` is the per-panel preset selector. If a
-    panel's preset matches the top-level preset (resolved from kwarg >
-    ir.style_preset > default), we skip it — the global style_dict already
-    covers it. Only panels that differ from the top-level get entries here;
-    the caller falls back to the global style for the rest.
+    ST4: ``panel.content.style_preset`` is the per-panel preset selector,
+    resolved against the top-level preset (kwarg > ir.style_preset > default).
+    A panel matching the top level reuses the SAME resolved ``base_style``
+    object (preserving any kwarg overrides + object identity); a panel with a
+    differing preset gets its own ``load_style``.
+
+    P0b.3: the map is dense — every panel keyed, not just the differing ones —
+    so downstream ``.get(panel.id)`` is uniform and matches the dense
+    ``smiles_map`` broadcast, giving the chassis one keying convention. Consumers
+    keep their ``.get(panel.id, base_style)`` fallback for nested-grid sub-panel
+    ids that are not top-level and so absent here.
     """
     top_name = top_style_name or ir.style_preset or DEFAULT_PRESET
     result: dict[str, dict[str, Any]] = {}
     for panel in ir.panels:
         panel_preset = panel.content.style_preset or DEFAULT_PRESET
-        if panel_preset != top_name:
-            result[panel.id] = load_style(panel_preset)
-    return result or {}
+        result[panel.id] = (
+            base_style if panel_preset == top_name else load_style(panel_preset))
+    return result
 
 
 def _resolve_format(
