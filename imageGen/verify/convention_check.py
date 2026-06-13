@@ -41,7 +41,13 @@ from typing import Iterator, Literal
 
 from imageGen.ir.schema import Archetype, Figure, RelationType
 from imageGen.layout._geom import resolve_entity_primitive
-from imageGen.primitives import entity_adapters, glyphs, nucleic_acids, proteins
+# P0c.1: the primitive → shape-tag map and the composite skip-set are derived
+# from the single PRIMITIVE_SPECS list. Aliased to the historical private names
+# so this module's consumers (and tests importing them) are unchanged.
+from imageGen.primitives.primitive_specs import (
+    PRIMITIVE_SHAPE as _PRIMITIVE_SHAPE,
+    SKIP_SHAPE_PRIMITIVES as _SKIP_SHAPE_PRIMITIVES,
+)
 from imageGen.render.compositor import scoped_id
 
 _Kind = Literal["inhibition_arrow", "entity_shape"]
@@ -51,68 +57,10 @@ _Kind = Literal["inhibition_arrow", "entity_shape"]
 # any badge (e.g. a phosphorylated-kinase ``<circle>``) or ``<text>`` label.
 _SHAPE_TAGS = ("rect", "polygon", "ellipse", "circle", "path", "polyline")
 
-# Primitive callable → the SVG tag of the shape it draws. `_geom` owns the
-# `EntityType → primitive` mapping; this owns `primitive → shape tag`.
-_PRIMITIVE_SHAPE = {
-    proteins.generic_protein: "rect",
-    proteins.protein_complex: "rect",
-    proteins.kinase: "polygon",
-    proteins.receptor: "polygon",
-    proteins.gpcr: "rect",
-    proteins.transcription_factor: "rect",
-    nucleic_acids.gene_helix: "polyline",
-    nucleic_acids.rna_helix: "polyline",
-    # v2.x expansion glyphs — tag of the first shape each draws
-    glyphs.antibody: "path",
-    glyphs.ion_channel: "polygon",
-    glyphs.transporter: "polygon",
-    glyphs.pump: "polygon",
-    glyphs.phosphatase: "polygon",
-    glyphs.ribosome: "ellipse",
-    glyphs.vesicle: "circle",
-    glyphs.flask: "path",
-    glyphs.centrifuge: "circle",
-    glyphs.flow_cytometer: "rect",
-    glyphs.sequencer: "rect",
-    glyphs.petri_dish: "ellipse",
-    glyphs.syringe: "rect",
-    nucleic_acids.mrna_helix: "polyline",
-    nucleic_acids.primer_helix: "polyline",
-    glyphs.voltage_trace: "path",
-    # cellular-schematic adapters (cells.py) — first shape each draws
-    entity_adapters.cell: "polygon",
-    entity_adapters.cell_neuron: "polygon",
-    entity_adapters.cell_epithelial: "polygon",
-    entity_adapters.cell_immune: "polygon",
-    entity_adapters.mitochondrion: "polygon",
-    entity_adapters.nucleus: "circle",
-    entity_adapters.endoplasmic_reticulum: "polyline",
-    entity_adapters.golgi: "polygon",
-    entity_adapters.lysosome: "circle",
-    # still hand-drawn lab equipment (re-trace planned); embedded ones are skipped below
-    entity_adapters.pipette: "rect",
-    entity_adapters.human_figure: "circle",
-    # closed lipid-bilayer vesicle (EW3) — first shape is the bilayer tail ring
-    entity_adapters.liposome: "polygon",
-}
-
-# Primitives whose drawing is a composite (RDKit chemical structure or an
-# embedded multi-path Bioicons illustration), not a single type-conventional
-# glyph — shape-checked the same way reactions are: not at all. Their entries
-# live here instead of `_PRIMITIVE_SHAPE`.
-_SKIP_SHAPE_PRIMITIVES = frozenset({
-    entity_adapters.molecule,
-    entity_adapters.functional_group,
-    # embedded Bioicons (DECISIONS D9) — faithful multi-path illustrations
-    entity_adapters.microscope,
-    entity_adapters.tube,
-    entity_adapters.mouse,
-    entity_adapters.well_plate,
-    entity_adapters.gel,
-    entity_adapters.western_blot,
-    entity_adapters.flask,
-    entity_adapters.centrifuge,
-})
+# `_PRIMITIVE_SHAPE` (primitive callable → SVG shape tag) and
+# `_SKIP_SHAPE_PRIMITIVES` (composite primitives with no conventional glyph) are
+# imported above from `primitives/primitive_specs.py` — `_geom` owns the
+# `EntityType → primitive` mapping, the spec list owns `primitive → shape tag`.
 
 
 class ConventionCheckError(RuntimeError):

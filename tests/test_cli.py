@@ -135,6 +135,47 @@ def test_verify_flag_prints_report(tmp_path, capsys):
     assert "semantic=OK" in captured.out
 
 
+# ---------------------------------------------------------------------------
+# P0c.2 — `styles` discovery subcommand
+# ---------------------------------------------------------------------------
+
+def test_styles_keys_prints_full_vocabulary(capsys):
+    from imageGen.styles.loader import list_style_keys
+
+    rc = main(["styles", "--keys"])
+    assert rc == 0
+    out_lines = capsys.readouterr().out.strip().splitlines()
+    assert out_lines == list_style_keys()
+
+
+def test_styles_no_flag_defaults_to_keys(capsys):
+    from imageGen.styles.loader import list_style_keys
+
+    rc = main(["styles"])
+    assert rc == 0
+    assert capsys.readouterr().out.strip().splitlines() == list_style_keys()
+
+
+def test_styles_presets_lists_presets(capsys):
+    from imageGen.styles.loader import list_presets
+
+    rc = main(["styles", "--presets"])
+    assert rc == 0
+    out_lines = capsys.readouterr().out.strip().splitlines()
+    assert out_lines == list_presets()
+
+
+def test_styles_keys_with_layout_params_section(capsys):
+    from imageGen.styles.loader import KNOWN_LAYOUT_PARAMS
+
+    rc = main(["styles", "--keys", "--layout-params"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "# layout-params" in out
+    for key in KNOWN_LAYOUT_PARAMS:
+        assert key in out
+
+
 def test_autocrop_flag_trims_dead_margin(tmp_path):
     """LT5: --autocrop rewrites the primary SVG so it ships without dead margin.
 

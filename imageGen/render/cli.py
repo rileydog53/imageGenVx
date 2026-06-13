@@ -28,7 +28,7 @@ from typing import Any, get_args
 from imageGen.ir.builder import build as build_figure
 from imageGen.ir.schema import Figure
 from imageGen.render.compositor import Format, render_figure
-from imageGen.styles.loader import list_presets
+from imageGen.styles.loader import list_presets, list_style_keys
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +189,68 @@ def _build_spec_parser() -> argparse.ArgumentParser:
 
 
 # ---------------------------------------------------------------------------
+# Style-vocabulary discovery (P0c.2)
+# ---------------------------------------------------------------------------
+
+
+def _build_styles_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="python -m imageGen styles",
+        description=(
+            "Print the style vocabulary — the recognised style_dict keys (the "
+            "set a preset's `overrides` block is validated against) and the "
+            "available journal presets. Discovery only; renders nothing."
+        ),
+    )
+    parser.add_argument(
+        "--keys",
+        action="store_true",
+        help="Print every recognised style_dict key (one per line, sorted).",
+    )
+    parser.add_argument(
+        "--layout-params",
+        dest="layout_params",
+        action="store_true",
+        help="With --keys, also print the aesthetic layout-param keys "
+        "(band/panel colours, strokes, fonts) under a separate heading.",
+    )
+    parser.add_argument(
+        "--presets",
+        action="store_true",
+        help="Print the available journal preset names (one per line).",
+    )
+    return parser
+
+
+def _run_styles(argv: list[str]) -> int:
+    """Handle ``python -m imageGen styles [...]``.
+
+    Defaults to ``--keys`` when no flag is given (the headline use). Output is
+    plain, one item per line, so it greps and pipes cleanly.
+    """
+    args = _build_styles_parser().parse_args(argv)
+    # No flag → the headline inventory.
+    if not (args.keys or args.presets):
+        args.keys = True
+
+    if args.keys:
+        for key in list_style_keys():
+            print(key)
+        if args.layout_params:
+            from imageGen.styles.loader import KNOWN_LAYOUT_PARAMS  # noqa: PLC0415
+
+            print("# layout-params")
+            for key in sorted(KNOWN_LAYOUT_PARAMS):
+                print(key)
+    if args.presets:
+        if args.keys:
+            print("# presets")
+        for name in list_presets():
+            print(name)
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Spec ingest
 # ---------------------------------------------------------------------------
 
@@ -311,8 +373,10 @@ def main(argv: list[str] | None = None) -> int:
     raw = list(sys.argv[1:] if argv is None else argv)
 
     # Subcommand sniff: the legacy CLI takes a positional IR_PATH first, so
-    # a literal `render-spec` token in slot 0 unambiguously selects the new
-    # mode without breaking the old one.
+    # a literal `render-spec` / `styles` token in slot 0 unambiguously selects
+    # the new mode without breaking the old one.
+    if raw and raw[0] == "styles":
+        return _run_styles(raw[1:])
     if raw and raw[0] == "render-spec":
         args = _build_spec_parser().parse_args(raw[1:])
         spec = _load_spec(Path(args.spec_path))

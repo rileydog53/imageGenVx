@@ -19,6 +19,7 @@ from imageGen.styles.loader import (
     StylePreset,
     apply_palette_recipe,
     list_presets,
+    list_style_keys,
     load_layout_params,
     load_preset_full,
     load_style,
@@ -28,6 +29,26 @@ from tests._helpers import load_fixture, render_entries_to_png
 # Map from oxidation_reaction.json entity ids → SMILES (kept here, not
 # in the IR; matches the smiles_map convention from layout_reaction).
 _OXIDATION_SMILES = {"alcohol": "CCO", "aldehyde": "CC=O"}
+
+
+# ---------------------------------------------------------------------------
+# P0c.2 — style-vocabulary discovery
+# ---------------------------------------------------------------------------
+
+def test_list_style_keys_is_the_known_set_sorted():
+    keys = list_style_keys()
+    assert keys == sorted(KNOWN_STYLE_KEYS)
+    assert set(keys) == set(KNOWN_STYLE_KEYS)
+    # Authoritative: the same set load_preset_full validates overrides against.
+    assert len(keys) == len(KNOWN_STYLE_KEYS)
+
+
+def test_list_style_keys_layout_params_appended():
+    base = list_style_keys()
+    full = list_style_keys(include_layout_params=True)
+    assert full == base + sorted(KNOWN_LAYOUT_PARAMS)
+    # Layout params excluded by default (separate channel).
+    assert set(KNOWN_LAYOUT_PARAMS).isdisjoint(base)
 
 
 # ---------------------------------------------------------------------------

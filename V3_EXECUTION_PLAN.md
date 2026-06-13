@@ -348,29 +348,48 @@ Built on P0b's single style-keying convention and the additive cascade.
 
 ### Phase 0c — pre-Step-7 seams (land before primitive refresh)
 
-- [ ] **P0c.1 — Introduce `PrimitiveSpec` to collapse the 3-file table coupling.**
-  ⚠️ Adding a primitive today needs synchronized edits across: the
-  `entity_adapters` callable + icon assets; `_geom.PRIMITIVE_REGISTRY` (`:69`) +
-  `_PRIMITIVE_BBOX_OVERRIDE` (`:128`); and `convention_check._PRIMITIVE_SHAPE`
-  (`:56`) / `_SKIP_SHAPE_PRIMITIVES` (`:103`) — guarded by **one** test. Define a
-  single `PrimitiveSpec(name, callable, bbox, shape_tag|SKIP, icon_asset?)`
-  registered once; derive `PRIMITIVE_REGISTRY`, the bbox table, the convention
-  shape map and icon assets from that one list.
+- [x] **P0c.1 — Introduce `PrimitiveSpec` to collapse the 3-file table coupling.**
+  ✅ 2026-06-13. New leaf `primitives/primitive_specs.py` holds one
+  `PrimitiveSpec(name, render, bbox, shape|SKIP, icon_asset?)` per primitive in a
+  single `PRIMITIVE_SPECS` list; `PRIMITIVE_REGISTRY`, `PRIMITIVE_TO_BBOX`,
+  `PRIMITIVE_SHAPE`, `SKIP_SHAPE_PRIMITIVES` and `ICON_ASSETS` are all *derived*
+  from it. `_geom` re-exports `PRIMITIVE_REGISTRY`/`PRIMITIVE_TO_BBOX` (its
+  literal registry + `_PRIMITIVE_BBOX_OVERRIDE` + the inherit-via-`ENTITY_TO_PRIMITIVE`
+  derivation deleted); `convention_check` aliases `PRIMITIVE_SHAPE`/`SKIP_SHAPE_PRIMITIVES`
+  → its private `_PRIMITIVE_SHAPE`/`_SKIP_SHAPE_PRIMITIVES` (the two hand-kept
+  literals deleted, dropping two dead `glyphs.flask`/`glyphs.centrifuge` shape
+  entries that resolution never reached); `credits` reads `ICON_ASSETS` from the
+  spec module (`entity_adapters.ICON_ASSETS` removed). The module is the lowest
+  layer (imports only `primitives` sub-modules → no cycle); the per-spec bbox is
+  explicit but byte-equal to what the old inheritance resolved to. Import-time
+  uniqueness guard on name+callable. The coverage guard is now structural (new
+  `test_primitive_specs.py` iterates the spec list); existing
+  `test_primitive_shape_covers_registry` / `test_default_dispatch_shapes_covered`
+  pass unchanged. +7 tests.
   *Done when:* registering a new spec is a single-site add; the coverage test
   becomes structural (iterates the spec list).
 
-- [ ] **P0c.2 — `list_style_keys()` discovery surface.** The 192-key vocabulary
-  (`KNOWN_STYLE_KEYS`, `loader.py:81`) is code-only; SKILL.md lists 3 preset
-  names. Add `list_style_keys()` + a `python -m imageGen styles --keys` path
-  before Step 7 inflates the key set with curly-arrow primitives.
+- [x] **P0c.2 — `list_style_keys()` discovery surface.** ✅ 2026-06-13.
+  `styles/loader.list_style_keys(*, include_layout_params=False)` returns the
+  sorted 192-key `KNOWN_STYLE_KEYS` vocabulary (the same set `load_preset_full`
+  validates `overrides` against — authoritative, not a hand-kept list), with the
+  13 aesthetic `KNOWN_LAYOUT_PARAMS` appended on request. New `python -m imageGen
+  styles [--keys] [--layout-params] [--presets]` subcommand (sniffed in slot 0
+  like `render-spec`; defaults to `--keys`) prints the inventory one item per
+  line for clean grep/pipe. +6 tests.
   *Done when:* the full key inventory is printable from the CLI.
 
-- [ ] **P0c.3 — Fix the silent REACTION_SCHEME downgrade** (also in Phase H — do
-  it here at the latest). Step 7's curly arrows / per-atom anchors are
-  REACTION-only; once a mechanism is a non-linear multi-arrow graph the downgrade
-  to PATHWAY (`compositor.py:172`) erases the chemistry layer **silently** when
-  `smiles_map` is falsy. See **PH.1**. Record the original archetype so Step-7
-  primitives can refuse to no-op on a coerced archetype.
+- [x] **P0c.3 — Fix the silent REACTION_SCHEME downgrade** (also in Phase H).
+  ✅ 2026-06-13. The silent path was already closed by **PH.1** (fail-loud by
+  default; the `pathway_fallback=True` opt-in always warns, ungated). This item
+  *records the original archetype*: the compositor-local `LoweringPlan` gains a
+  `coerced_from: Archetype | None` field, captured from `ir.archetype` **before**
+  the PH.1 `model_copy(archetype=PATHWAY)` rebind erases it and threaded through
+  `_lowering_plan`. It is `None` for every un-coerced figure and `REACTION_SCHEME`
+  only on the coerced fallback, so a Step-7 primitive can distinguish a genuine
+  PATHWAY from a coerced REACTION_SCHEME (whose chemistry layer was dropped) and
+  refuse to silently no-op. No `schema.py` touch — the record lives on the plan
+  (its documented home for "Step 6/7 adapters"), not the IR. +2 tests.
   *Done when:* a non-linear REACTION_SCHEME never silently degrades; PH.1 landed.
 
 ### Step 7 — Primitive refresh (aspirin/COX-1 acceptance)
@@ -379,12 +398,25 @@ Builds on P0c. Acceptance = the mechanism-figure fidelity criteria
 (`V3_FEATURES.md` MF-1/2/3). Aspirin/COX-1 reproduction is **this** workstream's
 acceptance test, not a chassis milestone.
 
+> **Carry-over seam from P0c.3 — consume `LoweringPlan.coerced_from`.** P0c.3
+> *records* the pre-coercion archetype on the plan but left it without a consumer.
+> Step 7's chemistry primitives are REACTION-only, so a figure coerced
+> REACTION_SCHEME→PATHWAY (`pathway_fallback`) has silently dropped its chemistry
+> layer. When wiring P7.1/P7.2's curly-arrow / atom-anchor primitives, read
+> `plan.coerced_from` (it is `REACTION_SCHEME` exactly on the coerced path) and
+> **fail loud or warn** rather than no-op'ing — close the seam in the same step
+> that introduces the primitives that depend on it. A test should assert a coerced
+> figure carrying a chemistry primitive does not silently render nothing.
+
 - [ ] **P7.1 — One atom convention everywhere (MF-1).** Heteroatoms render as
   coloured **letters** via the molecule renderer's convention, never bespoke bare
   dots. Residue fragments are real rendered molecular fragments. Register them as
-  `PrimitiveSpec`s (P0c.1).
+  `PrimitiveSpec`s (P0c.1). **Consume `LoweringPlan.coerced_from`** (the P0c.3
+  carry-over seam above) so a coerced REACTION_SCHEME can't silently no-op its
+  chemistry.
   *Done when:* no bare-dot oxygen appears; a figure mixing aspirin + a residue
-  uses one atom convention.
+  uses one atom convention; a coerced-archetype figure with a chemistry primitive
+  fails loud / warns instead of rendering nothing.
 
 - [ ] **P7.2 — Curly arrow-pushing primitive (MF-2 / V3-C4).** Endpoints come
   from `AnchorRegistry.resolve("scene.slot.atom")` (the keystone already

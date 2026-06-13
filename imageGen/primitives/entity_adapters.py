@@ -170,8 +170,9 @@ def _build_human(style_dict):
 def _icon_adapter(asset_name: str, default_size: tuple[float, float]):
     """Entity primitive that draws an embedded Bioicons asset fit into the slot.
 
-    Faithful color (the asset keeps its own fills). Registered in ``ICON_ASSETS``
-    (below) so ``render/credits`` can collect attribution for figures using it.
+    Faithful color (the asset keeps its own fills). Its asset stem is recorded on
+    the matching ``PrimitiveSpec`` (``primitives/primitive_specs.py``), from which
+    ``ICON_ASSETS`` is derived so ``render/credits`` can collect attribution.
     """
     def draw(label, position, size=default_size, color=None, style_dict=None):
         inner, intrinsic = icon_loader.load_icon(asset_name)
@@ -335,19 +336,7 @@ centrifuge = _icon_adapter("centrifuge", (64.0, 56.0))
 pipette = _equip_adapter("pipette", _build_pipette, lab_icons.PIPETTE_SIZE, (28.0, 74.0))
 human_figure = _equip_adapter("human_figure", _build_human, lab_icons.HUMAN_SIZE, (44.0, 60.0))
 
-
-# ---------------------------------------------------------------------------
-# Embedded-icon registry (Bioicons) — maps a primitive callable to the asset
-# name it draws (``assets/icons/<name>.svg``). Used by ``render/credits`` to
-# collect attribution for the icons a figure actually uses; see DECISIONS D9.
-# ---------------------------------------------------------------------------
-ICON_ASSETS: dict = {
-    microscope: "microscope",
-    tube: "tube",
-    mouse: "mouse",
-    well_plate: "well_plate",
-    gel: "agarose_gel",
-    western_blot: "western_blot",
-    flask: "flask",
-    centrifuge: "centrifuge",
-}
+# The embedded-icon → asset-stem registry (which adapters draw a Bioicons asset,
+# for ``render/credits`` attribution; DECISIONS D9) now lives on the matching
+# ``PrimitiveSpec`` (``primitives/primitive_specs.py``), from which ``ICON_ASSETS``
+# is derived — one source for every per-primitive table.

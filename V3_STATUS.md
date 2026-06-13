@@ -16,9 +16,10 @@ first, then dive into the detail docs linked below.
 | 5 | **Scene solver** — topological attach/offset pass + co-location de-overlap (MF-3), scene-local label placement via `place_labels`, annotation occupancy seed, and the 3 placement nits. Suite: 1060 green. | ✅ LANDED (2026-06-12) |
 | 0b | **Pre-Step-6 style seams** — tiered figures honour the journal preset; two-channel additive cascade (content vs structural); dense `_build_panel_styles`; preset-name-axis guardrail. Suite: 1064 → 1078. | ✅ LANDED (2026-06-13) |
 | 6 | **Step expansion** — slot-granular `StepSequence` → N concrete validated `Scene`s (add/remove/replace/add_label), per-step style via the cascade, adversarially hardened. Suite: 1078 green. | ✅ LANDED (2026-06-13) |
+| 0c | **Pre-Step-7 seams** — `PrimitiveSpec` single-site registry, `list_style_keys()` + `styles --keys` CLI, `LoweringPlan.coerced_from` record. Suite: 1082 → 1097. | ✅ LANDED (2026-06-13) |
 | 7 | **Primitive refresh + expansion** — curly arrows (V3-C4), TS partial bonds, organic shaded blobs, per-atom anchors. **Aspirin/COX-1 reproduction is the acceptance test** (gated by MF-1/2/3). | **← NEXT** |
 
-**Current test count:** 1078 passing.
+**Current test count:** 1097 passing.
 
 > **Chassis Phase 0a + Step 5 COMPLETE — landed 2026-06-12.** The chassis arc
 > (`V3_CHASSIS_ARC_BLUEPRINT.md`) shipped in commit boundaries C1–C7:
@@ -49,6 +50,24 @@ first, then dive into the detail docs linked below.
 > REMOVE/REPLACE/ADD_LABEL fail loud on a nested or already-removed target
 > instead of silently no-op'ing. **Now unblocked:** the deferred
 > `tier_layout.py` Phase-R split (it said "revisit after Step 6").
+
+> **Phase 0c COMPLETE — landed 2026-06-13.** The three pre-Step-7 seams.
+> **P0c.1** collapses the primitive-registration coupling: a single
+> `PRIMITIVE_SPECS` list (`primitives/primitive_specs.py`, one
+> `PrimitiveSpec(name, render, bbox, shape|SKIP, icon_asset?)` per primitive)
+> now *derives* `PRIMITIVE_REGISTRY` + `PRIMITIVE_TO_BBOX` (`_geom` re-exports),
+> the `_PRIMITIVE_SHAPE` / `_SKIP_SHAPE_PRIMITIVES` convention maps
+> (`convention_check` aliases), and `ICON_ASSETS` (`credits` reads it;
+> `entity_adapters.ICON_ASSETS` removed) — registering a primitive is now a
+> one-line append, and the coverage guard is structural (iterates the list). Two
+> dead `glyphs.flask/centrifuge` shape entries fell out. **P0c.2** adds
+> `list_style_keys()` + a `python -m imageGen styles --keys` subcommand to
+> surface the 192-key style vocabulary before Step 7 inflates it. **P0c.3**
+> finishes the REACTION_SCHEME→PATHWAY downgrade story: PH.1 already closed the
+> *silent* path, so this records the pre-coercion archetype on
+> `LoweringPlan.coerced_from` (captured before the `model_copy` rebind, no
+> `schema.py` touch) so Step-7 primitives can refuse to no-op on a coerced
+> archetype. +15 tests; 1097 green. **Step 7 is now unblocked.**
 
 > **`Tier.overlays` now render — landed 2026-06-13.** A follow-up to the Step 6
 > review (overlays were accepted by the schema + promised in the docstring but

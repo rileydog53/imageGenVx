@@ -3,7 +3,7 @@
 Embedded icons carry a per-icon license recorded in
 ``imageGen/assets/icons/credits.json`` (written by the ingest tool). A figure's
 *used* icons are derived deterministically from the IR — each entity's resolved
-primitive is looked up in ``entity_adapters.ICON_ASSETS`` — so attribution never
+primitive is looked up in ``primitive_specs.ICON_ASSETS`` — so attribution never
 depends on scanning rendered output.
 
 Two outputs (the user-approved policy):
@@ -22,7 +22,7 @@ from pathlib import Path
 
 from imageGen.ir.schema import Figure
 from imageGen.layout._geom import resolve_entity_primitive
-from imageGen.primitives.entity_adapters import ICON_ASSETS
+from imageGen.primitives.primitive_specs import ICON_ASSETS
 
 _CREDITS_JSON = Path(__file__).resolve().parent.parent / "assets" / "icons" / "credits.json"
 

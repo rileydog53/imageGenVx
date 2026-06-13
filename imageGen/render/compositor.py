@@ -124,34 +124,48 @@ class LoweringPlan(NamedTuple):
     for introspection + the Step 6/7 adapters; ``render_figure`` itself reads
     ``canvas_fn`` / ``label_strategy`` / ``style_base`` (dispatch keeps going
     through ``_dispatch_layout`` so its pinned signature is untouched).
+
+    ``coerced_from`` (P0c.3) records the figure's *original* archetype when the
+    PH.1 multi-step normalise rewrote it (a non-linear REACTION_SCHEME coerced to
+    PATHWAY under ``pathway_fallback``). It is ``None`` for every un-coerced
+    figure. The coercion drops the chemistry layer (SMILES structures are not
+    drawn), so this is the durable record that lets Step-7 primitives refuse to
+    silently no-op on a figure whose archetype no longer reflects its content —
+    ``ir.archetype`` alone reads PATHWAY and has lost that history.
     """
     engine: Callable[..., list[LayoutEntry]] | None
     canvas_fn: Callable[[Figure], tuple[float, float]]
     label_strategy: LabelStrategy
     style_base: dict[str, Any]
     archetype_plan: ArchetypePlan | None
+    coerced_from: Archetype | None = None
 
 
-def _lowering_plan(ir: Figure, style_name: str | None) -> LoweringPlan:
+def _lowering_plan(
+    ir: Figure, style_name: str | None, coerced_from: Archetype | None = None
+) -> LoweringPlan:
     """Resolve the lowering plan once, container-mode-first.
 
     The schema's at-most-one-of-{leaf, panels, tiers} guard
     (``Figure._validate_structure``) makes this ``if/elif/else`` provably unable
     to mis-route. Archetype is resolved second, only for the leaf arm, via the
     single ``_ARCHETYPE_PLAN`` table. Call AFTER any archetype normalisation
-    (e.g. the PH.1 multi-step coercion) so the plan sees the final archetype.
+    (e.g. the PH.1 multi-step coercion) so the plan sees the final archetype;
+    pass ``coerced_from`` = the pre-coercion archetype so the plan keeps that
+    history (the IR copy no longer carries it).
     """
     style_base = _resolve_style(ir, style_name)
     if ir.tiers:
         return LoweringPlan(layout_tiers, tier_canvas, LabelStrategy.BAKED,
-                            style_base, None)
+                            style_base, None, coerced_from)
     if ir.panels:
         return LoweringPlan(layout_panel, lambda _fig: PANEL_DEFAULT_PARAMS["panel_canvas"],
-                            LabelStrategy.PER_PANEL, style_base, None)
+                            LabelStrategy.PER_PANEL, style_base, None, coerced_from)
     plan = _ARCHETYPE_PLAN.get(ir.archetype)
     canvas_fn = plan.canvas_fn if plan is not None else (lambda _fig: _DEFAULT_CANVAS)
     engine = plan.engine if plan is not None else None
-    return LoweringPlan(engine, canvas_fn, LabelStrategy.LEAF, style_base, plan)
+    return LoweringPlan(engine, canvas_fn, LabelStrategy.LEAF, style_base, plan,
+                        coerced_from)
 
 
 # ---------------------------------------------------------------------------
@@ -235,6 +249,7 @@ def render_figure(
     # and names the original + coerced archetype. This normalise runs BEFORE the
     # lowering plan resolves, so the plan + every downstream consumer (dispatch,
     # label strategy, canvas sizing) see the final archetype in one decision.
+    coerced_from: Archetype | None = None
     if _is_multistep_reaction(ir) and not is_linear_chain_reaction(ir):
         if not pathway_fallback:
             raise NotImplementedError(
@@ -254,12 +269,17 @@ def render_figure(
             UserWarning,
             stacklevel=2,
         )
+        # P0c.3: remember the pre-coercion archetype before the rebind erases it.
+        # The plan carries it so Step-7 primitives can tell a genuine PATHWAY from
+        # a coerced REACTION_SCHEME (whose chemistry layer was dropped) and refuse
+        # to silently no-op on the latter.
+        coerced_from = ir.archetype
         ir = ir.model_copy(update={"archetype": Archetype.PATHWAY})
 
     # P0a.2: resolve the lowering plan ONCE (container-mode-first); route style,
     # canvas, and the label strategy through it. Dispatch keeps going through
     # _dispatch_layout (pinned signature) which makes the same container decision.
-    plan = _lowering_plan(ir, style_name)
+    plan = _lowering_plan(ir, style_name, coerced_from=coerced_from)
     style_dict = plan.style_base
     # ST4/P0b.3: dense per-panel style map (every panel keyed; matching panels
     # reuse the resolved base style object).

@@ -410,6 +410,56 @@ def test_cyclic_multistep_reaction_fails_loud(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# P0c.3 — the lowering plan records the pre-coercion archetype
+# ---------------------------------------------------------------------------
+
+def test_lowering_plan_records_coerced_from():
+    """``_lowering_plan`` carries the ``coerced_from`` it is handed, and defaults
+    it to None — the recording mechanism Step-7 reads."""
+    from imageGen.render.compositor import _lowering_plan
+
+    pathway = Figure(
+        archetype=Archetype.PATHWAY,
+        entities=[Entity(id="e0", type=EntityType.PROTEIN, label="A")],
+    )
+    assert _lowering_plan(pathway, None).coerced_from is None
+    assert _lowering_plan(
+        pathway, None, coerced_from=Archetype.REACTION_SCHEME
+    ).coerced_from is Archetype.REACTION_SCHEME
+
+
+def test_render_figure_records_coercion_in_plan(tmp_path, monkeypatch):
+    """A coerced non-linear REACTION_SCHEME resolves a plan whose ``coerced_from``
+    is REACTION_SCHEME (the archetype the IR rebind to PATHWAY would otherwise
+    erase); an un-coerced figure resolves a plan with ``coerced_from`` None."""
+    import imageGen.render.compositor as comp
+
+    captured: dict[str, Archetype | None] = {}
+    real = comp._lowering_plan
+
+    def spy(ir, style_name, coerced_from=None):
+        captured["coerced_from"] = coerced_from
+        return real(ir, style_name, coerced_from=coerced_from)
+
+    monkeypatch.setattr(comp, "_lowering_plan", spy)
+
+    ir = _convergent_multistep_reaction()
+    smiles = {e.id: "C" for e in ir.entities}
+    with pytest.warns(UserWarning, match="SMILES structures will not be drawn"):
+        comp.render_figure(ir, tmp_path / "coerced.svg", smiles_map=smiles,
+                           pathway_fallback=True)
+    assert captured["coerced_from"] is Archetype.REACTION_SCHEME
+
+    captured.clear()
+    pathway = Figure(
+        archetype=Archetype.PATHWAY,
+        entities=[Entity(id="e0", type=EntityType.PROTEIN, label="A")],
+    )
+    comp.render_figure(pathway, tmp_path / "plain.svg")
+    assert captured["coerced_from"] is None
+
+
+# ---------------------------------------------------------------------------
 # IR-id tagging (D1)
 # ---------------------------------------------------------------------------
 
