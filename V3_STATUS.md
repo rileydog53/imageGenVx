@@ -47,11 +47,19 @@ first, then dive into the detail docs linked below.
 > `step.style` rides the cascade as the outermost layer. The expansion was
 > adversarially hardened (4-lens review): REPLACE keeps `id=target`, and
 > REMOVE/REPLACE/ADD_LABEL fail loud on a nested or already-removed target
-> instead of silently no-op'ing. **Pre-existing gaps surfaced (not Step 6
-> regressions, both fail-loud/silent by prior design):** a `TierEdge` to the
-> step_sequence `base.id` validates but has no laid-out scene; `Tier.overlays`
-> are not yet rendered by the engine. **Now unblocked:** the deferred
+> instead of silently no-op'ing. **Now unblocked:** the deferred
 > `tier_layout.py` Phase-R split (it said "revisit after Step 6").
+
+> **`Tier.overlays` now render — landed 2026-06-13.** A follow-up to the Step 6
+> review (overlays were accepted by the schema + promised in the docstring but
+> never laid out). A SCENE_ROW tier with `overlays` carves a bottom gutter strip
+> (`tier_overlay_gutter_frac`, default 0.3 of the band — first-cut heuristic);
+> overlays lay out there via the same `_layout_scene` path + cascade and publish
+> anchors before transitions resolve, so a `TierEdge` (e.g. a `departs` arrow)
+> connects a row scene to an overlay (the aspirin/COX-1 departing-fragment
+> shape). Overlay-free tiers keep the full band (byte-identical). +4 tests; 1082
+> green. Remaining pre-existing note: a `TierEdge` to the step_sequence
+> `base.id` validates but has no laid-out scene (fails loud at layout).
 
 > **Phase R (module decomposition)** is now tracked in
 > [`V3_EXECUTION_PLAN.md` → Phase R](V3_EXECUTION_PLAN.md). It splits the six

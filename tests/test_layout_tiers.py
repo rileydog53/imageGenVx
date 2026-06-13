@@ -310,6 +310,82 @@ def test_step_sequence_canvas_counts_steps():
     assert tier_canvas(_bare(3))[0] > tier_canvas(_bare(1))[0]
 
 
+# --- Tier.overlays (gutter/free scenes) ------------------------------------
+
+def test_overlays_render_in_a_bottom_gutter():
+    # A SCENE_ROW tier's overlays lay out in a bottom gutter strip: the overlay
+    # slot renders, and sits BELOW the main row's content.
+    fig = Figure.model_validate({"archetype": "mechanism_cartoon", "tiers": [
+        {"id": "row", "role": "scene_row",
+         "scenes": [{"id": "s", "slots": [{"id": "m", "kind": "text", "label": "M"}]}],
+         "overlays": [{"id": "ov", "slots": [
+             {"id": "z", "kind": "text", "label": "OV"}]}]}]})
+    entries = layout_tiers(fig, layout_params={"tier_canvas": (600, 300)})
+    ids = {e.ir_id for e in entries}
+    assert "s.m" in ids and "ov.z" in ids               # both rendered
+    main = next(e for e in entries if e.ir_id == "s.m")
+    ov = next(e for e in entries if e.ir_id == "ov.z")
+    my = float(next(el for el in main.primitive(*main.args, **main.kwargs).elements
+                    if el.elementname == "text")["y"])
+    oy = float(next(el for el in ov.primitive(*ov.args, **ov.kwargs).elements
+                    if el.elementname == "text")["y"])
+    assert oy > my                                      # overlay below the main row
+
+
+def test_overlays_render_with_step_sequence():
+    # Overlays coexist with a step_sequence (the aspirin north-star shape):
+    # expanded steps AND overlay all render.
+    fig = Figure.model_validate({"archetype": "mechanism_cartoon", "tiers": [
+        {"id": "row", "role": "scene_row",
+         "step_sequence": {"id": "q", "base": {"id": "b", "slots": [
+             {"id": "m", "kind": "text", "label": "M"}]},
+             "steps": [{"id": "s1"}, {"id": "s2"}]},
+         "overlays": [{"id": "ov", "slots": [
+             {"id": "z", "kind": "text", "label": "OV"}]}]}]})
+    ids = {e.ir_id for e in layout_tiers(
+        fig, layout_params={"tier_canvas": (600, 300)})}
+    assert {"s1.m", "s2.m", "ov.z"} <= ids
+
+
+def test_tier_edge_connects_a_scene_to_an_overlay():
+    # An overlay publishes anchors, so a TierEdge (e.g. a 'departs' arrow from a
+    # row scene to the departing-fragment overlay) resolves without error.
+    fig = Figure.model_validate({"archetype": "mechanism_cartoon", "tiers": [
+        {"id": "row", "role": "scene_row",
+         "scenes": [{"id": "s", "slots": [{"id": "m", "kind": "text", "label": "M"}]}],
+         "overlays": [{"id": "ov", "slots": [
+             {"id": "z", "kind": "text", "label": "OV"}]}],
+         "transitions": [{"from_ref": "s@bottom", "to_ref": "ov@top",
+                          "type": "departs"}]}]})
+    ids = {e.ir_id for e in layout_tiers(
+        fig, layout_params={"tier_canvas": (600, 300)})}
+    assert "tedge_s@bottom_ov@top" in ids               # endpoint anchors resolved
+
+
+def test_overlay_free_tier_uses_the_full_band():
+    # Carving only happens when overlays exist: an overlay-free tier lays its
+    # scene out on the full band (regression guard for the byte-identical path).
+    spec = {"archetype": "mechanism_cartoon", "tiers": [
+        {"id": "row", "role": "scene_row",
+         "scenes": [{"id": "s", "slots": [{"id": "m", "kind": "text", "label": "M"}]}]}]}
+    plain = layout_tiers(Figure.model_validate(spec),
+                         layout_params={"tier_canvas": (600, 300)})
+    m = next(e for e in plain if e.ir_id == "s.m")
+    y_full = float(next(el for el in m.primitive(*m.args, **m.kwargs).elements
+                        if el.elementname == "text")["y"])
+    # adding an overlay carves the band → the main scene shifts UP (smaller y)
+    spec2 = {"archetype": "mechanism_cartoon", "tiers": [
+        {"id": "row", "role": "scene_row",
+         "scenes": [{"id": "s", "slots": [{"id": "m", "kind": "text", "label": "M"}]}],
+         "overlays": [{"id": "ov", "slots": [{"id": "z", "kind": "text", "label": "OV"}]}]}]}
+    withov = layout_tiers(Figure.model_validate(spec2),
+                          layout_params={"tier_canvas": (600, 300)})
+    m2 = next(e for e in withov if e.ir_id == "s.m")
+    y_carved = float(next(el for el in m2.primitive(*m2.args, **m2.kwargs).elements
+                          if el.elementname == "text")["y"])
+    assert y_carved < y_full
+
+
 def test_unsupported_slot_kind_raises():
     fig = Figure.model_validate({"archetype": "mechanism_cartoon", "tiers": [
         {"id": "row", "role": "scene_row", "scenes": [

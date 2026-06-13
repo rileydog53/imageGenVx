@@ -18,6 +18,9 @@ Scope is deliberately a SLICE, not the finished chassis:
     column layout as authored scenes. Unsupported ``SlotKind``s still raise
     ``NotImplementedError`` (mirrors the compositor's unregistered-archetype
     guard) — they arrive with the primitive refresh.
+  - ``Tier.overlays`` (gutter/free scenes) lay out in a bottom gutter strip of
+    the band and publish anchors before transitions resolve, so a ``TierEdge``
+    can connect a row scene to an overlay (the departing-fragment pattern).
 
 Coordinate model: every entry carries baked absolute coordinates. ``position``
 is the slot's top-left for MOLECULE slots (the only entry whose primitive draws
@@ -101,6 +104,11 @@ TIER_DEFAULT_PARAMS: dict[str, Any] = {
     "tier_caption_font_size": 12,
     "tier_caption_gap": 12.0,      # gap below content before the scene caption
     "tier_caption_line_step": 1.25,  # line height as a multiple of font size
+    # Overlay (gutter/free) scenes: when a SCENE_ROW tier carries ``overlays``,
+    # the main row takes the top (1 - frac) of the band and the overlays a
+    # bottom gutter strip of this fraction. First-cut heuristic — tune as the
+    # aspirin/COX-1 north-star (departing-fragment overlay) is built out.
+    "tier_overlay_gutter_frac": 0.3,
     # Band chrome defaults (a tier's ``style`` overrides per key).
     "tier_band_radius": 4.0,
     "tier_band_stroke_width": 1.0,
@@ -1031,7 +1039,19 @@ def layout_tiers(
             # under tier.style; the structural channel (edges) takes tier.style
             # alone (no preset, so bare preset stroke can't recolour edges).
             content_base = merge_style(style_dict, tier.style)
-            cols = _column_rects(rect, len(row_scenes), gutter)
+            # Overlays (gutter/free scenes) share the band: when present, the
+            # main row takes the top (1 - frac) and the overlays a bottom gutter
+            # strip. Carving only when overlays exist keeps every overlay-free
+            # figure byte-identical. Both rows publish anchors BEFORE transitions
+            # resolve, so a TierEdge (e.g. a "departs" arrow) can connect a row
+            # scene to an overlay.
+            if tier.overlays:
+                gfrac = float(params["tier_overlay_gutter_frac"])
+                main_rect = (tx, ty, tw, th * (1.0 - gfrac))
+                gutter_rect = (tx, ty + th * (1.0 - gfrac), tw, th * gfrac)
+            else:
+                main_rect, gutter_rect = rect, None
+            cols = _column_rects(main_rect, len(row_scenes), gutter)
             for scene, cell in zip(row_scenes, cols):
                 # P5.1: solve + publish each scene inside a registry layer so a
                 # mid-scene failure rolls back its partial anchor publishes
@@ -1043,6 +1063,18 @@ def layout_tiers(
                         scene, cell, registry, params,
                         base_style=content_base, tier_style=tier.style)
                 entries.extend(scene_entries)
+
+            # Overlay scenes in the gutter strip — same layout path + cascade,
+            # each in its own committing layer, so their anchors join the base
+            # registry for transition resolution below.
+            if gutter_rect is not None:
+                ocols = _column_rects(gutter_rect, len(tier.overlays), gutter)
+                for scene, cell in zip(tier.overlays, ocols):
+                    with registry.layer():
+                        overlay_entries = _layout_scene(
+                            scene, cell, registry, params,
+                            base_style=content_base, tier_style=tier.style)
+                    entries.extend(overlay_entries)
 
             # Rails: resolve a fraction of the tier extent to an absolute scalar.
             for rail in tier.rails:
