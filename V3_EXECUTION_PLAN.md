@@ -392,48 +392,121 @@ Built on P0b's single style-keying convention and the additive cascade.
   (its documented home for "Step 6/7 adapters"), not the IR. +2 tests.
   *Done when:* a non-linear REACTION_SCHEME never silently degrades; PH.1 landed.
 
-### Step 7 — Primitive refresh (aspirin/COX-1 acceptance)
+### Step 7 — Primitive refresh (aspirin/COX-1 acceptance) — the home stretch
 
 Builds on P0c. Acceptance = the mechanism-figure fidelity criteria
-(`V3_FEATURES.md` MF-1/2/3). Aspirin/COX-1 reproduction is **this** workstream's
-acceptance test, not a chassis milestone.
+(`V3_FEATURES.md` MF-1/2/3); Aspirin/COX-1 reproduction
+(`references/aspirin_COX1_figure_spec.md`, proof `showcase/aspirin_cox1_anchored_proof.png`)
+is **this** workstream's acceptance test, not a chassis milestone. This is the
+**last** numbered step — when P7.4 lands, the V3 chassis is feature-complete.
+
+> **Foundation already in place — verify, do NOT rebuild (scan 2026-06-13).**
+> Step 7 is *targeted primitive gaps + the acceptance render*, not a from-scratch
+> build. Confirmed present in the tree:
+> - **Atom anchoring (MF-2 prerequisite):** `render_molecule_anchored`
+>   (`primitives/_mol_render.py:316`) publishes per-atom anchors — `atom{idx}`,
+>   `a{map}` (from `[O:1]` atom-maps), and human aliases via `anchor_names`. Molecule
+>   **slots** already render through it and `registry.publish` their anchors
+>   (`tier_layout.py:572`), so `AnchorRegistry.resolve("scene.slot.atom")` works **today**.
+> - **Edge drawing:** `SceneEdgeType` already has `CURLY` / `HBOND` / `DASHED` /
+>   `DEPARTS` / `TRANSITION` / `INHIBITS` (`ir/_enums.py:155`); `_edge_group`
+>   (`tier_layout.py:273`) already draws a **curved arrow** between two resolved
+>   anchors (quadratic Bézier + arrowhead, `bow` controllable). A point-to-point
+>   curly arrow on real atoms is therefore *already expressible* — the gap is
+>   richness (bond/lone-pair origins, handedness), not existence.
+> - **MF-3 (placement):** the Step-5 scene solver + `_deoverlap_coincident`
+>   (`tier_layout.py:330`) already prevents the His513-vs-ligand tangle.
+> - **Single-site primitive registration (P0c.1):** every new glyph below is one
+>   `PrimitiveSpec` append in `primitives/primitive_specs.py`.
 
 > **Carry-over seam from P0c.3 — consume `LoweringPlan.coerced_from`.** P0c.3
 > *records* the pre-coercion archetype on the plan but left it without a consumer.
 > Step 7's chemistry primitives are REACTION-only, so a figure coerced
 > REACTION_SCHEME→PATHWAY (`pathway_fallback`) has silently dropped its chemistry
-> layer. When wiring P7.1/P7.2's curly-arrow / atom-anchor primitives, read
+> layer. Close it in **P7.1** (where chemistry dispatch is touched): read
 > `plan.coerced_from` (it is `REACTION_SCHEME` exactly on the coerced path) and
-> **fail loud or warn** rather than no-op'ing — close the seam in the same step
-> that introduces the primitives that depend on it. A test should assert a coerced
-> figure carrying a chemistry primitive does not silently render nothing.
+> **fail loud / warn** rather than no-op'ing; a test asserts a coerced figure
+> carrying a chemistry primitive does not silently render nothing.
 
-- [ ] **P7.1 — One atom convention everywhere (MF-1).** Heteroatoms render as
-  coloured **letters** via the molecule renderer's convention, never bespoke bare
-  dots. Residue fragments are real rendered molecular fragments. Register them as
-  `PrimitiveSpec`s (P0c.1). **Consume `LoweringPlan.coerced_from`** (the P0c.3
-  carry-over seam above) so a coerced REACTION_SCHEME can't silently no-op its
-  chemistry.
-  *Done when:* no bare-dot oxygen appears; a figure mixing aspirin + a residue
-  uses one atom convention; a coerced-archetype figure with a chemistry primitive
-  fails loud / warns instead of rendering nothing.
+**At a glance** (size = complexity × length; deps are hard ordering constraints):
 
-- [ ] **P7.2 — Curly arrow-pushing primitive (MF-2 / V3-C4).** Endpoints come
-  from `AnchorRegistry.resolve("scene.slot.atom")` (the keystone already
-  publishes atom-map → anchor) — never eyeballed coords.
-  *Done when:* every arrowhead lands on a real atom anchor; a head pointing into
-  void is impossible by construction.
+| Item | What | Size | Depends on | Parallelisable? |
+|---|---|---|---|---|
+| **P7.0** | Extend `semantic_check` + `convention_check` to walk tiers→scenes→slots | **M** | — | yes (independent) |
+| **P7.1** | Residue/heteroatom convention as real fragments (MF-1) + consume `coerced_from` | **M** | — | yes |
+| **P7.2** | Arrow-pushing curly primitive: bond/lone-pair anchors + curvature (MF-2) | **M–L** | keystone (done) | yes |
+| **P7.3** | Remaining north-star glyphs: blob, TS partial bond, tablet, PG cluster, ⊣ T-bar fix | **M** | — | yes (3 sub-glyphs independent) |
+| **P7.4** | Aspirin/COX-1 acceptance render + MF-1∧2∧3 proof | **L** | **P7.0–P7.3 all** | no (integration) |
 
-- [ ] **P7.3 — TS partial-bond glyph + organic shaded blobs + tablet/⊣ glyphs**
-  (the remaining aspirin north-star primitives), each a `PrimitiveSpec`.
-  *Done when:* the aspirin/COX-1 figure renders from IR with these primitives.
+P7.0–P7.3 are mutually independent and can land in any order (or concurrently);
+P7.4 is the integration gate that depends on all four. Recommended sequence:
+**P7.0 → P7.1 → P7.2 → P7.3 → P7.4** (verification reach first so every later
+primitive is acceptance-checkable as it lands).
 
-- [ ] **P7.4 — Aspirin/COX-1 acceptance render.** A naive reader can trace the
-  mechanism from the active sites alone (MF-1 ∧ MF-2 ∧ MF-3). Compare against
-  `showcase/aspirin_cox1_anchored_proof.png`; target spec
-  `references/aspirin_COX1_figure_spec.md`.
-  *Done when:* semantic + legibility + convention checks pass on the IR-driven
-  render and the three MF criteria are demonstrably met.
+- [ ] **P7.0 — Extend verification reach to tier figures.** ⚠️ Acceptance demands
+  it: `semantic_check` / `convention_check` walk only `figure.entities` +
+  `figure.panels` today (`_figures`, `convention_check.py:142`), so a **tier**
+  figure — which the acceptance render is — is silently un-audited. Extend both
+  to walk `tiers → scenes → slots` (and expanded `StepSequence` scenes), checking
+  each molecule/glyph slot's presence + resolved-primitive shape against its
+  scoped id. This is the cross-cutting follow-up Step 6 deferred ("extending
+  `semantic_check` to walk tiers→scenes is separable") — it is no longer separable
+  once acceptance needs it. Keep every test-matched error substring.
+  *Done when:* a tier figure with a missing/mis-shaped slot fails the verifier; the
+  aspirin IR is auditable end-to-end.
+
+- [ ] **P7.1 — Residue & heteroatom convention, one everywhere (MF-1).** Residue
+  fragments (Ser530 side chain, His513 imidazole) render as **real molecular
+  fragments** via `render_molecule_anchored` — coloured atom **letters** (`O`),
+  never bespoke red dots — so a figure mixing aspirin + a residue reads with one
+  convention. Add an **open-valence / attachment-point** helper so a side chain can
+  "enter the frame" with a dangling bond and publish that attachment as a named
+  anchor (the residue's connection point for H-bond / covalent SceneEdges).
+  Register residue conveniences as `PrimitiveSpec`s where a reusable glyph emerges.
+  **Consume `LoweringPlan.coerced_from`** (carry-over seam above).
+  *Done when:* no bare-dot oxygen appears anywhere in the acceptance figure; Ser530
+  and His513 are real fragments with named attachment anchors; a coerced-archetype
+  figure with a chemistry primitive fails loud / warns instead of rendering nothing.
+
+- [ ] **P7.2 — Arrow-pushing curly primitive (MF-2 / V3-C4).** Elevate the existing
+  point-to-point `CURLY` edge into a true arrow-pushing primitive. Two concrete
+  extensions over what exists: (a) publish **bond-midpoint** and **lone-pair**
+  anchors from `render_molecule_anchored` (today only atom centres are published),
+  so an arrow can *originate at a bond* (C=O π) or a lone pair, not just an atom;
+  (b) curvature **handedness + arc control** (the current single `bow` is a crude
+  symmetric bulge) so an S-shaped sweep reads as electron flow. Endpoints stay
+  sourced from `AnchorRegistry.resolve(...)` — a head into void is impossible by
+  construction. Organic-chem arrowhead styling.
+  *Done when:* a curly arrow originates on a real bond/lone-pair anchor and
+  terminates on a real atom anchor; the Step-2 Ser530-O → carbonyl-C and C=O → O
+  arrows render correctly; no eyeballed coordinate appears.
+
+- [ ] **P7.3 — Remaining north-star primitives** (each a `PrimitiveSpec`, P0c.1).
+  Three independent sub-glyphs:
+  - **7.3a — Organic shaded protein blob with cavity** (spec Element B/J): irregular
+    rounded silhouette, edge-darker/centre-lighter shading, a visible central
+    cavity where the ligand sits; reused (recoloured/scaled) as the bottom-bar COX-1
+    icon. The blob must publish `cavity_*` anchors so the Step-5 `cavity_top/…`
+    attach edges (already in `_SLOT_EDGE_OFFSETS`) land a residue/ligand inside it.
+  - **7.3b — TS partial-bond glyph** (breaking/forming bond): a dashed/thin bond
+    overlay between two atom anchors for the transition-state half-bonds (Step 3's
+    breaking ester linkage). An anchor-pair overlay, not a full molecule.
+  - **7.3c — Minor glyphs + the ⊣ fix:** aspirin tablet icon, prostaglandin dot
+    cluster (normal + reduced), and **fix the tier `inhibits` SceneEdge to draw a
+    flat perpendicular T-bar, not an arrowhead** (`_EDGE_DEFAULTS["inhibits"]` has
+    `arrow:True` — wrong terminator; mirror the pathway T-bar convention
+    `convention_check` already enforces for INHIBITS relations).
+  *Done when:* each glyph renders from IR and registers as a single `PrimitiveSpec`;
+  the blob's cavity anchors resolve; the inhibition edge draws a T-bar.
+
+- [ ] **P7.4 — Aspirin/COX-1 acceptance render.** Author the full IR (3 tiers:
+  title / 4-step `StepSequence` mechanism row / summary bar) from the reference
+  spec and render it. A naive reader can trace the mechanism from the active sites
+  alone (MF-1 ∧ MF-2 ∧ MF-3). Compare against
+  `showcase/aspirin_cox1_anchored_proof.png`.
+  *Done when:* semantic + legibility + convention checks (now tier-aware, P7.0)
+  pass on the IR-driven render; the three MF criteria are demonstrably met; the
+  figure is committed to `showcase/` as the V3 acceptance artifact.
 
 ### Phase H — independent correctness hardening (no ordering dependency)
 
