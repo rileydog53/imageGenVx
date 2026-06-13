@@ -272,7 +272,8 @@ def render_figure(
         # P0c.3: remember the pre-coercion archetype before the rebind erases it.
         # The plan carries it so Step-7 primitives can tell a genuine PATHWAY from
         # a coerced REACTION_SCHEME (whose chemistry layer was dropped) and refuse
-        # to silently no-op on the latter.
+        # to silently no-op on the latter. Forward seam — intentionally recorded
+        # but unconsumed until Step 7 wires the chemistry primitives that read it.
         coerced_from = ir.archetype
         ir = ir.model_copy(update={"archetype": Archetype.PATHWAY})
 

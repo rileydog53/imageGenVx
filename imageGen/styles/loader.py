@@ -182,30 +182,18 @@ def list_presets() -> list[str]:
     return sorted(p.stem for p in PRESET_DIR.glob("*.json"))
 
 
-def list_style_keys(*, include_layout_params: bool = False) -> list[str]:
+def list_style_keys() -> list[str]:
     """Return the sorted vocabulary of recognised ``style_dict`` keys (P0c.2).
 
     These are the keys a preset's ``overrides`` block (and any per-figure /
     per-node ``style`` dict) may set — the union of every primitive module's
     ``DEFAULT_STYLE`` (``KNOWN_STYLE_KEYS``). It is the same set ``load_preset_full``
     validates ``overrides`` against, so this is the authoritative inventory rather
-    than a hand-kept list.
-
-    Args:
-        include_layout_params: When True, append the aesthetic layout-param keys
-            (``KNOWN_LAYOUT_PARAMS`` — band/panel colours, strokes, fonts) that a
-            preset may also carry. These ride a separate channel
-            (``load_layout_params``) from the style_dict, so they are excluded by
-            default to keep the style-key inventory unambiguous.
-
-    Returns:
-        A sorted list of key names (style keys, then layout-param keys when
-        requested — each group sorted, the layout group appended after).
+    than a hand-kept list. The aesthetic layout params (``KNOWN_LAYOUT_PARAMS``)
+    ride a separate channel (``load_layout_params``) and are intentionally not
+    folded in here; the ``styles`` CLI prints them under their own heading.
     """
-    keys = sorted(KNOWN_STYLE_KEYS)
-    if include_layout_params:
-        keys += sorted(KNOWN_LAYOUT_PARAMS)
-    return keys
+    return sorted(KNOWN_STYLE_KEYS)
 
 
 def _load_and_warn(name: str) -> StylePreset:

@@ -374,7 +374,10 @@ def main(argv: list[str] | None = None) -> int:
 
     # Subcommand sniff: the legacy CLI takes a positional IR_PATH first, so
     # a literal `render-spec` / `styles` token in slot 0 unambiguously selects
-    # the new mode without breaking the old one.
+    # the new mode without breaking the old one. Two chained sniffs is below the
+    # threshold where a dispatch table pays for itself; if a 3rd subcommand lands,
+    # extract a `{token: handler}` table here (and pull render-spec's inline body
+    # into its own `_run_*` handler to match).
     if raw and raw[0] == "styles":
         return _run_styles(raw[1:])
     if raw and raw[0] == "render-spec":

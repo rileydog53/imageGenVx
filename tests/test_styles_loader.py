@@ -41,14 +41,8 @@ def test_list_style_keys_is_the_known_set_sorted():
     assert set(keys) == set(KNOWN_STYLE_KEYS)
     # Authoritative: the same set load_preset_full validates overrides against.
     assert len(keys) == len(KNOWN_STYLE_KEYS)
-
-
-def test_list_style_keys_layout_params_appended():
-    base = list_style_keys()
-    full = list_style_keys(include_layout_params=True)
-    assert full == base + sorted(KNOWN_LAYOUT_PARAMS)
-    # Layout params excluded by default (separate channel).
-    assert set(KNOWN_LAYOUT_PARAMS).isdisjoint(base)
+    # Layout params ride a separate channel and are not folded into the vocabulary.
+    assert set(KNOWN_LAYOUT_PARAMS).isdisjoint(keys)
 
 
 # ---------------------------------------------------------------------------
