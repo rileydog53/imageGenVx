@@ -17,9 +17,10 @@ first, then dive into the detail docs linked below.
 | 0b | **Pre-Step-6 style seams** — tiered figures honour the journal preset; two-channel additive cascade (content vs structural); dense `_build_panel_styles`; preset-name-axis guardrail. Suite: 1064 → 1078. | ✅ LANDED (2026-06-13) |
 | 6 | **Step expansion** — slot-granular `StepSequence` → N concrete validated `Scene`s (add/remove/replace/add_label), per-step style via the cascade, adversarially hardened. Suite: 1078 green. | ✅ LANDED (2026-06-13) |
 | 0c | **Pre-Step-7 seams** — `PrimitiveSpec` single-site registry, `list_style_keys()` + `styles --keys` CLI, `LoweringPlan.coerced_from` record. Suite: 1082 → 1097. | ✅ LANDED (2026-06-13) |
-| 7 | **Primitive refresh + expansion** — curly arrows (V3-C4), TS partial bonds, organic shaded blobs, per-atom anchors. **Aspirin/COX-1 reproduction is the acceptance test** (gated by MF-1/2/3). | **← NEXT** |
+| 7 | **Primitive refresh + expansion** — curly arrows (V3-C4), TS partial bonds, organic shaded blobs, per-atom anchors. **Aspirin/COX-1 reproduction is the acceptance test** (gated by MF-1/2/3). | ✅ LANDED (2026-06-14) — **V3 FEATURE-COMPLETE** |
 
-**Current test count:** 1097 passing.
+**Current test count:** 1153 passing. **🎉 The V3 scene chassis is feature-complete
+— all numbered steps (1–7) have landed.**
 
 > **Chassis Phase 0a + Step 5 COMPLETE — landed 2026-06-12.** The chassis arc
 > (`V3_CHASSIS_ARC_BLUEPRINT.md`) shipped in commit boundaries C1–C7:
@@ -68,6 +69,62 @@ first, then dive into the detail docs linked below.
 > `LoweringPlan.coerced_from` (captured before the `model_copy` rebind, no
 > `schema.py` touch) so Step-7 primitives can refuse to no-op on a coerced
 > archetype. +15 tests; 1097 green. **Step 7 is now unblocked.**
+
+> **Step 7 P7.4 — aspirin/COX-1 acceptance render — landed 2026-06-14. V3 IS
+> FEATURE-COMPLETE.** The full 3-tier IR (`showcase/aspirin_cox1_v3_acceptance.{json,png,svg}`)
+> renders self-contained and passes all three tier-aware checks; a naive reader can
+> trace the mechanism from the active sites alone (MF-1 ∧ MF-2 ∧ MF-3). A per-slot
+> `style['scale']` lets a small molecule/residue sit inside a full-size blob cavity.
+> Locked by `tests/test_acceptance_aspirin_cox1.py`. ⚠️ The mechanism row is 4
+> *authored* scenes (not a StepSequence) — slot-granular deltas can't add per-step
+> edges, so authored scenes give the per-step curly/TS edges. **All numbered steps
+> 1–7 are done; 1153 green.**
+
+> **Step 7 P7.3 — north-star primitives — landed 2026-06-14.** `proteins.protein_blob`
+> (organic silhouette + centre highlight + cavity pocket; a BLOB slot publishes
+> `cavity_*` anchors); `glyphs.tablet` + `glyphs.pg_cluster` (`reduced` → sparse);
+> a `partial` edge style = TS half-bond; the tier `inhibits` edge now draws a
+> **T-bar** (with a `convention_check` audit). GLYPH slots render any registered
+> primitive via `style['glyph']`. Key fix: `_deoverlap_coincident` exempts
+> cavity-attached children so a residue stays *inside* the pocket (MF-3's
+> center-tangle separation is unaffected). 3 new PrimitiveSpecs; +21 tests; two
+> visual proofs. 1148 green. **Next: P7.4 — the aspirin/COX-1 acceptance render
+> (the final item; feature-complete when it lands).**
+
+> **Step 7 P7.2 — arrow-pushing curly primitive (MF-2) — landed 2026-06-13.**
+> `render_molecule_anchored` now publishes **bond-midpoint** anchors (`bond_a1_a2`
+> + index/name aliases) and **lone-pair** anchors (`lp_a{map}`) so a curly arrow
+> can originate at a C=O π bond or an O lone pair, not only an atom centre.
+> `_edge_group` gained `curl` (handedness) and `arc='s'` (S-shaped cubic =
+> electron flow) plus a narrower organic arrowhead — all default-off, so every
+> existing curved edge is byte-identical. Endpoints stay registry-resolved (a head
+> into void is impossible). +9 tests; visual proof rendered. 1127 green. **Next:
+> P7.3** (blob/TS-bond/tablet/PG-cluster glyphs + the inhibits T-bar fix).
+
+> **Step 7 P7.1 — residues as real fragments (MF-1) — landed 2026-06-13.**
+> Heteroatoms already rendered as coloured letters in the IR-driven path, so MF-1
+> meant *routing residues through it*. `render_molecule_anchored` gained an opt-in
+> `open_valence` (dummy `*` → blanked label = dangling-bond stub + published
+> `attach` anchor; default off → existing depictions byte-identical);
+> `render_residue_anchored` + a `_RESIDUE_SMILES` map (ser530/his513/… reactive
+> atom → `a1`) wrap it, and RESIDUE slots now render through the shared molecule
+> path so `scene.slot.a1`/`scene.slot.attach` resolve for H-bond/curly edges. The
+> P0c.3 `coerced_from` seam is consumed: the coercion drop-warning fires off the
+> resolved plan and names the dropped entities. +10 tests; visual proof rendered.
+> 1118 green. **Next: P7.2** (curly-arrow handedness/arc — the arrow still bows
+> crudely across the molecule).
+
+> **Step 7 P7.0 — tier-aware verification — landed 2026-06-13.** Both
+> `semantic_check` and `convention_check` walked only entities/panels, so a tier
+> figure (the acceptance render's shape) passed *vacuously*. A shared
+> `tier_rendered_scenes(tier)` helper (`tier_layout.py`, reuses `_tier_scene_list`
+> → cannot drift from the engine) enumerates the scenes a tier actually draws
+> (SCENE_ROW scenes + expanded `step_sequence` steps + overlays). `semantic_check`
+> now requires every rendered slot's `"<scene.id>.<slot.id>"` id; `convention_check`
+> audits shape-bearing slot kinds against `_SLOT_KIND_SHAPE` (BLOB→path, BOX→rect
+> as forward seams for P7.3; composite/text kinds skipped). Purely additive — no
+> `schema.py` touch, every error substring preserved. +12 tests incl. a
+> both-directions engine/verifier drift guard. 1108 green. **Next: P7.1.**
 
 > **`Tier.overlays` now render — landed 2026-06-13.** A follow-up to the Step 6
 > review (overlays were accepted by the schema + promised in the docstring but

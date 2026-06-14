@@ -16,6 +16,10 @@ Conventions enforced:
     ``EntityType`` default) — so this catches both an inconsistency *and* a
     whole type rendered with the wrong shape, and never disagrees with what
     layout actually drew.
+  * Every shape-bearing tier-scene slot renders its kind's conventional glyph
+    (``_SLOT_KIND_SHAPE``) — the scene-chassis analogue of the entity check
+    (P7.0). Composite/text slot kinds (molecule, residue, glyph, text) have no
+    single conventional shape and are skipped.
 
 Scope:
   Mirrors ``semantic_check``'s dispatch — REACTION_SCHEME (sub-)figures
@@ -23,6 +27,9 @@ Scope:
   per-relation ids, so they are skipped. A missing element is
   ``semantic_check``'s responsibility; ``convention_check`` assumes the
   figure already passed Step 1 and silently skips any id it cannot find.
+  A TIER figure (mutually exclusive with entities/panels) is audited at the
+  slot level via ``tier_rendered_scenes`` (SCENE_ROW scenes, expanded
+  ``step_sequence`` steps, and overlays).
 
 Failure mode:
   Raises ``ConventionCheckError`` on the first violation, matching the
@@ -39,8 +46,16 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Iterator, Literal
 
-from imageGen.ir.schema import Archetype, Figure, RelationType
+from imageGen.ir.schema import (
+    Archetype,
+    Figure,
+    RelationType,
+    Scene,
+    SceneEdgeType,
+    SlotKind,
+)
 from imageGen.layout._geom import resolve_entity_primitive
+from imageGen.layout.tier_layout import tier_rendered_scenes
 # P0c.1: the primitive → shape-tag map and the composite skip-set are derived
 # from the single PRIMITIVE_SPECS list. Aliased to the historical private names
 # so this module's consumers (and tests importing them) are unchanged.
@@ -50,7 +65,7 @@ from imageGen.primitives.primitive_specs import (
 )
 from imageGen.render.compositor import scoped_id
 
-_Kind = Literal["inhibition_arrow", "entity_shape"]
+_Kind = Literal["inhibition_arrow", "entity_shape", "slot_shape"]
 
 # SVG tags that count as an entity's primary shape, matched in the order
 # the primitives emit children — the shape glyph is always drawn before
@@ -61,6 +76,25 @@ _SHAPE_TAGS = ("rect", "polygon", "ellipse", "circle", "path", "polyline")
 # `_SKIP_SHAPE_PRIMITIVES` (composite primitives with no conventional glyph) are
 # imported above from `primitives/primitive_specs.py` — `_geom` owns the
 # `EntityType → primitive` mapping, the spec list owns `primitive → shape tag`.
+
+# P7.0: a tier scene Slot's conventional primary shape, by kind. ``None`` = a
+# composite/text/container kind with no single conventional glyph (skipped, the
+# scene-chassis analogue of `_SKIP_SHAPE_PRIMITIVES` for molecule entities). The
+# two shape-bearing kinds are forward seams for the Step-7 primitive refresh
+# (P7.3): a BLOB's organic silhouette is a `<path>`, a BOX's callout border a
+# `<rect>`. This map is the single place that convention is recorded — when those
+# primitives land they must emit the listed tag (mirroring the `_PRIMITIVE_SHAPE`
+# maintenance contract for entities).
+_SLOT_KIND_SHAPE: dict[SlotKind, str | None] = {
+    SlotKind.BLOB: "path",     # organic protein-surface silhouette (P7.3a)
+    SlotKind.BOX: "rect",      # bordered callout / aspirin box
+    SlotKind.MOLECULE: None,   # composite molecular fragment — no single shape
+    SlotKind.RESIDUE: None,    # composite side-chain fragment (P7.1)
+    SlotKind.GLYPH: None,      # composite icon (tablet, dot-cluster, ...)
+    SlotKind.TEXT: None,       # text only
+    SlotKind.GROUP: None,      # nested container
+    SlotKind.GENERIC: None,    # escape hatch
+}
 
 
 class ConventionCheckError(RuntimeError):
@@ -167,6 +201,82 @@ def _check_entity_shapes(
             )
 
 
+def _check_slot_shapes(
+    scenes: list[Scene], groups: dict[str, ET.Element]
+) -> None:
+    """Verify every shape-bearing tier-scene slot renders its kind's glyph.
+
+    The scene-chassis analogue of ``_check_entity_shapes``: a slot group is
+    tagged ``"<scene.id>.<slot.id>"`` (no panel chain — tier entries are
+    unscoped, D1). A slot kind with no single conventional glyph
+    (``_SLOT_KIND_SHAPE[kind] is None`` — molecule/text/container/…) is skipped;
+    a missing group is ``semantic_check``'s responsibility. GROUP slots nest
+    further but neither render nor define an id scheme yet (Step 7), so only the
+    scene's top-level slots are walked.
+    """
+    for scene in scenes:
+        for slot in scene.slots:
+            expected = _SLOT_KIND_SHAPE.get(slot.kind)
+            if expected is None:
+                continue  # composite / text / container — no conventional shape
+            sid = f"{scene.id}.{slot.id}"
+            group = groups.get(sid)
+            if group is None:
+                continue  # missing element — semantic_check's responsibility
+            actual = next(
+                (_tag(el) for el in group.iter() if _tag(el) in _SHAPE_TAGS), None
+            )
+            if actual is None:
+                raise ConventionCheckError(
+                    "slot_shape", sid, f"slot {sid!r} renders no shape element"
+                )
+            if actual != expected:
+                raise ConventionCheckError(
+                    "slot_shape",
+                    sid,
+                    f"slot {sid!r} (kind {slot.kind.value}) renders as "
+                    f"<{actual}> but the {slot.kind.value} convention is "
+                    f"<{expected}>",
+                )
+
+
+def _check_tier_inhibition_edges(
+    scenes: list[Scene], transitions, groups: dict[str, ET.Element]
+) -> None:
+    """Verify every tier INHIBITS edge is drawn with a T-bar, not an arrowhead.
+
+    The scene-chassis analogue of ``_check_inhibition_arrows`` (P7.3c): an
+    INHIBITS ``SceneEdge`` (intra-scene ``connect``) or ``TierEdge`` (cross-cell
+    ``transition``) must terminate in a square-capped ``<line>`` T-bar, never a
+    ``<polygon>`` arrowhead — repression and activation carry opposite meaning.
+    """
+    targets = [e.ir_id for s in scenes for e in s.connect
+               if e.type == SceneEdgeType.INHIBITS]
+    targets += [te.ir_id for te in transitions
+                if te.type == SceneEdgeType.INHIBITS]
+    for ir_id in targets:
+        group = groups.get(ir_id)
+        if group is None:
+            continue  # missing element — semantic_check's responsibility
+        has_polygon = has_t_bar = False
+        for el in group.iter():
+            tag = _tag(el)
+            if tag == "polygon":
+                has_polygon = True
+            elif tag == "line" and el.get("stroke-linecap") == "square":
+                has_t_bar = True
+        if has_polygon:
+            raise ConventionCheckError(
+                "inhibition_arrow", ir_id,
+                f"tier inhibition edge {ir_id!r} is drawn with an arrowhead "
+                "(<polygon>) instead of a T-bar")
+        if not has_t_bar:
+            raise ConventionCheckError(
+                "inhibition_arrow", ir_id,
+                f"tier inhibition edge {ir_id!r} has no T-bar (square-capped "
+                "<line>) terminus")
+
+
 def convention_check(ir: Figure, svg_path: str | Path) -> None:
     """Verify visual conventions hold in a rendered SVG.
 
@@ -176,8 +286,9 @@ def convention_check(ir: Figure, svg_path: str | Path) -> None:
 
     Raises:
         ConventionCheckError: On the first convention violation — an
-            inhibition arrow without a T-bar, or an entity rendered with
-            the wrong shape for its type.
+            inhibition arrow without a T-bar, an entity rendered with the
+            wrong shape for its type, or a tier-scene slot rendered with the
+            wrong glyph for its kind.
     """
     root = ET.parse(str(svg_path)).getroot()
     groups = {el.get("id"): el for el in root.iter() if el.get("id") is not None}
@@ -187,3 +298,12 @@ def convention_check(ir: Figure, svg_path: str | Path) -> None:
             continue  # composite reaction_0 group — no per-element ids
         _check_inhibition_arrows(figure, panel_chain, groups)
         _check_entity_shapes(figure, panel_chain, groups)
+
+    # P7.0: audit tier-scene slot shapes. Tiers are mutually exclusive with
+    # entities/panels (so the loop above no-ops on them) and their slot groups
+    # are tagged unscoped at the top level, so walk ``ir.tiers`` directly and
+    # check each shape-bearing slot's glyph against its kind's convention.
+    for tier in ir.tiers:
+        scenes = tier_rendered_scenes(tier)
+        _check_slot_shapes(scenes, groups)
+        _check_tier_inhibition_edges(scenes, tier.transitions, groups)

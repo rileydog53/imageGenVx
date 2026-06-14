@@ -63,7 +63,12 @@ from imageGen.ir.schema import (
 from imageGen.layout.anchors import AnchorRegistry
 from imageGen.layout.label_placement import LabelRequest, place_labels
 from imageGen.layout.types import LayoutEntry
-from imageGen.primitives.chemistry import render_molecule_anchored
+from imageGen.primitives.chemistry import (
+    render_molecule_anchored,
+    render_residue_anchored,
+)
+from imageGen.primitives.primitive_specs import PRIMITIVE_REGISTRY
+from imageGen.primitives.proteins import protein_blob
 from imageGen.styles.loader import merge_style
 
 
@@ -145,12 +150,12 @@ def _preset_tier_params(style_dict: dict[str, Any] | None) -> dict[str, Any]:
 _EDGE_DEFAULTS: dict[str, dict[str, Any]] = {
     "hbond":      {"stroke": "#CC2222", "dash": "4,3", "curved": True,  "arrow": False},
     "dashed":     {"stroke": "#CC2222", "dash": "4,3", "curved": False, "arrow": False},
-    "curly":      {"stroke": "#1A1A1A", "dash": None,  "curved": True,  "arrow": True},
+    "curly":      {"stroke": "#1A1A1A", "dash": None,  "curved": True,  "arrow": True, "head_w": 0.4},
     "transition": {"stroke": "#1A1A1A", "dash": None,  "curved": False, "arrow": True},
     "departs":    {"stroke": "#33AA33", "dash": None,  "curved": False, "arrow": True},
     "binds":      {"stroke": "#1A1A1A", "dash": None,  "curved": False, "arrow": True},
     "activates":  {"stroke": "#1A1A1A", "dash": None,  "curved": False, "arrow": True},
-    "inhibits":   {"stroke": "#CC2222", "dash": None,  "curved": False, "arrow": True},
+    "inhibits":   {"stroke": "#CC2222", "dash": None,  "curved": False, "arrow": False, "tbar": True},
     "generic":    {"stroke": "#1A1A1A", "dash": None,  "curved": False, "arrow": True},
 }
 
@@ -254,14 +259,18 @@ def _column_rects(
 # ---------------------------------------------------------------------------
 
 def _arrow_head(p0: tuple[float, float], p1: tuple[float, float], color: str,
-                size: float = 8.0) -> svgwrite.shapes.Polygon:
-    """A filled triangular arrowhead at ``p1`` pointing along p0->p1."""
+                size: float = 8.0, width_frac: float = 0.5) -> svgwrite.shapes.Polygon:
+    """A filled triangular arrowhead at ``p1`` pointing along p0->p1.
+
+    ``width_frac`` is the half-width as a fraction of ``size``; the 0.5 default is
+    the blunt pathway/transition head, a smaller value (P7.2) gives the narrower,
+    pen-like head of an organic-chem arrow-pushing curly arrow."""
     x0, y0 = p0
     x1, y1 = p1
     angle = math.atan2(y1 - y0, x1 - x0)
     bx = x1 - size * math.cos(angle)
     by = y1 - size * math.sin(angle)
-    px, py = -math.sin(angle) * size * 0.5, math.cos(angle) * size * 0.5
+    px, py = -math.sin(angle) * size * width_frac, math.cos(angle) * size * width_frac
     return svgwrite.shapes.Polygon(
         points=[(round(x1, 2), round(y1, 2)),
                 (round(bx + px, 2), round(by + py, 2)),
@@ -279,27 +288,76 @@ def _edge_group(
     stroke = str((edge_style or {}).get("stroke", spec["stroke"]))
     width = float((edge_style or {}).get("stroke_width", 2.0))
     g = svgwrite.container.Group()
+    if (edge_style or {}).get("partial"):
+        # P7.3b: a transition-state partial bond — a thin, finely-dashed straight
+        # stub between two atom anchors (a breaking/forming half-bond). An
+        # anchor-pair overlay, never an arrow or T-bar; overrides the type's
+        # heavier dash/width so it reads as a fractional bond.
+        bond = svgwrite.shapes.Line(
+            start=p0, end=p1, stroke=stroke,
+            stroke_width=float((edge_style or {}).get("stroke_width", 1.2)))
+        bond["stroke-dasharray"] = str((edge_style or {}).get("dash", "2,2.5"))
+        bond["stroke-linecap"] = "round"
+        g.add(bond)
+        return g
     head_from = p0  # arrowhead is aimed along this->p1; for a curve, the tangent
     if spec["curved"]:
         (x0, y0), (x1, y1) = p0, p1
-        mx, my = (x0 + x1) / 2.0, (y0 + y1) / 2.0
         dx, dy = x1 - x0, y1 - y0
         length = math.hypot(dx, dy) or 1.0
         bow = float((edge_style or {}).get("bow", min(20.0, length * 0.25)))
-        cx, cy = mx - dy / length * bow, my + dx / length * bow
+        # P7.2 (MF-2): handedness + arc control for arrow-pushing. ``px,py`` is the
+        # unit perpendicular to the left of p0->p1; ``side`` flips which way the
+        # arc bulges. Both default so every existing curved edge (hbond / curly)
+        # stays byte-identical: side=+1 reproduces the old single-perp control.
+        px, py = -dy / length, dx / length
+        curl = str((edge_style or {}).get("curl", "")).lower()
+        side = -1.0 if curl in ("cw", "right", "-1", "-") else 1.0
+        arc = str((edge_style or {}).get("arc", "c")).lower()
         attrs = {"fill": "none", "stroke": stroke, "stroke_width": width}
         if spec["dash"]:
             attrs["stroke_dasharray"] = spec["dash"]
-        g.add(svgwrite.path.Path(
-            d=f"M {x0:.2f},{y0:.2f} Q {cx:.2f},{cy:.2f} {x1:.2f},{y1:.2f}", **attrs))
-        head_from = (cx, cy)  # quadratic Bézier arrives at p1 tangent to c->p1
+        if arc == "s":
+            # S-shaped cubic: the two control points bow to OPPOSITE sides, the
+            # swing-out-and-back of electron flow around an intervening atom.
+            c1 = (x0 + dx / 3.0 + px * bow * side, y0 + dy / 3.0 + py * bow * side)
+            c2 = (x0 + 2.0 * dx / 3.0 - px * bow * side,
+                  y0 + 2.0 * dy / 3.0 - py * bow * side)
+            g.add(svgwrite.path.Path(
+                d=(f"M {x0:.2f},{y0:.2f} C {c1[0]:.2f},{c1[1]:.2f} "
+                   f"{c2[0]:.2f},{c2[1]:.2f} {x1:.2f},{y1:.2f}"), **attrs))
+            head_from = c2  # cubic arrives at p1 tangent to c2->p1
+        else:
+            mx, my = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+            cx, cy = mx + px * bow * side, my + py * bow * side
+            g.add(svgwrite.path.Path(
+                d=f"M {x0:.2f},{y0:.2f} Q {cx:.2f},{cy:.2f} {x1:.2f},{y1:.2f}",
+                **attrs))
+            head_from = (cx, cy)  # quadratic arrives at p1 tangent to c->p1
     else:
         attrs = {"start": p0, "end": p1, "stroke": stroke, "stroke_width": width}
         if spec["dash"]:
             attrs["stroke_dasharray"] = spec["dash"]
         g.add(svgwrite.shapes.Line(**attrs))
     if spec["arrow"]:
-        g.add(_arrow_head(head_from, p1, stroke))
+        head_w = float((edge_style or {}).get("head_width", spec.get("head_w", 0.5)))
+        g.add(_arrow_head(head_from, p1, stroke, width_frac=head_w))
+    if spec.get("tbar"):
+        # P7.3c: an INHIBITS edge terminates in a flat perpendicular T-bar, never
+        # an arrowhead (repression vs. activation carry opposite meaning). Mirrors
+        # the pathway T-bar convention `convention_check` enforces: a square-capped
+        # <line> across p1, perpendicular to the incoming tangent.
+        hx, hy = head_from
+        dx, dy = p1[0] - hx, p1[1] - hy
+        length = math.hypot(dx, dy) or 1.0
+        px, py = -dy / length, dx / length
+        half = float((edge_style or {}).get("tbar_len", 7.0))
+        bar = svgwrite.shapes.Line(
+            start=(round(p1[0] - px * half, 2), round(p1[1] - py * half, 2)),
+            end=(round(p1[0] + px * half, 2), round(p1[1] + py * half, 2)),
+            stroke=stroke, stroke_width=width)
+        bar["stroke-linecap"] = "square"
+        g.add(bar)
     return g
 
 
@@ -342,10 +400,17 @@ def _deoverlap_coincident(
     Members of a coincident group are laid side by side, centred on the shared
     point, in scene declaration order (deterministic). The spread is vertical
     when every member binds via a horizontal edge (left/right) — stacking
-    same-edge siblings — and horizontal otherwise, which covers center/cavity
-    co-location, the common case.
-    """
-    order = [s.id for s in scene.slots if s.id in centers]
+    same-edge siblings — and horizontal otherwise, the common case.
+
+    A **cavity**-attached child (P7.3a) is exempt: it is *deliberately* placed
+    inside its parent's binding pocket (a ligand/residue in a blob cavity), so it
+    must stay coincident with the parent rather than be pushed out. Two children
+    sharing one pocket are separated with the cavity_top/cavity_bottom edges, not
+    by this pass."""
+    cavity_attached = {a.child for a in scene.attach
+                       if a.edge.value.startswith("cavity")}
+    order = [s.id for s in scene.slots
+             if s.id in centers and s.id not in cavity_attached]
     groups: dict[tuple[int, int], list[str]] = {}
     for sid in order:
         groups.setdefault(_coincident_key(centers[sid]), []).append(sid)
@@ -549,29 +614,49 @@ def _layout_scene(
     for slot in scene.slots:
         center = centers.get(slot.id, (cx + cw / 2.0, cy + ch / 2.0))
         scoped = f"{scene.id}.{slot.id}"
-        if slot.kind == SlotKind.MOLECULE:
+        # P7.4: a slot may render at a fraction of the cell (style['scale']) so a
+        # small molecule/residue sits *inside* a full-size blob cavity without
+        # dwarfing it. Defaults to 1.0 → unchanged. Placement (the solver) still
+        # uses the full slot box; only the drawn glyph shrinks.
+        scale = float((slot.style or {}).get("scale", 1.0))
+        ssw, ssh = sw * scale, sh * scale
+        if slot.kind in (SlotKind.MOLECULE, SlotKind.RESIDUE):
+            # MOLECULE and RESIDUE share the anchored-fragment path (MF-1: one
+            # chemistry convention everywhere). A RESIDUE additionally resolves a
+            # named side chain (style['residue']) and renders with an open-valence
+            # dangling bond + an attachment anchor.
             style = slot.style or {}
+            is_residue = slot.kind == SlotKind.RESIDUE
             smiles = style.get("smiles")
-            if not smiles:
+            residue = style.get("residue")
+            if not smiles and not (is_residue and residue):
+                need = "style['smiles']" + (" or style['residue']" if is_residue else "")
                 raise ValueError(
-                    f"molecule slot '{scene.id}.{slot.id}' needs style['smiles']")
+                    f"{slot.kind.value} slot '{scene.id}.{slot.id}' needs {need}")
             names = {int(k): v for k, v in (style.get("anchor_names") or {}).items()}
             # P5.4 Nit-2: render at the integer pixel size actually used and
             # centre on that SAME rounded size, so the molecule (and its
             # published anchors) sit dead-centre instead of drifting up to half a
             # pixel from the int() floor. Default (180, 140) rounds to itself.
-            rw, rh = int(round(sw)), int(round(sh))
+            rw, rh = int(round(ssw)), int(round(ssh))
             top_left = (center[0] - rw / 2.0, center[1] - rh / 2.0)
             # Content cascade: preset ⊕ tier ⊕ scene ⊕ this slot's style
-            # overrides (content keys smiles/anchor_names dropped). Empty → the
-            # renderer's DEFAULT_STYLE, byte-identical to the no-style call.
+            # overrides (content/control keys dropped). Empty → the renderer's
+            # DEFAULT_STYLE, byte-identical to the no-style call.
             mol_style = merge_style(
                 scene_content,
                 {k: v for k, v in style.items()
-                 if k not in ("smiles", "anchor_names")})
-            ag = render_molecule_anchored(str(smiles), size=(rw, rh),
-                                          anchor_names=names,
-                                          style_dict=mol_style or None)
+                 if k not in ("smiles", "anchor_names", "residue", "attach_anchor",
+                              "scale")})
+            if is_residue:
+                ag = render_residue_anchored(
+                    str(residue or smiles), size=(rw, rh), anchor_names=names,
+                    style_dict=mol_style or None,
+                    attach_anchor=str(style.get("attach_anchor", "attach")))
+            else:
+                ag = render_molecule_anchored(str(smiles), size=(rw, rh),
+                                              anchor_names=names,
+                                              style_dict=mol_style or None)
             registry.publish(scoped, ag.anchors, offset=top_left)
             entries.append(LayoutEntry(
                 (lambda g=ag.group: g), (), {}, top_left, ir_id=scoped))
@@ -590,10 +675,48 @@ def _layout_scene(
                     _text_group(t, (c[0], c[1] + f * 0.35), f, col, fam,
                                 anchor="middle")),
                 (), {}, (0.0, 0.0), ir_id=scoped))
+        elif slot.kind == SlotKind.BLOB:
+            # P7.3a: an organic protein surface with a binding cavity. The label
+            # is placed by the scene-label pass (like MOLECULE), so the primitive
+            # renders unlabelled. Publish cavity_* anchors at the box centre +
+            # quarter-offsets — matching _SLOT_EDGE_OFFSETS — so an attach-into-
+            # cavity edge and any SceneEdge land where the pocket is drawn.
+            blob_style = merge_style(
+                scene_content,
+                {k: v for k, v in (slot.style or {}).items()
+                 if k not in ("glyph", "scale")})
+            grp = protein_blob("", center, (ssw, ssh), style_dict=blob_style or None)
+            registry.publish(scoped, {
+                "center": center,
+                "cavity_center": center,
+                "cavity_top": (center[0], center[1] - 0.25 * sh),
+                "cavity_bottom": (center[0], center[1] + 0.25 * sh),
+            })
+            entries.append(LayoutEntry(
+                (lambda g=grp: g), (), {}, (0.0, 0.0), ir_id=scoped))
+        elif slot.kind == SlotKind.GLYPH:
+            # P7.3c: render any registered primitive (P0c.1) as a scene icon —
+            # tablet, pg_cluster, protein_blob, or any other registry entry —
+            # named by style['glyph']. Label placed by the scene-label pass.
+            gname = (slot.style or {}).get("glyph")
+            if gname not in PRIMITIVE_REGISTRY:
+                raise ValueError(
+                    f"glyph slot '{scene.id}.{slot.id}' needs a known "
+                    f"style['glyph'] (got {gname!r}); register it as a "
+                    "PrimitiveSpec to use it as a scene glyph")
+            glyph_style = merge_style(
+                scene_content,
+                {k: v for k, v in (slot.style or {}).items()
+                 if k not in ("glyph", "scale")})
+            grp = PRIMITIVE_REGISTRY[gname](
+                "", center, (ssw, ssh), style_dict=glyph_style or None)
+            registry.publish(scoped, {"center": center})
+            entries.append(LayoutEntry(
+                (lambda g=grp: g), (), {}, (0.0, 0.0), ir_id=scoped))
         else:
             raise NotImplementedError(
                 f"SlotKind {slot.kind.value!r} is not yet supported by the "
-                f"Step-3 tier-layout slice (slot '{scene.id}.{slot.id}')")
+                f"tier-layout engine (slot '{scene.id}.{slot.id}')")
         boxes.append(_slot_bbox(slot, center, (sw, sh), params))
 
     # Scene-frame anchors from the CONTENT extent (cell-vs-content fix). Falls
@@ -784,7 +907,10 @@ def _slot_bbox(
     extent — what cross-cell transition arrows reach to, instead of the wider
     cell frame (the cell-vs-content fix)."""
     cxc, cyc = center
-    if slot.kind == SlotKind.MOLECULE:
+    # RESIDUE (a real fragment), BLOB (an organic surface) and GLYPH (a registered
+    # icon) all fill the slot box exactly like a MOLECULE.
+    if slot.kind in (SlotKind.MOLECULE, SlotKind.RESIDUE, SlotKind.BLOB,
+                     SlotKind.GLYPH):
         sw, sh = slot_size
         return (cxc - sw / 2.0, cyc - sh / 2.0, cxc + sw / 2.0, cyc + sh / 2.0)
     if slot.kind == SlotKind.TEXT:
@@ -946,6 +1072,24 @@ def _tier_scene_count(tier: Tier) -> int:
     if tier.step_sequence is not None:
         return len(tier.step_sequence.steps)
     return len(tier.scenes)
+
+
+def tier_rendered_scenes(tier: Tier) -> list[Scene]:
+    """The scenes a tier lays out into tagged slot groups (P7.0).
+
+    The verify-facing, lockstep view of what :func:`layout_tiers` actually draws:
+    the SCENE_ROW main scenes (authored ``scenes`` or the expanded
+    ``step_sequence``, via :func:`_tier_scene_list`) followed by the gutter
+    ``overlays`` — exactly the scenes the SCENE_ROW branch passes through
+    :func:`_layout_scene`, where each slot is tagged ``"<scene.id>.<slot.id>"``.
+    Every other role lays out no scenes today, so it contributes none; if a
+    future role grows scene rendering, update its branch in ``layout_tiers`` and
+    this gate together. ``semantic_check`` / ``convention_check`` walk this so a
+    tier figure is no longer silently un-audited.
+    """
+    if tier.role != TierRole.SCENE_ROW:
+        return []
+    return [*_tier_scene_list(tier), *tier.overlays]
 
 
 def layout_tiers(

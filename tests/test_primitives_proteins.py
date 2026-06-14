@@ -7,6 +7,7 @@ function and every visual state — these become golden-image seeds for Phase 6.
 from __future__ import annotations
 
 import math
+import xml.etree.ElementTree as ET
 
 import pytest
 import svgwrite
@@ -18,6 +19,7 @@ from imageGen.primitives.proteins import (
     generic_protein,
     gpcr,
     kinase,
+    protein_blob,
     protein_complex,
     receptor,
     transcription_factor,
@@ -272,3 +274,30 @@ def test_protein_complex_long_label_fits():
     xml = g.tostring()
     assert "NF-κB" in xml  # label still present, just fitted
     assert "<text" in xml or "<tspan" in xml
+
+
+# ---------------------------------------------------------------------------
+# P7.3a — organic protein blob with a binding cavity
+# ---------------------------------------------------------------------------
+
+def test_protein_blob_renders_silhouette_highlight_and_cavity():
+    g = protein_blob("COX-1", (120, 100), size=(96, 80))
+    assert isinstance(g, svgwrite.container.Group)
+    xml = g.tostring()
+    assert "<path" in xml                  # organic silhouette
+    assert xml.count("<ellipse") >= 2      # centre highlight + cavity pocket
+    assert "COX-1" in xml                  # label
+    render_group_to_png(g, "protein_blob.png", canvas=(160, 140))
+
+
+def test_protein_blob_first_shape_is_a_path():
+    """convention_check keys the BLOB shape off the first shape tag — it must be
+    the silhouette <path> (matches the registered PrimitiveSpec shape)."""
+    g = protein_blob("", (60, 50), size=(96, 80))
+    d = svgwrite.Drawing(size=(160, 140))
+    d.add(g)
+    root = ET.fromstring(d.tostring())
+    shape_tags = ("path", "rect", "polygon", "ellipse", "circle", "polyline")
+    first = next(el.tag.split("}")[-1] for el in root.iter()
+                 if el.tag.split("}")[-1] in shape_tags)
+    assert first == "path"

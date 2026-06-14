@@ -60,6 +60,11 @@ DEFAULT_STYLE: dict = {
     "equip_stroke": "#37474F",
     "equip_accent": "#1565C0",
     "glyph_stroke_width": 1.5,
+    # Mechanism-figure minor glyphs (P7.3c)
+    "tablet_fill": "#FAFBFC",      # aspirin tablet: a near-white scored disc
+    "tablet_stroke": "#8A95A3",
+    "pg_fill": "#E8A33D",          # prostaglandin dot-cluster (lipid mediator)
+    "pg_stroke": "#9A6A12",
     # Shared label keys (keep synchronized with the other primitive modules
     # so the master-preset union stays coherent)
     "label_font_family": "Helvetica, Arial, sans-serif",
@@ -618,5 +623,73 @@ def voltage_trace(
         thr_label["text-anchor"] = "start"
         g.add(thr_label)
 
+    _label_below(g, label, cx, cy, h, s)
+    return g
+
+
+# ---------------------------------------------------------------------------
+# Mechanism-figure minor glyphs (P7.3c)
+# ---------------------------------------------------------------------------
+
+def tablet(
+    label: str,
+    position: tuple[float, float],
+    size: tuple[float, float] = (40, 40),
+    color: Optional[str] = None,
+    style_dict: Optional[dict] = None,
+) -> svgwrite.container.Group:
+    """Aspirin tablet: a near-white scored disc (the drug-as-pill icon)."""
+    s = {**DEFAULT_STYLE, **(style_dict or {})}
+    g = svgwrite.container.Group()
+    cx, cy = position
+    w, h = size
+    r = min(w, h) * 0.34
+    disc_cy = cy - h * 0.12
+    disc = svgwrite.shapes.Circle(
+        center=(round(cx, 2), round(disc_cy, 2)), r=round(r, 2),
+        fill=color or s["tablet_fill"], stroke=s["tablet_stroke"])
+    disc["stroke-width"] = _sw(s) * 1.4
+    g.add(disc)
+    # Debossed score line across the tablet face.
+    score = svgwrite.shapes.Line(
+        start=(round(cx - r * 0.7, 2), round(disc_cy, 2)),
+        end=(round(cx + r * 0.7, 2), round(disc_cy, 2)),
+        stroke=s["tablet_stroke"])
+    score["stroke-width"] = _sw(s)
+    g.add(score)
+    _label_below(g, label, cx, cy, h, s)
+    return g
+
+
+def pg_cluster(
+    label: str,
+    position: tuple[float, float],
+    size: tuple[float, float] = (50, 50),
+    color: Optional[str] = None,
+    style_dict: Optional[dict] = None,
+) -> svgwrite.container.Group:
+    """Prostaglandin dot-cluster (a lipid-mediator pool).
+
+    ``style['reduced']=True`` draws a sparser cluster — the depleted PG pool after
+    COX-1 inhibition — so a before/after pair reads as "synthesis reduced"."""
+    s = {**DEFAULT_STYLE, **(style_dict or {})}
+    g = svgwrite.container.Group()
+    cx, cy = position
+    w, h = size
+    reduced = bool(s.get("reduced", False))
+    fill = color or s["pg_fill"]
+    # Fractional (dx, dy) offsets of each dot within the box; 'reduced' keeps a
+    # sparse subset so the depleted pool reads at a glance.
+    offsets = [(-0.22, -0.12), (0.0, -0.2), (0.22, -0.12),
+               (-0.12, 0.08), (0.14, 0.1), (0.0, -0.02)]
+    if reduced:
+        offsets = offsets[:2]
+    rdot = min(w, h) * 0.12
+    for ox, oy in offsets:
+        dot = svgwrite.shapes.Circle(
+            center=(round(cx + ox * w, 2), round(cy + oy * h - h * 0.1, 2)),
+            r=round(rdot, 2), fill=fill, stroke=s["pg_stroke"])
+        dot["stroke-width"] = _sw(s)
+        g.add(dot)
     _label_below(g, label, cx, cy, h, s)
     return g

@@ -192,3 +192,108 @@ def test_reaction_scheme_entities_not_audited(tmp_path):
         '<g id="k1"><rect x="0" y="0" width="10" height="10" /></g>',
     )
     convention_check(ir, svg)  # no exception — figure is skipped
+
+
+# ---------------------------------------------------------------------------
+# P7.0 — tier-scene slot shapes
+# ---------------------------------------------------------------------------
+
+
+def _box_slot_ir() -> Figure:
+    """A SCENE_ROW tier with a single BOX slot — the box convention is <rect>."""
+    return Figure.model_validate({
+        "archetype": "mechanism_cartoon",
+        "tiers": [{"id": "row", "role": "scene_row", "scenes": [
+            {"id": "s", "slots": [
+                {"id": "box", "kind": "box", "label": "callout"}]}]}]})
+
+
+def test_tier_molecule_text_slots_pass_convention(tmp_path):
+    """MOLECULE (composite) and TEXT (text-only) slots have no conventional
+    shape → skipped; a real tier render audits clean."""
+    ir = Figure.model_validate({
+        "archetype": "mechanism_cartoon",
+        "tiers": [{"id": "row", "role": "scene_row", "scenes": [
+            {"id": "s", "slots": [
+                {"id": "mol", "kind": "molecule", "style": {"smiles": "CCO"}},
+                {"id": "t", "kind": "text", "label": "x"}]}]}]})
+    svg = tmp_path / "fig.svg"
+    render_figure(ir, svg)
+    convention_check(ir, svg)  # no exception
+
+
+def test_tier_box_slot_wrong_shape_raises(tmp_path):
+    """A BOX slot drawn as a <polygon> violates its <rect> convention. (The
+    correct renderer can't yet emit a BOX, so the SVG is hand-built — the same
+    pattern the entity-shape failure tests use.)"""
+    ir = _box_slot_ir()
+    svg = _write_svg(tmp_path / "fig.svg",
+                     '<g id="s.box"><polygon points="0,0 1,0 1,1" /></g>')
+    with pytest.raises(ConventionCheckError) as ei:
+        convention_check(ir, svg)
+    assert ei.value.kind == "slot_shape"
+    assert ei.value.ir_id == "s.box"
+    assert ei.value.detail and ei.value.detail in str(ei.value)
+
+
+def test_tier_box_slot_correct_shape_passes(tmp_path):
+    """A BOX slot drawn as a <rect> matches its convention."""
+    ir = _box_slot_ir()
+    svg = _write_svg(tmp_path / "fig.svg",
+                     '<g id="s.box"><rect x="0" y="0" width="10" height="10" /></g>')
+    convention_check(ir, svg)  # no exception
+
+
+def test_tier_blob_slot_no_shape_raises(tmp_path):
+    """A BLOB group with no shape element at all is caught (expected <path>)."""
+    ir = Figure.model_validate({
+        "archetype": "mechanism_cartoon",
+        "tiers": [{"id": "row", "role": "scene_row", "scenes": [
+            {"id": "s", "slots": [{"id": "blob", "kind": "blob"}]}]}]})
+    svg = _write_svg(tmp_path / "fig.svg", '<g id="s.blob"><text>nope</text></g>')
+    with pytest.raises(ConventionCheckError) as ei:
+        convention_check(ir, svg)
+    assert ei.value.kind == "slot_shape"
+    assert "renders no shape element" in ei.value.detail
+
+
+def test_tier_missing_slot_group_is_semantic_checks_job(tmp_path):
+    """convention_check skips a slot id it can't find — a missing element is
+    semantic_check's responsibility, mirroring the entity-shape contract."""
+    ir = _box_slot_ir()
+    svg = _write_svg(tmp_path / "fig.svg", "<g id='unrelated'></g>")
+    convention_check(ir, svg)  # no exception — s.box absent, silently skipped
+
+
+def _inhibits_tier_ir() -> Figure:
+    """A SCENE_ROW tier with an INHIBITS cross-cell transition (a@right→b@left)."""
+    return Figure.model_validate({"archetype": "mechanism_cartoon", "tiers": [
+        {"id": "row", "role": "scene_row", "scenes": [
+            {"id": "a", "slots": [{"id": "m", "kind": "text", "label": "A"}]},
+            {"id": "b", "slots": [{"id": "m", "kind": "text", "label": "B"}]}],
+         "transitions": [{"from_ref": "a@right", "to_ref": "b@left",
+                          "type": "inhibits"}]}]})
+
+
+def test_tier_inhibition_with_arrowhead_raises(tmp_path):
+    """P7.3c: a tier INHIBITS edge drawn with an arrowhead violates the T-bar
+    convention (the bug the inhibits-T-bar fix closes)."""
+    ir = _inhibits_tier_ir()
+    svg = _write_svg(
+        tmp_path / "fig.svg",
+        '<g id="tedge_a@right_b@left"><line x1="0" y1="0" x2="10" y2="0" />'
+        '<polygon points="10,0 14,2 14,-2" /></g>')
+    with pytest.raises(ConventionCheckError) as ei:
+        convention_check(ir, svg)
+    assert ei.value.kind == "inhibition_arrow"
+    assert ei.value.ir_id == "tedge_a@right_b@left"
+
+
+def test_tier_inhibition_with_tbar_passes(tmp_path):
+    """A square-capped T-bar terminus satisfies the convention."""
+    ir = _inhibits_tier_ir()
+    svg = _write_svg(
+        tmp_path / "fig.svg",
+        '<g id="tedge_a@right_b@left"><line x1="0" y1="0" x2="10" y2="0" />'
+        '<line x1="10" y1="-5" x2="10" y2="5" stroke-linecap="square" /></g>')
+    convention_check(ir, svg)  # no exception

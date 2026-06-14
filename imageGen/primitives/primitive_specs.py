@@ -126,6 +126,10 @@ PRIMITIVE_SPECS: list[PrimitiveSpec] = [
     PrimitiveSpec("functional_group",     entity_adapters.functional_group, (110.0, 96.0), SKIP),
     # closed lipid-bilayer vesicle (EW3) — distinct from glyphs.vesicle
     PrimitiveSpec("liposome",             entity_adapters.liposome,        (96.0, 96.0), "polygon"),
+    # mechanism-figure glyphs (P7.3) — organic protein blob + minor icons
+    PrimitiveSpec("protein_blob",         proteins.protein_blob,           (96.0, 80.0), "path"),
+    PrimitiveSpec("tablet",               glyphs.tablet,                   (40.0, 40.0), "circle"),
+    PrimitiveSpec("pg_cluster",           glyphs.pg_cluster,               (50.0, 50.0), "circle"),
 ]
 
 

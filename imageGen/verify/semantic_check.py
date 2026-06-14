@@ -20,6 +20,13 @@ Scope:
   carry the panel-chain prefix, so a mis-scoped or missing panel
   surfaces as missing/mismatched child ids.
 
+  A TIER figure (mutually exclusive with entities/panels) exposes its
+  geometry as scene slots — every laid-out slot is tagged
+  ``"<scene.id>.<slot.id>"`` (D1, no panel chain). ``semantic_check`` walks
+  the scenes the engine actually draws (``tier_rendered_scenes`` — SCENE_ROW
+  scenes, expanded ``step_sequence`` steps, and overlays) so a missing or
+  mis-scoped slot is caught. Without this a tier figure passes vacuously.
+
 Failure mode:
   Raises ``SemanticCheckError`` on the first missing element. This
   matches the fail-loud precedent of ``LabelPlacementError`` in
@@ -31,11 +38,12 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Literal
 
-from imageGen.ir.schema import Archetype, Figure
+from imageGen.ir.schema import Archetype, Figure, SlotKind
 from imageGen.layout.reaction_layout import REACTION_GROUP_IR_ID
+from imageGen.layout.tier_layout import tier_rendered_scenes
 from imageGen.render.compositor import scoped_id
 
-_Kind = Literal["entity", "compartment", "relation", "reaction", "annotation"]
+_Kind = Literal["entity", "compartment", "relation", "reaction", "annotation", "slot"]
 
 
 class SemanticCheckError(RuntimeError):
@@ -95,6 +103,20 @@ def _expected_ids(
             expected.append((aid, "annotation", aid))
     for panel in figure.panels:
         expected.extend(_expected_ids(panel.content, (*panel_chain, panel.id)))
+    # P7.0: a tier figure's geometry lives in scene slots, each tagged
+    # "<scene.id>.<slot.id>" by the engine. Walk only the scenes the engine
+    # actually lays out (tier_rendered_scenes) so we never demand an id that was
+    # never drawn. GROUP slots nest further but neither render nor define an id
+    # scheme yet (Step 7) — and a GROUP slot raises at layout, so it can never
+    # reach a rendered SVG — so they are skipped. Every other leaf kind is safe
+    # to require: an unsupported kind aborts the render before this check runs.
+    for tier in figure.tiers:
+        for scene in tier_rendered_scenes(tier):
+            for slot in scene.slots:
+                if slot.kind == SlotKind.GROUP:
+                    continue
+                raw = f"{scene.id}.{slot.id}"
+                expected.append((scoped_id(raw, panel_chain), "slot", raw))
     return expected
 
 

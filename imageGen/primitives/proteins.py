@@ -71,6 +71,15 @@ DEFAULT_STYLE: dict = {
     "tf_stroke": "#8B3A3F",
     "tf_dbd_fill": "#8B3A3F",
 
+    # Organic protein-surface blob with a binding cavity (P7.3a). Edge-darker /
+    # centre-lighter shading reads as a globular surface; the cavity is the
+    # recessed pocket where a ligand/residue sits (publishes cavity_* anchors).
+    "blob_fill": "#C9D6E5",
+    "blob_stroke": "#6B7D95",
+    "blob_highlight": "#E8EEF5",
+    "blob_cavity_fill": "#94A7C0",
+    "blob_stroke_width": 1.6,
+
     # Labels (shared across all primitive modules — keep these values
     # synchronized with arrows.py, membranes.py, nucleic_acids.py, cells.py,
     # chemistry.py, lab_equipment.py so the Phase 4 master preset union
@@ -93,6 +102,102 @@ def _maybe_rotate(
     """Apply a rotation transform to *group* if angle is nonzero. SVG uses degrees."""
     if angle_rad != 0:
         group.rotate(math.degrees(angle_rad), center=center)
+
+
+# Fixed per-vertex radius multipliers — a deterministic "organic" wobble around
+# the base ellipse (no RNG, so the silhouette is identical every render). Length
+# sets the vertex count; the pattern is gently irregular and sums near 1.0.
+_BLOB_WOBBLE: tuple[float, ...] = (1.0, 0.93, 1.06, 0.95, 1.02, 0.9, 1.05, 0.94)
+
+
+def _blob_silhouette_path(
+    cx: float, cy: float, rx: float, ry: float,
+    wobble: tuple[float, ...] = _BLOB_WOBBLE,
+) -> str:
+    """A smooth closed organic-blob path around centre ``(cx, cy)``.
+
+    Vertices ride an ellipse of radii ``(rx, ry)`` scaled per-vertex by
+    ``wobble`` (a deterministic gentle irregularity). Consecutive edge midpoints
+    are joined by quadratic Béziers *through* each vertex — the classic
+    smooth-closed-curve-from-polygon construction — so the outline is rounded and
+    blobby, never a hard polygon. Returns the SVG path ``d`` string."""
+    n = len(wobble)
+    pts = []
+    for i, k in enumerate(wobble):
+        a = 2.0 * math.pi * i / n
+        pts.append((cx + math.cos(a) * rx * k, cy + math.sin(a) * ry * k))
+
+    def mid(p, q):
+        return ((p[0] + q[0]) / 2.0, (p[1] + q[1]) / 2.0)
+
+    m0 = mid(pts[-1], pts[0])
+    d = [f"M {m0[0]:.2f},{m0[1]:.2f}"]
+    for i in range(n):
+        ctrl = pts[i]
+        nxt = mid(pts[i], pts[(i + 1) % n])
+        d.append(f"Q {ctrl[0]:.2f},{ctrl[1]:.2f} {nxt[0]:.2f},{nxt[1]:.2f}")
+    d.append("Z")
+    return " ".join(d)
+
+
+def protein_blob(
+    label: str,
+    position: tuple[float, float],
+    size: tuple[float, float] = (96, 80),
+    color: Optional[str] = None,
+    style_dict: Optional[dict] = None,
+) -> svgwrite.container.Group:
+    """Organic protein surface (a globular blob) with a central binding cavity.
+
+    Convention (P7.3a, north-star Element B/J): an irregular rounded silhouette
+    with edge-darker / centre-lighter shading reading as a 3D globular surface,
+    and a visible central cavity — the pocket where a ligand or active-site
+    residue sits. The caller publishes ``cavity_*`` anchors at the slot box
+    centre and quarter-offsets (matching ``_SLOT_EDGE_OFFSETS``), so an
+    attach-into-cavity edge lands its child exactly where the pocket is drawn.
+    Reused (recoloured / scaled) as the COX-1 summary-bar icon.
+
+    Args:
+        label: optional name rendered centred over the surface.
+        position: (x, y) centre of the blob.
+        size: (width, height) bounding box.
+        color: optional fill override (defaults to ``style['blob_fill']``).
+        style_dict: presentation attrs; falls back to DEFAULT_STYLE.
+
+    Returns:
+        ``svgwrite.container.Group`` — silhouette ``<path>`` first (the
+        convention shape), then the highlight, cavity, and label.
+    """
+    s = {**DEFAULT_STYLE, **(style_dict or {})}
+    g = svgwrite.container.Group()
+    cx, cy = position
+    w, h = size
+    fill = color or s["blob_fill"]
+    rx, ry = w / 2.0, h / 2.0
+
+    surface = svgwrite.path.Path(
+        d=_blob_silhouette_path(cx, cy, rx, ry),
+        fill=fill, stroke=s["blob_stroke"])
+    surface["stroke-width"] = float(s["blob_stroke_width"])
+    surface["stroke-linejoin"] = "round"
+    g.add(surface)
+
+    # Centre-lighter highlight: a soft inner blob, offset slightly up, no stroke.
+    g.add(svgwrite.shapes.Ellipse(
+        center=(round(cx, 2), round(cy - ry * 0.12, 2)),
+        r=(round(rx * 0.46, 2), round(ry * 0.42, 2)),
+        fill=s["blob_highlight"], opacity=0.55))
+
+    # Central cavity: the recessed binding pocket (a darker inner ellipse).
+    g.add(svgwrite.shapes.Ellipse(
+        center=(round(cx, 2), round(cy, 2)),
+        r=(round(rx * 0.22, 2), round(ry * 0.24, 2)),
+        fill=s["blob_cavity_fill"], stroke=s["blob_stroke"],
+        opacity=0.9))
+
+    if label:
+        g.add(_centered_label(label, cx, cy + ry * 0.66, s))
+    return g
 
 
 # ---------------------------------------------------------------------------

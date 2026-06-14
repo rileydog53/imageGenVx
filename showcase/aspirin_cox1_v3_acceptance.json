@@ -1,0 +1,548 @@
+{
+  "archetype": "mechanism_cartoon",
+  "tiers": [
+    {
+      "id": "title",
+      "role": "title",
+      "height_frac": 0.13,
+      "label": "Aspirin Irreversibly Inhibits Cyclooxygenase-1 (COX-1)",
+      "subtitle": "Acetylation of Ser530 in the Active Site"
+    },
+    {
+      "id": "mech",
+      "role": "scene_row",
+      "height_frac": 0.62,
+      "style": {
+        "band_fill": "#F0F2F8"
+      },
+      "rails": [
+        {
+          "name": "mid",
+          "axis": "y",
+          "at": 0.5
+        }
+      ],
+      "scenes": [
+        {
+          "id": "s1",
+          "badge": "1",
+          "label": "Substrate (aspirin)\nenters active site",
+          "slots": [
+            {
+              "id": "cox",
+              "kind": "blob",
+              "style": {
+                "blob_fill": "#CBD5E8",
+                "blob_stroke": "#6B7D95",
+                "blob_highlight": "#EEF3FB",
+                "blob_cavity_fill": "#DCE6F2"
+              }
+            },
+            {
+              "id": "asp",
+              "kind": "molecule",
+              "style": {
+                "smiles": "C[C:1](=[O:2])[O:3]c1ccccc1C(=O)[O:5]",
+                "anchor_names": {
+                  "1": "carbonylC",
+                  "2": "carbonylO",
+                  "3": "esterO",
+                  "5": "cooh"
+                },
+                "scale": 0.34
+              }
+            },
+            {
+              "id": "ser",
+              "kind": "residue",
+              "label": "Ser530",
+              "style": {
+                "residue": "ser530",
+                "scale": 0.26,
+                "label_font_color": "#7B52AB"
+              }
+            },
+            {
+              "id": "his",
+              "kind": "residue",
+              "label": "His513",
+              "style": {
+                "residue": "his513",
+                "scale": 0.26,
+                "label_font_color": "#2563A8"
+              }
+            }
+          ],
+          "attach": [
+            {
+              "child": "asp",
+              "parent": "cox",
+              "edge": "cavity_center"
+            },
+            {
+              "child": "ser",
+              "parent": "cox",
+              "edge": "top",
+              "offset": [
+                -30,
+                -8
+              ]
+            },
+            {
+              "child": "his",
+              "parent": "cox",
+              "edge": "bottom",
+              "offset": [
+                22,
+                8
+              ]
+            }
+          ],
+          "connect": [
+            {
+              "from_anchor": "ser.a1",
+              "to_anchor": "asp.cooh",
+              "type": "hbond",
+              "label": "H-bond"
+            }
+          ]
+        },
+        {
+          "id": "s2",
+          "badge": "2",
+          "label": "Nucleophilic attack\nby Ser530",
+          "slots": [
+            {
+              "id": "cox",
+              "kind": "blob",
+              "style": {
+                "blob_fill": "#CBD5E8",
+                "blob_stroke": "#6B7D95",
+                "blob_highlight": "#EEF3FB",
+                "blob_cavity_fill": "#DCE6F2"
+              }
+            },
+            {
+              "id": "asp",
+              "kind": "molecule",
+              "style": {
+                "smiles": "C[C:1](=[O:2])[O:3]c1ccccc1C(=O)[O:5]",
+                "anchor_names": {
+                  "1": "carbonylC",
+                  "2": "carbonylO",
+                  "3": "esterO",
+                  "5": "cooh"
+                },
+                "scale": 0.34
+              }
+            },
+            {
+              "id": "ser",
+              "kind": "residue",
+              "label": "Ser530",
+              "style": {
+                "residue": "ser530",
+                "scale": 0.26,
+                "label_font_color": "#7B52AB"
+              }
+            },
+            {
+              "id": "his",
+              "kind": "residue",
+              "label": "His513",
+              "style": {
+                "residue": "his513",
+                "scale": 0.26,
+                "label_font_color": "#2563A8"
+              }
+            }
+          ],
+          "attach": [
+            {
+              "child": "asp",
+              "parent": "cox",
+              "edge": "cavity_center"
+            },
+            {
+              "child": "ser",
+              "parent": "cox",
+              "edge": "top",
+              "offset": [
+                -30,
+                -8
+              ]
+            },
+            {
+              "child": "his",
+              "parent": "cox",
+              "edge": "bottom",
+              "offset": [
+                22,
+                8
+              ]
+            }
+          ],
+          "connect": [
+            {
+              "from_anchor": "ser.lp_a1",
+              "to_anchor": "asp.carbonylC",
+              "type": "curly",
+              "style": {
+                "curl": "cw",
+                "bow": 22
+              }
+            },
+            {
+              "from_anchor": "asp.bond_carbonylC_carbonylO",
+              "to_anchor": "asp.carbonylO",
+              "type": "curly",
+              "style": {
+                "arc": "s",
+                "bow": 12
+              }
+            }
+          ]
+        },
+        {
+          "id": "s3",
+          "badge": "3",
+          "label": "Acetyl transfer &\nleaving group departure",
+          "slots": [
+            {
+              "id": "cox",
+              "kind": "blob",
+              "style": {
+                "blob_fill": "#CBD5E8",
+                "blob_stroke": "#6B7D95",
+                "blob_highlight": "#EEF3FB",
+                "blob_cavity_fill": "#DCE6F2"
+              }
+            },
+            {
+              "id": "asp",
+              "kind": "molecule",
+              "style": {
+                "smiles": "C[C:1](=[O:2])[O:3]c1ccccc1C(=O)[O:5]",
+                "anchor_names": {
+                  "1": "carbonylC",
+                  "2": "carbonylO",
+                  "3": "esterO",
+                  "5": "cooh"
+                },
+                "scale": 0.34
+              }
+            },
+            {
+              "id": "ser",
+              "kind": "residue",
+              "label": "Ser530",
+              "style": {
+                "residue": "ser530",
+                "scale": 0.26,
+                "label_font_color": "#7B52AB"
+              }
+            },
+            {
+              "id": "his",
+              "kind": "residue",
+              "label": "His513",
+              "style": {
+                "residue": "his513",
+                "scale": 0.26,
+                "label_font_color": "#2563A8"
+              }
+            },
+            {
+              "id": "sal",
+              "kind": "molecule",
+              "label": "salicylic acid",
+              "style": {
+                "smiles": "O=C(O)c1ccccc1O",
+                "scale": 0.3,
+                "chem_atom_O": "#33AA33",
+                "chem_bond_stroke": "#33AA33",
+                "label_font_color": "#33AA33"
+              }
+            }
+          ],
+          "attach": [
+            {
+              "child": "asp",
+              "parent": "cox",
+              "edge": "cavity_center"
+            },
+            {
+              "child": "ser",
+              "parent": "cox",
+              "edge": "top",
+              "offset": [
+                -30,
+                -8
+              ]
+            },
+            {
+              "child": "his",
+              "parent": "cox",
+              "edge": "bottom",
+              "offset": [
+                22,
+                8
+              ]
+            },
+            {
+              "child": "sal",
+              "parent": "cox",
+              "edge": "right",
+              "offset": [
+                10,
+                36
+              ]
+            }
+          ],
+          "connect": [
+            {
+              "from_anchor": "ser.a1",
+              "to_anchor": "asp.carbonylC",
+              "type": "dashed"
+            },
+            {
+              "from_anchor": "asp.carbonylC",
+              "to_anchor": "asp.esterO",
+              "type": "dashed",
+              "style": {
+                "partial": true
+              },
+              "label": "breaking"
+            }
+          ]
+        },
+        {
+          "id": "s4",
+          "badge": "4",
+          "label": "Irreversible\nacetylation of Ser530",
+          "slots": [
+            {
+              "id": "cox",
+              "kind": "blob",
+              "style": {
+                "blob_fill": "#CBD5E8",
+                "blob_stroke": "#6B7D95",
+                "blob_highlight": "#EEF3FB",
+                "blob_cavity_fill": "#DCE6F2"
+              }
+            },
+            {
+              "id": "ser",
+              "kind": "residue",
+              "label": "acetyl\u2013Ser530",
+              "style": {
+                "residue": "*CO[C:1](=O)C",
+                "scale": 0.3,
+                "label_font_color": "#7B52AB"
+              }
+            },
+            {
+              "id": "his",
+              "kind": "residue",
+              "label": "His513",
+              "style": {
+                "residue": "his513",
+                "scale": 0.26,
+                "label_font_color": "#2563A8"
+              }
+            }
+          ],
+          "attach": [
+            {
+              "child": "ser",
+              "parent": "cox",
+              "edge": "top",
+              "offset": [
+                -30,
+                -8
+              ]
+            },
+            {
+              "child": "his",
+              "parent": "cox",
+              "edge": "bottom",
+              "offset": [
+                22,
+                8
+              ]
+            }
+          ],
+          "connect": []
+        }
+      ],
+      "transitions": [
+        {
+          "from_ref": "s1@right",
+          "to_ref": "s2@left",
+          "type": "transition",
+          "on_rail": "mid"
+        },
+        {
+          "from_ref": "s2@right",
+          "to_ref": "s3@left",
+          "type": "transition",
+          "on_rail": "mid"
+        },
+        {
+          "from_ref": "s3@right",
+          "to_ref": "s4@left",
+          "type": "transition",
+          "on_rail": "mid"
+        }
+      ]
+    },
+    {
+      "id": "sum",
+      "role": "scene_row",
+      "height_frac": 0.25,
+      "style": {
+        "band_fill": "#EEF3FB"
+      },
+      "scenes": [
+        {
+          "id": "phys",
+          "label": "Physiological pathway",
+          "slots": [
+            {
+              "id": "aa",
+              "kind": "molecule",
+              "label": "arachidonic acid",
+              "style": {
+                "smiles": "CCCCC/C=C\\C/C=C\\C/C=C\\C/C=C\\CCCC(=O)O",
+                "scale": 0.5
+              }
+            },
+            {
+              "id": "cox",
+              "kind": "glyph",
+              "label": "COX-1",
+              "style": {
+                "glyph": "protein_blob",
+                "scale": 0.6,
+                "blob_fill": "#8FA8C8"
+              }
+            },
+            {
+              "id": "pg",
+              "kind": "glyph",
+              "label": "prostaglandins",
+              "style": {
+                "glyph": "pg_cluster",
+                "scale": 0.6,
+                "pg_fill": "#4A7ABF"
+              }
+            }
+          ],
+          "attach": [
+            {
+              "child": "cox",
+              "parent": "aa",
+              "edge": "right",
+              "offset": [
+                70,
+                0
+              ]
+            },
+            {
+              "child": "pg",
+              "parent": "cox",
+              "edge": "right",
+              "offset": [
+                70,
+                0
+              ]
+            }
+          ],
+          "connect": [
+            {
+              "from_anchor": "aa.atom0",
+              "to_anchor": "cox.center",
+              "type": "transition"
+            },
+            {
+              "from_anchor": "cox.center",
+              "to_anchor": "pg.center",
+              "type": "transition"
+            }
+          ]
+        },
+        {
+          "id": "effect",
+          "label": "Effect of aspirin",
+          "slots": [
+            {
+              "id": "pill",
+              "kind": "glyph",
+              "label": "aspirin",
+              "style": {
+                "glyph": "tablet",
+                "scale": 0.6
+              }
+            },
+            {
+              "id": "cox",
+              "kind": "glyph",
+              "label": "COX-1",
+              "style": {
+                "glyph": "protein_blob",
+                "scale": 0.6,
+                "blob_fill": "#8FA8C8"
+              }
+            },
+            {
+              "id": "pg",
+              "kind": "glyph",
+              "label": "reduced PG",
+              "style": {
+                "glyph": "pg_cluster",
+                "scale": 0.6,
+                "reduced": true,
+                "pg_fill": "#8FA8C8"
+              }
+            }
+          ],
+          "attach": [
+            {
+              "child": "cox",
+              "parent": "pill",
+              "edge": "right",
+              "offset": [
+                70,
+                0
+              ]
+            },
+            {
+              "child": "pg",
+              "parent": "cox",
+              "edge": "right",
+              "offset": [
+                70,
+                0
+              ]
+            }
+          ],
+          "connect": [
+            {
+              "from_anchor": "pill.center",
+              "to_anchor": "cox.center",
+              "type": "inhibits"
+            },
+            {
+              "from_anchor": "cox.center",
+              "to_anchor": "pg.center",
+              "type": "transition",
+              "style": {
+                "stroke": "#AAAAAA"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

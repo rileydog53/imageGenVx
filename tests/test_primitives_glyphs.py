@@ -42,6 +42,8 @@ EXPANSION_GLYPHS = [
     "flow_cytometer", "sequencer", "petri_dish",
     "syringe",
     "mrna_helix", "primer_helix",
+    # mechanism-figure minor glyphs (P7.3c)
+    "tablet", "pg_cluster",
 ]
 
 
@@ -78,6 +80,14 @@ def test_glyph_is_registered_and_covered(name):
 def test_glyphs_default_style_has_label_keys():
     for k in ("label_font_family", "label_font_size", "label_font_color"):
         assert k in glyphs.DEFAULT_STYLE
+
+
+def test_pg_cluster_reduced_has_fewer_dots():
+    """P7.3c: the 'reduced' PG pool (post-COX-1-inhibition) is sparser."""
+    def n_dots(**kw):
+        g = glyphs.pg_cluster("PG", (60, 60), size=(50, 50), **kw)
+        return g.tostring().count("<circle")
+    assert n_dots(style_dict={"reduced": True}) < n_dots()
 
 
 # ---------------------------------------------------------------------------

@@ -260,20 +260,10 @@ def render_figure(
                 "to render it through the pathway engine (SMILES structures "
                 "will not be drawn)."
             )
-        warnings.warn(
-            f"Non-linear multi-step reaction coerced from "
-            f"{ir.archetype.value!r} to {Archetype.PATHWAY.value!r}: SMILES "
-            "structures will not be drawn (entities render as labelled boxes). "
-            "Re-encode parallel reactions as separate reactant→product edges "
-            "to keep chemical structures.",
-            UserWarning,
-            stacklevel=2,
-        )
         # P0c.3: remember the pre-coercion archetype before the rebind erases it.
-        # The plan carries it so Step-7 primitives can tell a genuine PATHWAY from
-        # a coerced REACTION_SCHEME (whose chemistry layer was dropped) and refuse
-        # to silently no-op on the latter. Forward seam — intentionally recorded
-        # but unconsumed until Step 7 wires the chemistry primitives that read it.
+        # The plan carries it so the consumer below (and any Step-7 primitive) can
+        # tell a genuine PATHWAY from a coerced REACTION_SCHEME (whose chemistry
+        # layer was dropped) and refuse to silently no-op on the latter.
         coerced_from = ir.archetype
         ir = ir.model_copy(update={"archetype": Archetype.PATHWAY})
 
@@ -281,6 +271,25 @@ def render_figure(
     # canvas, and the label strategy through it. Dispatch keeps going through
     # _dispatch_layout (pinned signature) which makes the same container decision.
     plan = _lowering_plan(ir, style_name, coerced_from=coerced_from)
+    # P7.1 — consume the P0c.3 `coerced_from` seam (until now recorded but unread).
+    # The normalise above coerced a non-linear multi-step REACTION_SCHEME to
+    # PATHWAY and dropped its chemistry layer; warn off the RESOLVED plan — so the
+    # recorded history drives the message rather than a pre-plan local — and name
+    # the specific structures lost, so a coerced figure never quietly renders its
+    # chemistry as nothing. Preserves the historical "SMILES structures will not be
+    # drawn" substring; no-op for every native figure (coerced_from is None).
+    if plan.coerced_from is not None:
+        dropped = sorted(e.id for e in ir.entities if smiles_map and e.id in smiles_map)
+        detail = f" for {dropped}" if dropped else ""
+        warnings.warn(
+            f"Non-linear multi-step reaction coerced from "
+            f"{plan.coerced_from.value!r} to {ir.archetype.value!r}: SMILES "
+            f"structures will not be drawn{detail} (entities render as labelled "
+            "boxes). Re-encode parallel reactions as separate reactant→product "
+            "edges to keep chemical structures.",
+            UserWarning,
+            stacklevel=2,
+        )
     style_dict = plan.style_base
     # ST4/P0b.3: dense per-panel style map (every panel keyed; matching panels
     # reuse the resolved base style object).

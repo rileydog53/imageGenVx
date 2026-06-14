@@ -24,7 +24,12 @@ import svgwrite.text
 from imageGen.layout.anchors import AnchorRegistry, Rail, _inset_toward
 from imageGen.layout.types import LayoutEntry
 from imageGen.primitives._anchors import AnchoredGroup
-from imageGen.primitives.chemistry import DEFAULT_STYLE, _arrow, render_molecule_anchored
+from imageGen.primitives.chemistry import (
+    DEFAULT_STYLE,
+    _arrow,
+    render_molecule_anchored,
+    render_residue_anchored,
+)
 from tests._helpers import render_entries_to_png
 
 FIGURES_DIR = Path(__file__).parent / "figures"
@@ -67,6 +72,10 @@ def test_anchored_points_are_within_local_bbox():
     ag = render_molecule_anchored(ASPIRIN_MAPPED, size=MOL_SIZE)
     w, h = MOL_SIZE
     for name, (x, y) in ag.anchors.items():
+        # P7.2 lone-pair anchors sit in the space *around* a heteroatom and may
+        # extend just past the depiction box by design; atom/bond anchors do not.
+        if name.startswith("lp"):
+            continue
         assert 0 <= x <= w, f"{name} x={x} out of [0,{w}]"
         assert 0 <= y <= h, f"{name} y={y} out of [0,{h}]"
 
@@ -94,6 +103,96 @@ def test_center_shifts_anchors_consistently():
 def test_unknown_anchor_name_raises():
     with pytest.raises(ValueError, match="atom-map number"):
         render_molecule_anchored(ASPIRIN_MAPPED, anchor_names={9: "nope"})
+
+
+# ---------------------------------------------------------------------------
+# P7.1 — residues as real fragments with an open valence (MF-1)
+# ---------------------------------------------------------------------------
+
+def test_open_valence_publishes_attachment_anchor_and_suppresses_star():
+    # A dummy '*' atom renders as a dangling bond (no '*' glyph) and its position
+    # is published as the attachment anchor; the bond to it still draws.
+    ag = render_molecule_anchored("*C[O:1]", size=MOL_SIZE, open_valence=True)
+    assert "attach" in ag.anchors and "a1" in ag.anchors
+    xml = ag.group.tostring()
+    import re as _re
+    texts = _re.findall(r"<text[^>]*>([^<]*)</text>", xml)
+    assert not any("*" in t for t in texts), "the '*' dummy glyph leaked into the SVG"
+    assert "bond-0" in xml  # the dangling stub bond is still drawn
+
+
+def test_open_valence_off_by_default_keeps_star_atom():
+    # Without open_valence the dummy is a normal atom (no attach anchor) — the
+    # default path is unchanged for every existing caller.
+    ag = render_molecule_anchored("*C[O:1]", size=MOL_SIZE)
+    assert "attach" not in ag.anchors
+
+
+def test_residue_renders_real_fragment_with_named_atoms():
+    # Ser530 side chain: a real molecular fragment (coloured atom letters, MF-1),
+    # the catalytic O reachable as `a1`, the backbone connection as `attach`.
+    ag = render_residue_anchored("ser530", size=(160, 120))
+    assert {"attach", "a1"} <= set(ag.anchors)
+    # attach (backbone) and a1 (reactive O) are distinct, real points
+    assert ag.anchors["attach"] != ag.anchors["a1"]
+
+
+def test_residue_accepts_raw_smiles_and_custom_attach_name():
+    ag = render_residue_anchored("*C[O:1]", attach_anchor="backbone")
+    assert "backbone" in ag.anchors and "attach" not in ag.anchors
+
+
+def test_residue_without_open_valence_fails_loud():
+    # A capped fragment (no '*') is an authoring error — a residue must declare
+    # where it joins the backbone rather than silently render a closed molecule.
+    with pytest.raises(ValueError, match="open-valence attachment"):
+        render_residue_anchored("CCO")
+
+
+# ---------------------------------------------------------------------------
+# P7.2 — bond-midpoint + lone-pair anchors for arrow-pushing (MF-2)
+# ---------------------------------------------------------------------------
+
+# A carbonyl with BOTH atoms mapped so the bond/lone-pair aliases resolve.
+CARBONYL = "C[C:1](=[O:2])Oc1ccccc1C(=O)O"
+CARBONYL_NAMES = {1: "carbonyl_C", 2: "carbonyl_O"}
+
+
+def test_bond_midpoint_anchor_lies_between_its_atoms():
+    ag = render_molecule_anchored(CARBONYL, size=MOL_SIZE, anchor_names=CARBONYL_NAMES)
+    # both atom-map orderings AND the human-name alias resolve to the same point
+    for key in ("bond_a1_a2", "bond_a2_a1", "bond_carbonyl_C_carbonyl_O"):
+        assert key in ag.anchors, f"missing bond anchor {key!r}"
+    c, o = ag.anchors["carbonyl_C"], ag.anchors["carbonyl_O"]
+    mid = ag.anchors["bond_a1_a2"]
+    assert mid[0] == pytest.approx((c[0] + o[0]) / 2.0)
+    assert mid[1] == pytest.approx((c[1] + o[1]) / 2.0)
+    # index-keyed fallback exists for every bond too
+    assert any(k.startswith("bond") and "_" in k and k[4:5].isdigit()
+               for k in ag.anchors)
+
+
+def test_lone_pair_anchor_offset_outward_from_heteroatom():
+    ag = render_molecule_anchored(CARBONYL, size=MOL_SIZE, anchor_names=CARBONYL_NAMES)
+    assert "lp_a2" in ag.anchors and "lp_carbonyl_O" in ag.anchors
+    o = ag.anchors["carbonyl_O"]
+    lp = ag.anchors["lp_a2"]
+    # the lone pair sits off the atom centre (a distinct origin point)
+    assert math.hypot(lp[0] - o[0], lp[1] - o[1]) > 1.0
+    # carbon has no lone-pair anchor (only N/O/S)
+    assert "lp_a1" not in ag.anchors
+
+
+def test_bond_and_lone_pair_anchors_shift_with_center():
+    base = render_molecule_anchored(CARBONYL, size=MOL_SIZE, anchor_names=CARBONYL_NAMES)
+    w, h = MOL_SIZE
+    moved = render_molecule_anchored(
+        CARBONYL, size=MOL_SIZE, center=(500, 400), anchor_names=CARBONYL_NAMES)
+    dx, dy = 500 - w / 2, 400 - h / 2
+    for key in ("bond_a1_a2", "lp_a2"):
+        bx, by = base.anchors[key]
+        mx, my = moved.anchors[key]
+        assert mx == pytest.approx(bx + dx) and my == pytest.approx(by + dy)
 
 
 # ---------------------------------------------------------------------------

@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from imageGen.ir import Figure
 from imageGen.ir.schema import Relation, RelationType
 from imageGen.render.compositor import render_figure
 from imageGen.verify.semantic_check import SemanticCheckError, semantic_check
@@ -151,3 +152,93 @@ def test_undrawn_annotation_raises(tmp_path):
         semantic_check(ir, svg)
     assert ei.value.kind == "annotation"
     assert ei.value.ir_id == "annotation_0"
+
+
+# ---------------------------------------------------------------------------
+# P7.0 — tier figures are audited at the scene-slot level
+# ---------------------------------------------------------------------------
+
+ASPIRIN = "C[C:1](=O)[O:3]c1ccccc1C(=O)O"
+
+
+def _tier_figure() -> Figure:
+    """A SCENE_ROW tier with a molecule + a text slot in one scene and a
+    molecule in the next — exercising both rendered slot kinds and two scenes."""
+    return Figure.model_validate({
+        "archetype": "mechanism_cartoon",
+        "tiers": [
+            {"id": "title", "role": "title", "label": "T", "subtitle": "s"},
+            {"id": "row", "role": "scene_row", "scenes": [
+                {"id": "s1", "label": "one", "slots": [
+                    {"id": "mol", "kind": "molecule", "style": {"smiles": "CCO"}},
+                    {"id": "note", "kind": "text", "label": "hi"}]},
+                {"id": "s2", "label": "two", "slots": [
+                    {"id": "mol", "kind": "molecule", "style": {"smiles": "CCO"}}]},
+            ]},
+        ],
+    })
+
+
+def test_tier_figure_slots_pass(tmp_path):
+    """A correctly-rendered tier figure passes — its slot ids are present."""
+    svg = tmp_path / "fig.svg"
+    fig = _tier_figure()
+    render_figure(fig, svg)
+    # the slots the verifier requires really are in the SVG
+    text = svg.read_text()
+    for sid in ("s1.mol", "s1.note", "s2.mol"):
+        assert f'id="{sid}"' in text
+    semantic_check(fig, svg)  # no exception
+
+
+def test_missing_tier_slot_raises(tmp_path):
+    """A tier slot absent from the SVG is caught (the regression P7.0 closes:
+    before, a tier figure was silently un-audited)."""
+    svg = tmp_path / "fig.svg"
+    fig = _tier_figure()
+    render_figure(fig, svg)
+    _break_id(svg, "s1.note", "s1.GONE")
+    with pytest.raises(SemanticCheckError) as ei:
+        semantic_check(fig, svg)
+    assert ei.value.kind == "slot"
+    assert ei.value.ir_id == "s1.note"
+    assert ei.value.scoped_id == "s1.note"  # tiers carry no panel chain
+
+
+def test_step_sequence_tier_slots_audited(tmp_path):
+    """Expanded step_sequence scenes (one per step) are audited — a base slot
+    present in every step, an added slot only from the step that adds it."""
+    fig = Figure.model_validate({
+        "archetype": "mechanism_cartoon",
+        "tiers": [{"id": "row", "role": "scene_row", "step_sequence": {
+            "id": "q", "base": {"id": "base", "slots": [
+                {"id": "m", "kind": "molecule", "style": {"smiles": "CCO"}}]},
+            "steps": [
+                {"id": "s1"},
+                {"id": "s2", "deltas": [{"op": "add", "value": {
+                    "id": "b", "kind": "text", "label": "B"}}]}]}}]})
+    svg = tmp_path / "fig.svg"
+    render_figure(fig, svg)
+    semantic_check(fig, svg)  # the expanded s1.m / s2.m / s2.b are all present
+    _break_id(svg, "s2.b", "s2.MISSING")
+    with pytest.raises(SemanticCheckError) as ei:
+        semantic_check(fig, svg)
+    assert ei.value.kind == "slot" and ei.value.ir_id == "s2.b"
+
+
+def test_tier_overlay_slot_audited(tmp_path):
+    """An overlay scene's slot is audited too (it renders in the gutter strip)."""
+    fig = Figure.model_validate({
+        "archetype": "mechanism_cartoon",
+        "tiers": [{"id": "row", "role": "scene_row",
+                   "scenes": [{"id": "main", "slots": [
+                       {"id": "m", "kind": "molecule", "style": {"smiles": "CCO"}}]}],
+                   "overlays": [{"id": "ov", "slots": [
+                       {"id": "g", "kind": "text", "label": "G"}]}]}]})
+    svg = tmp_path / "fig.svg"
+    render_figure(fig, svg)
+    semantic_check(fig, svg)
+    _break_id(svg, "ov.g", "ov.GONE")
+    with pytest.raises(SemanticCheckError) as ei:
+        semantic_check(fig, svg)
+    assert ei.value.kind == "slot" and ei.value.ir_id == "ov.g"

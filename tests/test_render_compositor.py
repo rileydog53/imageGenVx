@@ -459,6 +459,20 @@ def test_render_figure_records_coercion_in_plan(tmp_path, monkeypatch):
     assert captured["coerced_from"] is None
 
 
+def test_coercion_warning_names_dropped_chemistry(tmp_path):
+    """P7.1 consumes the `coerced_from` seam: the drop warning is now emitted off
+    the resolved plan and names the specific entities whose SMILES are dropped, so
+    a coerced figure never silently renders its chemistry as nothing."""
+    ir = _convergent_multistep_reaction()
+    smiles = {e.id: "C" for e in ir.entities}
+    with pytest.warns(UserWarning, match="SMILES structures will not be drawn") as rec:
+        render_figure(ir, tmp_path / "named.svg", smiles_map=smiles,
+                      pathway_fallback=True)
+    text = " ".join(str(w.message) for w in rec)
+    assert all(e.id in text for e in ir.entities), (
+        "the coercion warning must name every dropped chemistry entity")
+
+
 # ---------------------------------------------------------------------------
 # IR-id tagging (D1)
 # ---------------------------------------------------------------------------

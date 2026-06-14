@@ -11,9 +11,18 @@ from __future__ import annotations
 
 import pytest
 
+import math
+import re
+
 from imageGen.ir import Figure, Scene
-from imageGen.ir.schema import StepSequence
-from imageGen.layout.tier_layout import expand_step_sequence, layout_tiers
+from imageGen.ir.schema import SceneEdgeType, StepSequence, Tier
+from imageGen.layout.tier_layout import (
+    _arrow_head,
+    _edge_group,
+    expand_step_sequence,
+    layout_tiers,
+    tier_rendered_scenes,
+)
 from tests._helpers import render_entries_to_png
 
 ASPIRIN = "C[C:1](=O)[O:3]c1ccccc1C(=O)O"   # :1 acetyl C, :3 ester O
@@ -213,6 +222,44 @@ def test_step_delta_unsupported_op_fails_loud():
         expand_step_sequence(seq)
 
 
+# --- P7.0: tier_rendered_scenes (verify-facing lockstep helper) ------------
+
+def test_tier_rendered_scenes_lists_what_the_engine_draws():
+    # The helper must enumerate exactly the scenes layout_tiers passes through
+    # _layout_scene: a TITLE tier draws none; a SCENE_ROW step_sequence
+    # contributes one scene per step (expanded, ids == step ids).
+    fig = _step_seq_figure()
+    title = Tier.model_validate({"id": "t", "role": "title", "label": "X"})
+    assert tier_rendered_scenes(title) == []
+    assert [s.id for s in tier_rendered_scenes(fig.tiers[0])] == ["s1", "s2"]
+
+
+def test_tier_rendered_scenes_appends_overlays_after_main():
+    # Overlays share the band (gutter strip) and are laid out after the main
+    # scenes, so the helper appends them — both must be auditable.
+    row = Tier.model_validate({
+        "id": "row", "role": "scene_row",
+        "scenes": [{"id": "main", "slots": [
+            {"id": "m", "kind": "text", "label": "M"}]}],
+        "overlays": [{"id": "ov", "slots": [
+            {"id": "o", "kind": "text", "label": "O"}]}]})
+    assert [s.id for s in tier_rendered_scenes(row)] == ["main", "ov"]
+
+
+def test_tier_rendered_scenes_matches_engine_tagged_slots():
+    # Strong lockstep guard (drift in BOTH directions): every "<scene>.<slot>"
+    # id the engine tags must come from a scene the helper lists, and vice versa.
+    fig = _aspirin_hydrolysis_figure()
+    tagged = {e.ir_id for e in layout_tiers(fig)
+              if e.ir_id and "." in e.ir_id and not e.ir_id.startswith(
+                  ("edge_", "tedge_", "label_"))}
+    expected = {f"{s.id}.{sl.id}"
+                for tier in fig.tiers
+                for s in tier_rendered_scenes(tier)
+                for sl in s.slots}
+    assert tagged == expected
+
+
 # --- Step 6 review-hardening (adversarial-verify findings) -----------------
 
 def test_step_delta_replace_keeps_target_id_over_value_id():
@@ -387,9 +434,11 @@ def test_overlay_free_tier_uses_the_full_band():
 
 
 def test_unsupported_slot_kind_raises():
+    # GENERIC is the escape-hatch kind the engine still doesn't render (blob /
+    # glyph / residue all landed in P7.1/P7.3).
     fig = Figure.model_validate({"archetype": "mechanism_cartoon", "tiers": [
         {"id": "row", "role": "scene_row", "scenes": [
-            {"id": "s", "slots": [{"id": "b", "kind": "blob"}]}]}]})
+            {"id": "s", "slots": [{"id": "b", "kind": "generic"}]}]}]})
     with pytest.raises(NotImplementedError, match="SlotKind"):
         layout_tiers(fig)
 
@@ -400,6 +449,220 @@ def test_molecule_slot_requires_smiles():
             {"id": "s", "slots": [{"id": "m", "kind": "molecule"}]}]}]})
     with pytest.raises(ValueError, match="style\\['smiles'\\]"):
         layout_tiers(fig)
+
+
+# --- P7.1: RESIDUE slots render as real fragments (MF-1) -------------------
+
+def test_residue_slot_publishes_attach_and_reactive_anchors():
+    # A RESIDUE slot renders through the molecule path and publishes both the
+    # backbone attachment and the catalytic atom, scoped under the slot id, so a
+    # SceneEdge can bind the residue to a ligand atom.
+    from imageGen.layout.anchors import AnchorRegistry
+    from imageGen.layout.tier_layout import _layout_scene, TIER_DEFAULT_PARAMS
+    scene = Scene.model_validate({"id": "site", "slots": [
+        {"id": "ser", "kind": "residue", "style": {"residue": "ser530"}}]})
+    reg = AnchorRegistry()
+    _layout_scene(scene, (0.0, 0.0, 300.0, 200.0), reg, dict(TIER_DEFAULT_PARAMS))
+    assert reg.has("site.ser.attach") and reg.has("site.ser.a1")
+
+
+def test_residue_slot_curly_edge_binds_reactive_atom(tmp_path):
+    # End-to-end MF-1∧MF-2 shape: aspirin (molecule) + Ser530 (residue), a curly
+    # SceneEdge from the serine O (ser.a1) to aspirin's carbonyl C renders with
+    # both slots and the edge tagged.
+    from imageGen.render.compositor import render_figure
+    fig = Figure.model_validate({"archetype": "mechanism_cartoon", "tiers": [
+        {"id": "row", "role": "scene_row", "scenes": [
+            {"id": "site", "slots": [
+                {"id": "asp", "kind": "molecule", "style": {
+                    "smiles": "C[C:1](=O)Oc1ccccc1C(=O)O",
+                    "anchor_names": {"1": "carbonyl_C"}}},
+                {"id": "ser", "kind": "residue", "style": {"residue": "ser530"}}],
+             "attach": [{"child": "ser", "parent": "asp", "edge": "right"}],
+             "connect": [{"from_anchor": "ser.a1", "to_anchor": "asp.carbonyl_C",
+                          "type": "curly"}]}]}]})
+    out = render_figure(fig, tmp_path / "mech.svg")
+    txt = out.read_text()
+    for sid in ("site.asp", "site.ser", "edge_ser.a1_asp.carbonyl_C"):
+        assert f'id="{sid}"' in txt, f"missing {sid!r}"
+
+
+def test_residue_slot_unknown_name_fails_loud():
+    # A residue name with no '*' (resolved as raw SMILES that caps cleanly) fails
+    # loud — the open valence is mandatory.
+    fig = Figure.model_validate({"archetype": "mechanism_cartoon", "tiers": [
+        {"id": "row", "role": "scene_row", "scenes": [
+            {"id": "s", "slots": [
+                {"id": "r", "kind": "residue", "style": {"smiles": "CCO"}}]}]}]})
+    with pytest.raises(ValueError, match="open-valence attachment"):
+        layout_tiers(fig)
+
+
+def test_residue_slot_requires_smiles_or_residue():
+    fig = Figure.model_validate({"archetype": "mechanism_cartoon", "tiers": [
+        {"id": "row", "role": "scene_row", "scenes": [
+            {"id": "s", "slots": [{"id": "r", "kind": "residue"}]}]}]})
+    with pytest.raises(ValueError, match="style\\['residue'\\]"):
+        layout_tiers(fig)
+
+
+# --- P7.2: arrow-pushing curly arrow (handedness / arc / head, MF-2) --------
+
+def _edge_path_d(edge_type, style):
+    g = _edge_group((0.0, 0.0), (100.0, 0.0), edge_type, style)
+    return re.search(r'd="([^"]+)"', g.tostring()).group(1)
+
+
+def test_curly_default_arc_is_byte_identical():
+    # Default curly (no curl/arc) keeps the historical symmetric quadratic bow,
+    # so every existing curved edge renders unchanged.
+    assert _edge_path_d(SceneEdgeType.CURLY, None) == \
+        "M 0.00,0.00 Q 50.00,20.00 100.00,0.00"
+
+
+def test_curly_handedness_flips_the_arc():
+    # curl='cw' mirrors the control point to the other side (arrow-pushing
+    # handedness) — the only change is the sign of the perpendicular offset.
+    assert _edge_path_d(SceneEdgeType.CURLY, {"curl": "cw"}) == \
+        "M 0.00,0.00 Q 50.00,-20.00 100.00,0.00"
+
+
+def test_curly_arc_s_draws_an_s_shaped_cubic():
+    # arc='s' emits a cubic whose two control points bow to OPPOSITE sides
+    # (electron flow swinging out and back).
+    d = _edge_path_d(SceneEdgeType.CURLY, {"arc": "s"})
+    assert d.startswith("M 0.00,0.00 C ")
+    assert "33.33,20.00" in d and "66.67,-20.00" in d
+
+
+def test_arrow_head_width_frac_narrows_the_base():
+    def base_w(wf):
+        poly = _arrow_head((0.0, 0.0), (100.0, 0.0), "#000", size=8.0, width_frac=wf)
+        pts = [tuple(map(float, p.split(",")))
+               for p in re.search(r'points="([^"]+)"', poly.tostring()).group(1).split()]
+        return math.hypot(pts[1][0] - pts[2][0], pts[1][1] - pts[2][1])
+    assert base_w(0.4) < base_w(0.5)
+
+
+def test_curly_uses_a_narrower_head_than_a_transition():
+    def head_base(edge_type):
+        g = _edge_group((0.0, 0.0), (100.0, 0.0), edge_type, None)
+        poly = re.search(r'<polygon[^>]*points="([^"]+)"', g.tostring()).group(1)
+        pts = [tuple(map(float, p.split(","))) for p in poly.split()]
+        return math.hypot(pts[1][0] - pts[2][0], pts[1][1] - pts[2][1])
+    assert head_base(SceneEdgeType.CURLY) < head_base(SceneEdgeType.TRANSITION)
+
+
+def test_curly_arrow_originates_on_a_bond_anchor(tmp_path):
+    # MF-2 end-to-end: a curly arrow from the C=O bond midpoint (bond_a1_a2) to
+    # the carbonyl oxygen renders with the edge tagged — no eyeballed coordinate.
+    from imageGen.render.compositor import render_figure
+    fig = Figure.model_validate({"archetype": "mechanism_cartoon", "tiers": [
+        {"id": "row", "role": "scene_row", "scenes": [
+            {"id": "s", "slots": [
+                {"id": "mol", "kind": "molecule", "style": {
+                    "smiles": "C[C:1](=[O:2])Oc1ccccc1C(=O)O",
+                    "anchor_names": {"1": "carbonyl_C", "2": "carbonyl_O"}}}],
+             "connect": [{"from_anchor": "mol.bond_a1_a2", "to_anchor": "mol.a2",
+                          "type": "curly", "style": {"arc": "s"}}]}]}]})
+    out = render_figure(fig, tmp_path / "push.svg")
+    assert 'id="edge_mol.bond_a1_a2_mol.a2"' in out.read_text()
+
+
+# --- P7.3: blob + cavity, glyph slots, TS partial bond, inhibits T-bar ------
+
+def test_blob_slot_publishes_cavity_anchors():
+    from imageGen.layout.anchors import AnchorRegistry
+    from imageGen.layout.tier_layout import _layout_scene, TIER_DEFAULT_PARAMS
+    scene = Scene.model_validate({"id": "enz", "slots": [
+        {"id": "cox", "kind": "blob", "label": "COX-1"}]})
+    reg = AnchorRegistry()
+    _layout_scene(scene, (0.0, 0.0, 300.0, 200.0), reg, dict(TIER_DEFAULT_PARAMS))
+    for a in ("enz.cox.cavity_center", "enz.cox.cavity_top", "enz.cox.cavity_bottom"):
+        assert reg.has(a), f"missing cavity anchor {a}"
+
+
+def test_residue_attaches_into_blob_cavity(tmp_path):
+    # A cavity-attached residue lands INSIDE the blob (coincident with its centre)
+    # — the de-overlap pass must NOT push it out of the pocket.
+    from imageGen.layout.anchors import AnchorRegistry
+    from imageGen.layout.tier_layout import _layout_scene, TIER_DEFAULT_PARAMS
+    scene = Scene.model_validate({"id": "site", "slots": [
+        {"id": "cox", "kind": "blob"},
+        {"id": "ser", "kind": "residue", "style": {"residue": "ser530"}}],
+        "attach": [{"child": "ser", "parent": "cox", "edge": "cavity_center"}]})
+    reg = AnchorRegistry()
+    _layout_scene(scene, (0.0, 0.0, 300.0, 200.0), reg, dict(TIER_DEFAULT_PARAMS))
+    cavity = reg.resolve("site.cox.cavity_center")
+    # the residue's published attach point sits within the blob's slot box
+    sw, sh = TIER_DEFAULT_PARAMS["tier_slot_size"]
+    ax, ay = reg.resolve("site.ser.attach")
+    assert abs(ax - cavity[0]) <= sw / 2.0 and abs(ay - cavity[1]) <= sh / 2.0
+
+
+def test_two_center_attached_slots_still_deoverlap_with_a_cavity_sibling():
+    # The cavity exemption must not disable de-overlap for genuine center-attached
+    # tangles (MF-3): two center-bound children still spread apart.
+    from imageGen.layout.tier_layout import _solve_slot_centers
+    scene = Scene.model_validate({"id": "s", "slots": [
+        {"id": "blob", "kind": "blob"},
+        {"id": "his", "kind": "text"}, {"id": "lig", "kind": "text"}],
+        "attach": [{"child": "his", "parent": "blob", "edge": "center"},
+                   {"child": "lig", "parent": "blob", "edge": "center"}]})
+    centers = _solve_slot_centers(scene, (0.0, 0.0, 300.0, 200.0), (60.0, 40.0))
+    assert centers["his"][0] != centers["lig"][0]  # still separated
+
+
+def test_glyph_slot_renders_a_registered_primitive(tmp_path):
+    from imageGen.render.compositor import render_figure
+    fig = Figure.model_validate({"archetype": "mechanism_cartoon", "tiers": [
+        {"id": "row", "role": "scene_row", "scenes": [
+            {"id": "s", "slots": [
+                {"id": "pill", "kind": "glyph", "style": {"glyph": "tablet"}},
+                {"id": "pg", "kind": "glyph",
+                 "style": {"glyph": "pg_cluster", "reduced": True}}]}]}]})
+    out = render_figure(fig, tmp_path / "glyphs.svg")
+    txt = out.read_text()
+    assert 'id="s.pill"' in txt and 'id="s.pg"' in txt
+
+
+def test_glyph_slot_unknown_glyph_fails_loud():
+    fig = Figure.model_validate({"archetype": "mechanism_cartoon", "tiers": [
+        {"id": "row", "role": "scene_row", "scenes": [
+            {"id": "s", "slots": [
+                {"id": "g", "kind": "glyph", "style": {"glyph": "nope"}}]}]}]})
+    with pytest.raises(ValueError, match="known style\\['glyph'\\]"):
+        layout_tiers(fig)
+
+
+def test_ts_partial_bond_is_a_thin_dashed_stub():
+    # P7.3b: a 'partial' edge draws a finely-dashed line with no arrow/T-bar.
+    g = _edge_group((0.0, 0.0), (40.0, 0.0), SceneEdgeType.DASHED, {"partial": True})
+    xml = g.tostring()
+    assert "stroke-dasharray" in xml
+    assert "<polygon" not in xml          # no arrowhead
+    assert 'stroke-linecap="square"' not in xml  # no T-bar
+
+
+def test_inhibits_edge_draws_a_tbar_not_an_arrow():
+    g = _edge_group((0.0, 0.0), (40.0, 0.0), SceneEdgeType.INHIBITS, None)
+    xml = g.tostring()
+    assert 'stroke-linecap="square"' in xml  # T-bar terminus
+    assert "<polygon" not in xml             # never an arrowhead
+
+
+def test_tier_inhibits_edge_passes_convention(tmp_path):
+    from imageGen.render.compositor import render_figure
+    from imageGen.verify.convention_check import convention_check
+    fig = Figure.model_validate({"archetype": "mechanism_cartoon", "tiers": [
+        {"id": "row", "role": "scene_row",
+         "scenes": [
+             {"id": "a", "slots": [{"id": "m", "kind": "text", "label": "aspirin"}]},
+             {"id": "b", "slots": [{"id": "m", "kind": "text", "label": "COX-1"}]}],
+         "transitions": [{"from_ref": "a@right", "to_ref": "b@left",
+                          "type": "inhibits"}]}]})
+    out = render_figure(fig, tmp_path / "inhib.svg")
+    convention_check(fig, out)  # no exception — the transition drew a T-bar
 
 
 # ---------------------------------------------------------------------------

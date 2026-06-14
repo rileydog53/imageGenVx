@@ -18,6 +18,7 @@ RDKit re-styling strategy:
 """
 from __future__ import annotations
 
+import math
 import re
 import xml.etree.ElementTree as ET
 from typing import Literal
@@ -78,6 +79,81 @@ DEFAULT_STYLE: dict[str, object] = {
 _ELEMENT_TO_ATOMIC_NUM: dict[str, int] = {
     "C": 6, "N": 7, "O": 8, "P": 15, "S": 16,
 }
+
+# Heteroatoms that carry a lone pair an arrow-pushing curly can originate from.
+_LONE_PAIR_ELEMENTS = {7, 8, 16}  # N, O, S
+
+
+def _bond_and_lone_pair_anchors(
+    mol: "Chem.Mol",
+    atom_coords: dict[int, tuple[float, float]],
+    map_to_idx: dict[int, int],
+    anchor_names: dict[int, str] | None,
+) -> dict[str, tuple[float, float]]:
+    """Bond-midpoint and lone-pair anchors for arrow-pushing (P7.2 / MF-2).
+
+    An arrow-pushing curly arrow originates at a *bond* (a C=O π bond) or a *lone
+    pair*, not only an atom centre. This publishes, in the same local frame as the
+    atom anchors:
+
+    * ``bond{lo}_{hi}`` — the midpoint of every bond, keyed by its sorted atom
+      indices (always available, the bond analogue of ``atom{idx}``); plus
+      ``bond_a{m1}_a{m2}`` / ``bond_{name1}_{name2}`` aliases (both orderings) for
+      bonds whose endpoints are atom-mapped / human-named.
+    * ``lp{idx}`` — one representative lone-pair point per N/O/S, offset outward
+      from the atom along the direction away from its bonded neighbours (where a
+      lone pair sits); plus ``lp_a{map}`` / ``lp_{name}`` aliases.
+
+    Args:
+        mol: the RDKit molecule (post-render; bonds + atomic numbers intact).
+        atom_coords: ``{atom_idx: (x, y)}`` already in the placed local frame.
+        map_to_idx: ``{atom_map_number: atom_idx}`` captured before map-clearing.
+        anchor_names: optional ``{map_number: human_name}`` alias map.
+
+    Returns:
+        ``{anchor_name: (x, y)}`` to merge into the molecule's anchor dict.
+    """
+    idx_to_map = {idx: m for m, idx in map_to_idx.items()}
+    idx_to_name: dict[int, str] = {}
+    if anchor_names:
+        for m, nm in anchor_names.items():
+            if m in map_to_idx:
+                idx_to_name[map_to_idx[m]] = nm
+    out: dict[str, tuple[float, float]] = {}
+
+    for bond in mol.GetBonds():
+        i, j = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+        (xi, yi), (xj, yj) = atom_coords[i], atom_coords[j]
+        mid = ((xi + xj) / 2.0, (yi + yj) / 2.0)
+        lo, hi = sorted((i, j))
+        out[f"bond{lo}_{hi}"] = mid
+        for a, b in ((i, j), (j, i)):  # both orderings so either is addressable
+            if a in idx_to_map and b in idx_to_map:
+                out[f"bond_a{idx_to_map[a]}_a{idx_to_map[b]}"] = mid
+            if a in idx_to_name and b in idx_to_name:
+                out[f"bond_{idx_to_name[a]}_{idx_to_name[b]}"] = mid
+
+    for atom in mol.GetAtoms():
+        if atom.GetAtomicNum() not in _LONE_PAIR_ELEMENTS:
+            continue
+        idx = atom.GetIdx()
+        ax, ay = atom_coords[idx]
+        nbrs = [atom_coords[n.GetIdx()] for n in atom.GetNeighbors()]
+        if nbrs:
+            sx = sum(nx - ax for nx, _ny in nbrs)
+            sy = sum(ny - ay for _nx, ny in nbrs)
+            mag = math.hypot(sx, sy) or 1.0
+            ux, uy = -sx / mag, -sy / mag  # outward: away from the neighbours
+            off = 0.5 * (min(math.hypot(nx - ax, ny - ay) for nx, ny in nbrs) or 12.0)
+        else:
+            ux, uy, off = 0.0, -1.0, 12.0
+        lp = (ax + ux * off, ay + uy * off)
+        out[f"lp{idx}"] = lp
+        if idx in idx_to_map:
+            out[f"lp_a{idx_to_map[idx]}"] = lp
+        if idx in idx_to_name:
+            out[f"lp_{idx_to_name[idx]}"] = lp
+    return out
 
 
 # Common functional groups by name → SMILES. Extend by adding entries here;
@@ -320,6 +396,9 @@ def render_molecule_anchored(
     style_dict: dict | None = None,
     center: tuple[float, float] | None = None,
     anchor_names: dict[int, str] | None = None,
+    *,
+    open_valence: bool = False,
+    attach_anchor: str = "attach",
 ) -> AnchoredGroup:
     """Render a molecule AND publish per-atom anchor points (V3 scene chassis).
 
@@ -334,6 +413,14 @@ def render_molecule_anchored(
           ``"a1"``); this is how an author addresses a specific atom.
         - the human name from *anchor_names* ``{map_num: name}`` — when given,
           an additional alias (``{1: "carbonyl_C"}`` → anchor ``"carbonyl_C"``).
+        - ``attach_anchor`` (default ``"attach"``) — only under *open_valence*,
+          the dangling-bond attachment point (see below); ``"{attach_anchor}{n}"``
+          when more than one dummy atom is present.
+        - ``"bond{lo}_{hi}"`` (atom-index midpoint of every bond) plus
+          ``"bond_a{m1}_a{m2}"`` / ``"bond_{name1}_{name2}"`` aliases, and
+          ``"lp{idx}"`` / ``"lp_a{map}"`` / ``"lp_{name}"`` lone-pair points on
+          N/O/S — so an arrow-pushing curly arrow (P7.2 / MF-2) can originate at a
+          bond (a C=O π) or a lone pair, not only an atom centre.
 
     Args:
         smiles: SMILES; may carry atom-map numbers to name anchors.
@@ -343,6 +430,13 @@ def render_molecule_anchored(
         center: Optional (x, y) bbox-center placement, as in render_molecule; the
             returned anchors include the same translate so they stay correct.
         anchor_names: Optional ``{atom_map_number: human_name}`` alias map.
+        open_valence: When True (residue / fragment rendering), each dummy atom
+            (``'*'``, atomic number 0) is drawn as an *open valence* — its label
+            is blanked so the bond to it renders as a dangling stub instead of a
+            literal ``'*'`` glyph — and its position is published as the
+            attachment anchor. Default False keeps every existing depiction
+            byte-identical.
+        attach_anchor: Anchor name for the open-valence attachment point.
 
     Returns:
         AnchoredGroup(group, anchors) — anchors in the Group's local frame.
@@ -370,6 +464,18 @@ def render_molecule_anchored(
         for a in mol.GetAtoms()
         if a.GetAtomMapNum()
     }
+    # P7.1: open-valence (residue) rendering. A dummy atom marks where a side
+    # chain joins the rest of the protein; blanking its label makes the bond to
+    # it render as a dangling stub (an open valence) rather than a '*' glyph —
+    # the convention for a residue "entering the frame" — while its draw-coord is
+    # still published below as the attachment anchor an H-bond / covalent
+    # SceneEdge binds to.
+    dummy_indices: list[int] = []
+    if open_valence:
+        for atom in mol.GetAtoms():
+            if atom.GetAtomicNum() == 0:
+                atom.SetProp("atomLabel", "")
+                dummy_indices.append(atom.GetIdx())
     for atom in mol.GetAtoms():
         atom.SetAtomMapNum(0)
 
@@ -389,7 +495,82 @@ def render_molecule_anchored(
                     f"in SMILES {smiles!r} (mapped numbers: {sorted(map_to_idx)})"
                 )
             anchors[name] = atom_coords[map_to_idx[map_num]]
+    if len(dummy_indices) == 1:
+        anchors[attach_anchor] = atom_coords[dummy_indices[0]]
+    else:
+        for n, idx in enumerate(dummy_indices):
+            anchors[f"{attach_anchor}{n}"] = atom_coords[idx]
+    # P7.2 (MF-2): bond-midpoint + lone-pair anchors so a curly arrow can
+    # originate at a bond or a lone pair, not only an atom centre.
+    anchors.update(
+        _bond_and_lone_pair_anchors(mol, atom_coords, map_to_idx, anchor_names))
     return AnchoredGroup(group=group, anchors=anchors)
+
+
+# Common active-site residue side chains by name -> SMILES, each carrying a
+# dummy attachment atom ('*', the open valence onto the backbone) and the
+# catalytic/reactive atom mapped ':1' (so it resolves to the ``a1`` anchor).
+# Extend by adding an entry; the RESIDUE slot path picks it up automatically.
+_RESIDUE_SMILES: dict[str, str] = {
+    "ser":    "*C[O:1]",            # serine: nucleophilic hydroxyl O
+    "ser530": "*C[O:1]",            # COX-1 catalytic serine (aspirin's target)
+    "his":    "*Cc1c[nH]c[n:1]1",   # histidine: basic imidazole N
+    "his513": "*Cc1c[nH]c[n:1]1",   # COX-1 active-site histidine
+    "tyr":    "*Cc1ccc([O:1])cc1",  # tyrosine: phenol O
+    "cys":    "*C[S:1]",            # cysteine: thiol S
+    "lys":    "*CCCC[N:1]",         # lysine: epsilon-amino N
+}
+
+
+def render_residue_anchored(
+    residue: str,
+    size: tuple[int, int] = (160, 120),
+    style: MoleculeStyle = "skeletal",
+    style_dict: dict | None = None,
+    center: tuple[float, float] | None = None,
+    anchor_names: dict[int, str] | None = None,
+    attach_anchor: str = "attach",
+) -> AnchoredGroup:
+    """Render an amino-acid side chain as a real molecular fragment (MF-1).
+
+    A residue is just a molecule with an open valence, so it renders through the
+    SAME :func:`render_molecule_anchored` path as any other structure — coloured
+    atom *letters*, never bespoke dots — so a figure mixing a ligand and a
+    residue reads with one chemistry convention. The fragment "enters the frame"
+    with a dangling bond at its backbone attachment (a dummy ``'*'`` atom whose
+    glyph is suppressed); that point is published as ``attach_anchor`` and the
+    reactive atom (atom-map ``:1``) as ``a1`` / via *anchor_names*, so H-bond or
+    covalent ``SceneEdge``s can bind both ends.
+
+    Args:
+        residue: a known residue name (``_RESIDUE_SMILES``: ser/his/tyr/cys/lys,
+            plus the COX-1 ``ser530``/``his513`` aliases) OR a raw SMILES carrying
+            a dummy ``'*'`` attachment atom (e.g. ``"*C[O:1]"``).
+        size, style, style_dict, center, anchor_names: as in
+            :func:`render_molecule_anchored`.
+        attach_anchor: anchor name for the backbone attachment point.
+
+    Returns:
+        AnchoredGroup with per-atom anchors, the mapped reactive atom(s), and the
+        attachment anchor.
+
+    Raises:
+        ValueError: the SMILES (resolved or raw) does not parse, or it carries no
+            dummy ``'*'`` attachment atom (a residue must declare where it joins
+            the backbone — fail loud rather than render a capped fragment).
+    """
+    smiles = _RESIDUE_SMILES.get(residue, residue)
+    ag = render_molecule_anchored(
+        smiles, size=size, style=style, style_dict=style_dict, center=center,
+        anchor_names=anchor_names, open_valence=True, attach_anchor=attach_anchor,
+    )
+    if not any(k == attach_anchor or k.startswith(attach_anchor) for k in ag.anchors):
+        raise ValueError(
+            f"residue {residue!r} has no open-valence attachment atom; include a "
+            "dummy '*' atom in the SMILES to mark where it joins the backbone "
+            "(e.g. '*C[O:1]')"
+        )
+    return ag
 
 
 def render_functional_group(

@@ -59,6 +59,7 @@ from imageGen.primitives._mol_render import (
     MoleculeStyle,
     _ELEMENT_TO_ATOMIC_NUM,
     _FUNCTIONAL_GROUPS,
+    _RESIDUE_SMILES,
     _RawSVGElement,
     _STROKE_IN_STYLE_RE,
     _XMLNS_RE,
@@ -72,6 +73,7 @@ from imageGen.primitives._mol_render import (
     render_functional_group,
     render_molecule,
     render_molecule_anchored,
+    render_residue_anchored,
 )
 from imageGen.primitives._reaction_render import (
     _arrow,
@@ -87,6 +89,7 @@ __all__ = [
     "MoleculeStyle",
     "render_molecule",
     "render_molecule_anchored",
+    "render_residue_anchored",
     "render_reaction",
     "render_multistep_reaction",
     "render_functional_group",

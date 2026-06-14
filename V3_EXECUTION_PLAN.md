@@ -443,67 +443,125 @@ P7.4 is the integration gate that depends on all four. Recommended sequence:
 **P7.0 → P7.1 → P7.2 → P7.3 → P7.4** (verification reach first so every later
 primitive is acceptance-checkable as it lands).
 
-- [ ] **P7.0 — Extend verification reach to tier figures.** ⚠️ Acceptance demands
-  it: `semantic_check` / `convention_check` walk only `figure.entities` +
-  `figure.panels` today (`_figures`, `convention_check.py:142`), so a **tier**
-  figure — which the acceptance render is — is silently un-audited. Extend both
-  to walk `tiers → scenes → slots` (and expanded `StepSequence` scenes), checking
-  each molecule/glyph slot's presence + resolved-primitive shape against its
-  scoped id. This is the cross-cutting follow-up Step 6 deferred ("extending
-  `semantic_check` to walk tiers→scenes is separable") — it is no longer separable
-  once acceptance needs it. Keep every test-matched error substring.
+- [x] **P7.0 — Extend verification reach to tier figures.** ✅ 2026-06-13.
+  Both verifiers walked only `figure.entities` + `figure.panels`, so a **tier**
+  figure (which the acceptance render is) was silently un-audited — a vacuous
+  pass. Closed via one shared lockstep helper `tier_rendered_scenes(tier)`
+  (`tier_layout.py`, reuses `_tier_scene_list` so it *cannot* drift from the
+  engine's own scene list: SCENE_ROW scenes + expanded `step_sequence` steps +
+  `overlays`; every other role draws none). **`semantic_check`** emits an expected
+  id `"<scene.id>.<slot.id>"` (kind `"slot"`) per top-level non-GROUP slot of each
+  rendered scene — over-listing leaf kinds is safe because an unsupported kind
+  raises at layout and never reaches a rendered SVG; GROUP is skipped (no render /
+  id scheme yet). **`convention_check`** gains `_SLOT_KIND_SHAPE` (BLOB→`<path>`,
+  BOX→`<rect>` as forward seams for P7.3 primitives; molecule/residue/glyph/text/
+  group/generic → skip, mirroring `_SKIP_SHAPE_PRIMITIVES`) + `_check_slot_shapes`
+  (kind `"slot_shape"`). No `schema.py` touch; every existing error substring
+  preserved (purely additive). +12 tests incl. a both-directions drift guard
+  (engine-tagged slot ids == helper's slot-id set); CLI `--verify` now reports a
+  genuine `semantic=OK convention=OK` on a tier render. 1108 green.
   *Done when:* a tier figure with a missing/mis-shaped slot fails the verifier; the
   aspirin IR is auditable end-to-end.
 
-- [ ] **P7.1 — Residue & heteroatom convention, one everywhere (MF-1).** Residue
-  fragments (Ser530 side chain, His513 imidazole) render as **real molecular
-  fragments** via `render_molecule_anchored` — coloured atom **letters** (`O`),
-  never bespoke red dots — so a figure mixing aspirin + a residue reads with one
-  convention. Add an **open-valence / attachment-point** helper so a side chain can
-  "enter the frame" with a dangling bond and publish that attachment as a named
-  anchor (the residue's connection point for H-bond / covalent SceneEdges).
-  Register residue conveniences as `PrimitiveSpec`s where a reusable glyph emerges.
-  **Consume `LoweringPlan.coerced_from`** (carry-over seam above).
+- [x] **P7.1 — Residue & heteroatom convention, one everywhere (MF-1).** ✅
+  2026-06-13. Heteroatoms already render as coloured **letters** through the RDKit
+  path (the "bare red dot" only ever lived in the hand-composed northstar, never
+  in the IR-driven renderer), so MF-1 reduced to *routing residues through that
+  same path*. `render_molecule_anchored` gains an opt-in `open_valence`/
+  `attach_anchor` (default off → every existing depiction byte-identical): a dummy
+  `*` atom has its label blanked so the bond to it renders as a **dangling stub**
+  (open valence) instead of a `*` glyph, and its draw-coord is published as the
+  attachment anchor. New `render_residue_anchored(residue, …)` wraps it + a
+  `_RESIDUE_SMILES` convenience map (ser/his/tyr/cys/lys + COX-1 `ser530`/`his513`
+  aliases; reactive atom mapped `:1` → `a1`); a capped fragment (no `*`) **fails
+  loud**. `_layout_scene` renders RESIDUE slots through the shared molecule path
+  (`style['residue']` or raw `smiles`), so the reactive O resolves as
+  `scene.slot.a1` and the backbone as `scene.slot.attach` for H-bond/curly edges.
+  **`coerced_from` consumed:** the PH.1 drop-warning now fires off the *resolved
+  plan* (`plan.coerced_from`) and **names the dropped entities** (preserving the
+  pinned "SMILES structures will not be drawn" substring) — the seam is no longer
+  dead, and a coerced figure can't silently render its chemistry as nothing. No
+  `PrimitiveSpec` added: residues are a slot-level axis, not the entity→glyph
+  inference registry (the doc's "where a reusable glyph emerges" — it didn't, as
+  an entity primitive). +10 tests; visual proof rendered (aspirin + Ser530 + curly
+  edge on real atom anchors). 1118 green.
+  > **Carry-forward:** the CURLY arrow still crosses the molecule (crude symmetric
+  > bow) — **P7.2** owns handedness/arc. A 3-atom residue scaled to the full slot
+  > box dwarfs a larger ligand's atoms — **P7.4** composition tunes per-slot scale
+  > (or a future `fixedBondLength`), out of MF-1 scope.
   *Done when:* no bare-dot oxygen appears anywhere in the acceptance figure; Ser530
   and His513 are real fragments with named attachment anchors; a coerced-archetype
   figure with a chemistry primitive fails loud / warns instead of rendering nothing.
 
-- [ ] **P7.2 — Arrow-pushing curly primitive (MF-2 / V3-C4).** Elevate the existing
-  point-to-point `CURLY` edge into a true arrow-pushing primitive. Two concrete
-  extensions over what exists: (a) publish **bond-midpoint** and **lone-pair**
-  anchors from `render_molecule_anchored` (today only atom centres are published),
-  so an arrow can *originate at a bond* (C=O π) or a lone pair, not just an atom;
-  (b) curvature **handedness + arc control** (the current single `bow` is a crude
-  symmetric bulge) so an S-shaped sweep reads as electron flow. Endpoints stay
-  sourced from `AnchorRegistry.resolve(...)` — a head into void is impossible by
-  construction. Organic-chem arrowhead styling.
+- [x] **P7.2 — Arrow-pushing curly primitive (MF-2 / V3-C4).** ✅ 2026-06-13.
+  **(a) Anchors:** `render_molecule_anchored` now publishes (via
+  `_bond_and_lone_pair_anchors`) a **bond-midpoint** anchor for every bond —
+  `bond{lo}_{hi}` by atom index, plus `bond_a{m1}_a{m2}` / `bond_{name1}_{name2}`
+  aliases in BOTH orderings for mapped/named endpoints — and a **lone-pair**
+  anchor per N/O/S (`lp{idx}` / `lp_a{map}` / `lp_{name}`), offset outward along
+  the direction away from the atom's neighbours. So a curly arrow can originate at
+  a C=O π bond or an O lone pair, not only an atom centre; all shift with `center`.
+  **(b) Rendering:** `_edge_group`'s curved branch gains `curl` (handedness — the
+  control point's perpendicular side) and `arc='s'` (an S-shaped **cubic**, two
+  controls bowing to opposite sides = electron flow), and the curly arrowhead is
+  narrower (`head_w` via `_arrow_head(width_frac=…)`) for a pen-like organic head.
+  **All default-off → every existing curved edge (hbond / curly) byte-identical**
+  (the default still emits `Q 50,20`). Endpoints stay registry-resolved, so a head
+  into void is impossible. +9 tests; visual proof rendered (lone-pair → carbonyl-C
+  attack + C=O π → O, on real anchors). 1127 green.
+  > **Carry-forward to P7.4:** the curly *primitive* is done; a clean short sweep
+  > needs the residue placed *close* to its target (composition/scale), which is
+  > P7.4's acceptance-layout tuning, not the primitive.
   *Done when:* a curly arrow originates on a real bond/lone-pair anchor and
   terminates on a real atom anchor; the Step-2 Ser530-O → carbonyl-C and C=O → O
   arrows render correctly; no eyeballed coordinate appears.
 
-- [ ] **P7.3 — Remaining north-star primitives** (each a `PrimitiveSpec`, P0c.1).
-  Three independent sub-glyphs:
-  - **7.3a — Organic shaded protein blob with cavity** (spec Element B/J): irregular
-    rounded silhouette, edge-darker/centre-lighter shading, a visible central
-    cavity where the ligand sits; reused (recoloured/scaled) as the bottom-bar COX-1
-    icon. The blob must publish `cavity_*` anchors so the Step-5 `cavity_top/…`
-    attach edges (already in `_SLOT_EDGE_OFFSETS`) land a residue/ligand inside it.
-  - **7.3b — TS partial-bond glyph** (breaking/forming bond): a dashed/thin bond
-    overlay between two atom anchors for the transition-state half-bonds (Step 3's
-    breaking ester linkage). An anchor-pair overlay, not a full molecule.
-  - **7.3c — Minor glyphs + the ⊣ fix:** aspirin tablet icon, prostaglandin dot
-    cluster (normal + reduced), and **fix the tier `inhibits` SceneEdge to draw a
-    flat perpendicular T-bar, not an arrowhead** (`_EDGE_DEFAULTS["inhibits"]` has
-    `arrow:True` — wrong terminator; mirror the pathway T-bar convention
-    `convention_check` already enforces for INHIBITS relations).
+- [x] **P7.3 — Remaining north-star primitives.** ✅ 2026-06-14.
+  - **7.3a — Organic protein blob with cavity** ✅ `proteins.protein_blob` — a
+    deterministic smooth organic silhouette (`_blob_silhouette_path`: quadratics
+    through wobbled ellipse vertices) with a centre-lighter highlight + a darker
+    central cavity pocket; first shape is `<path>` (matches the P7.0 `_SLOT_KIND_SHAPE`
+    seam). A BLOB slot publishes `center` + `cavity_center/top/bottom` anchors at
+    the box centre/quarter-offsets, so a `cavity_*` attach lands a residue inside.
+    **De-overlap fix:** `_deoverlap_coincident` now **exempts cavity-attached
+    children** — they're deliberately co-located in the pocket, so MF-3's
+    separation pass no longer pushes them out (the His513-vs-ligand *center*-tangle
+    is unaffected). Verified: Ser530 renders inside the COX-1 pocket.
+  - **7.3b — TS partial-bond** ✅ a `style={'partial':True}` edge draws a thin,
+    finely-dashed straight half-bond between two atom anchors (no arrow/T-bar) —
+    an anchor-pair overlay, no enum/schema change.
+  - **7.3c — Minor glyphs + ⊣ fix** ✅ `glyphs.tablet` (scored disc) and
+    `glyphs.pg_cluster` (dot cluster; `style['reduced']` → sparse depleted pool).
+    `_EDGE_DEFAULTS['inhibits']` now draws a square-capped perpendicular **T-bar**,
+    not an arrowhead; `convention_check` gains `_check_tier_inhibition_edges`
+    (tier `connect`/`transition` INHIBITS edges audited for the T-bar — the
+    P7.0-deferred edge convention).
+  Three new `PrimitiveSpec`s (`protein_blob`→path, `tablet`/`pg_cluster`→circle);
+  GLYPH slots render **any** registered primitive by `style['glyph']` (reuses the
+  P0c.1 registry), unknown glyph fails loud. +21 tests; two visual proofs. 1148 green.
   *Done when:* each glyph renders from IR and registers as a single `PrimitiveSpec`;
   the blob's cavity anchors resolve; the inhibition edge draws a T-bar.
 
-- [ ] **P7.4 — Aspirin/COX-1 acceptance render.** Author the full IR (3 tiers:
-  title / 4-step `StepSequence` mechanism row / summary bar) from the reference
-  spec and render it. A naive reader can trace the mechanism from the active sites
-  alone (MF-1 ∧ MF-2 ∧ MF-3). Compare against
-  `showcase/aspirin_cox1_anchored_proof.png`.
+- [x] **P7.4 — Aspirin/COX-1 acceptance render.** ✅ 2026-06-14. **V3 is now
+  feature-complete.** Authored the full 3-tier IR (title / 4-step mechanism row /
+  summary bar) — `showcase/aspirin_cox1_v3_acceptance.{json,png,svg}`, a
+  self-contained IR that renders + passes all three tier-aware checks (semantic,
+  legibility, convention). The mechanism reads end-to-end: Step 1 aspirin enters
+  with a red H-bond to Ser530; Step 2 the curly nucleophilic attack (origins on
+  `ser.lp_a1` + `asp.bond_carbonylC_carbonylO` — real anchors); Step 3 the
+  "breaking" TS partial bond + green salicylic-acid departure; Step 4 covalent
+  acetyl–Ser530. The summary bar shows the physiological pathway and the
+  aspirin-⊣-COX-1 inhibition (T-bar) → reduced PG. **MF-1** (Ser530/His513 are real
+  fragments, coloured atom letters), **MF-2** (curly arrows on real bond/lone-pair
+  anchors), **MF-3** (the solver spreads the active-site fragments — no overlap)
+  all demonstrably met. **Key composition enabler:** a per-slot `style['scale']`
+  (P7.4) so a small molecule/residue sits inside a full-size blob cavity without
+  dwarfing it. Locked by `tests/test_acceptance_aspirin_cox1.py` (5 tests). 1153
+  green. ⚠️ **Deviation:** the mechanism row is **4 authored scenes**, not a
+  `StepSequence` — `StepDelta` is slot-granular (no per-step *edge* add/remove), so
+  it cannot express "the curly arrow appears only in Step 2". Authored scenes give
+  per-step edges and expand to the same 4-column row. (A `StepSequence` edge-delta
+  op is a clean future extension if cross-panel slot continuity is wanted.)
   *Done when:* semantic + legibility + convention checks (now tier-aware, P7.0)
   pass on the IR-driven render; the three MF criteria are demonstrably met; the
   figure is committed to `showcase/` as the V3 acceptance artifact.
