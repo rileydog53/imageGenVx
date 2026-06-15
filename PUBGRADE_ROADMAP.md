@@ -55,11 +55,39 @@ corpus is the bottleneck and will reprioritise this list.
 | # | Dimension | State | What's wrong / what it needs |
 |---|---|---|---|
 | 1 | **sizing** | ✅ | Content-aware molecule sizing landed (keystone `131a918`): every structure renders at one consistent bond length, no hand-set `scale`. **Generality unproven until P.3** — validated on one hand-authored figure. |
-| 2 | **labels** | ~ | Label-occupancy seed landed; **leader lines pending**. Observed defects: scene captions clip, residue labels float far from their slot, edge labels (`H-bond`, `new bond`) crowd onto arrows. The single biggest readability gap. |
+| 2 | **labels** | ~ | Label-occupancy seed landed; **leader lines are the real fix and are now confirmed REQUIRED** (see note ↓). Observed defects: scene captions clip, residue labels float far from their slot, edge labels (`H-bond`, `new bond`) crowd onto arrows. The single biggest readability gap. |
 | 3 | **orientation** | ☐ | Molecules are posed as RDKit lays them out, not so the reaction *reads* left-to-right. A mechanism should flow with the nucleophile/electrophile oriented consistently across steps. |
 | 4 | **layering · contrast** | ☐ | Band fills, slot colours, and arrow strokes are not tuned for figure-ground contrast; overlapping ink can lose the eye. Polish pass. |
 | 5 | **density · arrows** | ☐ | Arrows are fixed-geometry, not ink-relative; cells are looser than a journal panel. Tighten inter-cell gutters and scale arrows to the structures they connect. |
 | 6 | **pubgrade-defaults** | ☐ | No first-class `publication` style preset, and `mechanism_cartoon` still defaults through the generic path. Needs a real preset + the routing flip so the *default* call is the pub-grade call. |
+
+---
+
+## Dimension 2 (labels): why a placement tweak isn't enough — leader lines required
+
+**Experiment (2026-06-15).** The cheap hypothesis was that D1 is just a bad anchor
+box: slot labels anchor to the uniform `tier_slot_size`, so a small residue/glyph
+gets a big keep-away box and its label drifts. Two rule-only fixes were tried and
+**both regressed the strict legibility gate**:
+
+1. *Anchor the label to the slot's real drawn box* (`slot_extents`). Visibly fixed
+   the common case (chymotrypsin residue labels snapped back beside their glyphs) —
+   but regressed the **aspirin acceptance artifact**: a bottom-attached residue
+   (`His513`), now anchored close, places its label *below* the glyph and spills
+   across the tier boundary into the summary band, colliding with `arachidonic
+   acid`. The uniform box had been silently acting as a keep-away margin.
+2. *Reorder slot-label priority to prefer sides* (`right`/`left` first). Fixed the
+   spill but cascaded: in dense active-site scenes the residue sits directly
+   above/below a **wide** substrate, so the horizontal sides aren't clear either —
+   broke `01`, `03`, `08`.
+
+**Conclusion:** in a packed mechanism band there is often *no* clear position
+adjacent to the glyph — neither vertical (spills out of the band) nor horizontal
+(hits the substrate). The only correct fix is **leader lines**: place the label in
+the nearest available whitespace and draw a thin connector back to the slot anchor,
+with the connector itself seeded into `place_labels` occupancy. This is a real
+feature (a new label-placement mode), not a parameter change — scope it as such.
+The two rule tweaks were reverted; the suite stays at 1177.
 
 ---
 
@@ -70,8 +98,7 @@ Grounded in the aspirin acceptance artifact and the two P.1 verification renders
 
 - **D1 — residue labels float.** A residue attached `top`/`bottom` with an offset
   gets its label placed far to the right of the structure (e.g. "Ser195" drifting
-  to the band's right edge), reading as detached. *Fix:* anchor the residue label
-  to the residue's drawn box, not the scene frame. (dim 2)
+  to the band's right edge), reading as detached. (dim 2)
 - **D2 — scene captions clip / drop lines.** Multi-line scene `label`s (`"\n"`)
   lose their second line in tight bands ("Tetrahedral" without "intermediate").
   *Fix:* reserve caption headroom from the measured label height. (dim 2)
