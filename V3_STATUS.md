@@ -49,11 +49,28 @@ updated the skill.** Consequences:
 
 **Three findings, in priority order — everything else waits behind these:**
 
-1. **Sync `SKILL.md` to the chassis.** Teach Tier/Scene/Slot/residue/blob/
-   content-sizing authoring; reclassify `mechanism_cartoon` as a tier figure;
-   document the new IR models. *The door must open onto the chassis before
-   anything downstream matters.* As we write it, flag anything the engine can't
-   yet express so we don't promise checks the renderer can't cash.
+1. ✅ **DONE (2026-06-15) — `SKILL.md` synced to the chassis.** Added a full
+   *Tier figures (the V3 scene chassis)* section (Tier/Scene/Slot/Attach/
+   SceneEdge/TierEdge/Rail/StepSequence + the slot-kind anchor grammar);
+   reclassified `mechanism_cartoon` as a **tier** archetype routing to JSON
+   authoring; pointed its fixture at `showcase/aspirin_cox1_v3_acceptance.json`;
+   noted molecule sizing is automatic. **Verified by authoring + rendering two
+   *new* tier figures through the documented `render-spec` path** (a chymotrypsin
+   acylation mechanism and the doc's own worked skeleton) — both render through
+   the chassis (not boxes-and-arrows) and pass semantic/legibility/convention.
+   **Engine-can't-express gaps logged for P.2** (see below).
+2. **Write the pub-grade roadmap doc** (`PUBGRADE_ROADMAP.md`). Capture the
+   6-dimension scout report (sizing ✓ / labels ~ / orientation / layering·contrast
+   / density·arrows / pubgrade-defaults), the concrete defect list, and the
+   **critic + corpus** plan — currently trapped in chat. **Seed the gap list from
+   P.1:** (a) slot kinds `box`/`group`/`generic` validate but raise
+   `NotImplementedError` at layout (only molecule/residue/glyph/blob/text draw);
+   (b) tier roles `summary_bar`/`band` render a band background only — content
+   summaries must use `scene_row`; (c) `Tier.content` (embedded leaf Figure) is
+   not laid out; (d) attach `edge` `anchor`/`custom` are not solved; (e) tier
+   scene/edge labels crowd & clip (the `labels ~` dimension — leader lines
+   pending); (f) named residues are a fixed set (ser/his/tyr/cys/lys + ser530/
+   his513), others need a raw mapped SMILES.
 2. **Write the pub-grade roadmap doc** (`PUBGRADE_ROADMAP.md`). Capture the
    6-dimension scout report (sizing ✓ / labels ~ / orientation / layering·contrast
    / density·arrows / pubgrade-defaults), the concrete defect list, and the

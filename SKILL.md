@@ -108,11 +108,12 @@ Archetype → required fixture file:
 | `reaction_scheme` | `oxidation_reaction.json` |
 | `workflow` | `western_blot_schematic.json` |
 | `cellular_schematic` | `cellular_schematic.json` |
-| `mechanism_cartoon` | `mechanism_cartoon.json` |
+| `mechanism_cartoon` | `showcase/aspirin_cox1_v3_acceptance.json` — a **tier** figure (note: lives under `showcase/`, not `tests/fixtures/`); read it, then see *Tier figures* below |
 | multi-panel figure | `three_panel_workflow.json` **AND** `graphical_abstract_mrna_vaccine.json` |
 
-Read it with the **`Read`** tool:
-`~/Desktop/imageGen-v2.6/tests/fixtures/<file>`.
+Read it with the **`Read`** tool. Leaf and multi-panel fixtures live at
+`~/Desktop/imageGen-v2.6/tests/fixtures/<file>`; the `mechanism_cartoon` tier
+fixture is at `~/Desktop/imageGen-v2.6/showcase/aspirin_cox1_v3_acceptance.json`.
 
 ### Step 2 — Plan and output confirmation block
 
@@ -125,6 +126,20 @@ Fixture(s) read: <filename(s)>, confirmed structure matches plan
 Entity count per panel: <N> (ring layouts: up to ~12 is fine; DAG/spring: aim ≤7, collapse only if verifier warns)
 Label safety: all entity and relation labels are ASCII-only — confirmed
 ```
+
+**For a `mechanism_cartoon` (tier figure)** the confirmation block is shorter —
+there are no per-panel entity counts; instead confirm the tier plan:
+
+```
+Archetype: mechanism_cartoon — because <one-sentence reason it is mechanistic>
+Fixture read: showcase/aspirin_cox1_v3_acceptance.json, confirmed tier structure matches plan
+Tier plan: <title tier> + <N>-scene mechanism row (scene_row) [+ summary scene_row]
+Slots per scene: molecule(s) + residue(s)/glyph(s); sizing is automatic (no hand-set scale)
+Label safety: all labels ASCII-only — confirmed
+```
+
+Then skip to *Tier figures (the V3 scene chassis)* below and author the `tiers`
+IR JSON directly; Steps 3–4 (smiles_map / tuple-spec) are for leaf figures only.
 
 Do not proceed to Step 3 until this block is written. For **ring layouts**
 (cycles, metabolic loops) do NOT collapse biochemically distinct nodes — the
@@ -234,19 +249,213 @@ crops little.
 | `reaction_scheme` | A chemical transformation: reactants → products with reagents/conditions | Leaf | **Yes** |
 | `workflow` | Step-by-step experimental procedures | Leaf or panels | No |
 | `cellular_schematic` | A cell with compartments and localised entities | Leaf | No |
-| `mechanism_cartoon` | A reaction or process mechanism told as a cartoon | Leaf | No |
+| `mechanism_cartoon` | A reaction/process **mechanism** at the molecular level — arrow-pushing, active-site events, transition states, multi-step catalysis | **Tier** (V3 scene chassis) | No (SMILES live inline in each slot) |
 
-All five render. `workflow`, `cellular_schematic`, and `mechanism_cartoon`
-route through the pathway layout engine. A multi-panel **graphical abstract**
-is a `Figure` with `panels` — each panel's `content` is itself a `Figure` of
-any archetype.
+**Two shapes, two authoring models.** A **leaf** figure (`pathway`,
+`reaction_scheme`, `workflow`, `cellular_schematic`) is flat `entities` +
+`relations` laid out as boxes-and-arrows by the graph engine — authored with the
+tuple-shorthand spec (Steps 1–6 below). A **tier** figure (`mechanism_cartoon`,
+and *any* mechanism / catalytic / active-site request) is the **V3 scene
+chassis**: `tiers → scenes → slots` (real molecules, residues, blobs, glyphs)
+placed by relative anchoring, with atom-anchored curly/H-bond arrows. Tier
+figures are authored as **IR JSON carrying a `tiers` list** — see *Tier figures
+(the V3 scene chassis)* below, which **replaces** Steps 2–4 for this archetype.
+`render_figure` dispatches automatically on whichever container is populated
+(`entities`/`relations` vs `tiers`); the render+verify command in Step 5 is
+identical for both.
+
+A multi-panel **graphical abstract** is a `Figure` with `panels` — each panel's
+`content` is itself a leaf `Figure` of any archetype.
+
+> **Don't downgrade a mechanism to a leaf pathway.** Boxes-and-arrows with
+> `activates`/`inhibits` edges cannot show arrow-pushing, a residue attacking a
+> bond, or a transition state. If the request is mechanistic, it is a **tier**
+> figure — author `tiers`, not `entities`.
+
+---
+
+## Tier figures (the V3 scene chassis)
+
+`mechanism_cartoon` figures are authored as a **tier figure**: a top-level
+`tiers` list instead of `entities`/`relations`. Each tier is a full-width
+horizontal band, stacked top-to-bottom in list order. This is the only way to
+render molecular mechanisms (real structures, residues, atom-anchored arrows) —
+the leaf graph engine cannot.
+
+**Author the IR JSON directly** (the tuple-shorthand spec is leaf-only). Write a
+`.json` file with `archetype: "mechanism_cartoon"` + `tiers`, then render it with
+the **same Step 5 command** — `render-spec` accepts full IR JSON unchanged
+(`--smiles-map` is *not* used; each molecule slot carries its own `smiles`).
+
+### The anatomy of a tier figure
+
+```
+Figure.tiers = [
+  Tier(role="title",     …)   # typography band: label + subtitle
+  Tier(role="scene_row", …)   # a row of scenes — the mechanism steps
+  Tier(role="scene_row", …)   # optional summary band (also scene_row)
+]
+```
+
+A **`scene_row`** tier holds `scenes` (a left-to-right row), optional `rails`
+(named reference lines) and `transitions` (cross-scene arrows). Each **`scene`**
+holds `slots` (the things drawn), `attach` (relative placement), and `connect`
+(intra-scene edges). **A slot never gets an absolute position** — you anchor it
+to another slot and the solver places it.
+
+### Tier — fields
+
+| Field | Notes |
+|---|---|
+| `id` | unique; no `.` or `__` |
+| `role` | `title` (label+subtitle), `scene_row` (holds scenes). **Use `scene_row` for *any* band with content, including a summary band** — style it via `style.band_fill`. |
+| `label` / `subtitle` | text (title tier); `label` also names a scene_row band |
+| `height_frac` | fraction of canvas height, `(0,1]`; omit to auto-size by role |
+| `style` | band styling, e.g. `{"band_fill": "#F0F2F8"}` |
+| `scenes` | list of `Scene` (scene_row) |
+| `step_sequence` | *alternative* to `scenes`: one base scene + per-step deltas (auto-expands to one scene per step). Use for state-diff stories where most slots are unchanged between steps. |
+| `rails` | named lines: `{"name":"mid","axis":"y","at":0.5}` — `at` is a 0–1 fraction of the cross-axis |
+| `transitions` | cross-scene arrows (`TierEdge`) |
+
+### Scene — fields
+
+| Field | Notes |
+|---|---|
+| `id` | unique within the tier |
+| `badge` | small corner number (e.g. `"1"`, `"2"` for step order) |
+| `label` | scene caption (placed below the scene) |
+| `slots` | the placeable primitives (below) |
+| `attach` | relative-placement constraints (below) |
+| `connect` | `SceneEdge`s between slot anchors (below) |
+| `style` | scene-level style cascade base |
+
+### Slot — `kind` and what it needs
+
+A slot is one drawn primitive. **Molecule sizing is automatic** — every
+structure in the figure is rendered at one consistent bond length. Do **not**
+hand-tune `scale` on molecules/residues to make them fit; `scale` is only for
+deliberately shrinking a glyph/blob.
+
+| `kind` | Renders | Required style | Anchors it exposes |
+|---|---|---|---|
+| `molecule` | 2-D skeletal structure | `style.smiles` | `a{map}` per SMILES atom-map (`[C:1]`→`a1`); `atom0…atomN`; `bond_<x>_<y>` (bond midpoint); `lp_<x>` (lone pair); `center`; + any name you give in `style.anchor_names` |
+| `residue` | an amino-acid side chain with an open valence | `style.residue` | `a1` (the reactive terminal atom), `lp_a1` (its lone pair) |
+| `glyph` | a registry icon | `style.glyph` | `center` |
+| `blob` | organic protein surface with a binding pocket | (none) | `center`, `cavity_center`, `cavity_top`, `cavity_bottom` |
+| `text` | free label | — (uses `label`) | `center` |
+
+- **`molecule` `style`:** `smiles` (required); `anchor_names` `{ "1": "carbonylC" }`
+  maps SMILES atom-map numbers → human anchor names (so a `connect` ref reads
+  `sub.carbonylC` instead of `sub.a1`); per-element colour overrides like
+  `chem_atom_O`, `chem_bond_stroke`; `label_font_color`.
+- **`residue` `style.residue`:** a named side chain — `ser`, `his`, `tyr`, `cys`,
+  `lys` (or the COX-1 aliases `ser530`/`his513`) — **or** a raw SMILES carrying a
+  mapped reactive atom (e.g. `"*CO[C:1](=O)C"` for an acetylated serine; `*` is
+  the backbone attachment, suppressed in the drawing).
+- **`glyph` `style.glyph`:** any registered primitive name — e.g.
+  `protein_blob`, `pg_cluster`, `tablet`, plus the lab/cell/organelle glyph names
+  from the leaf *Glyph overrides* table. `scale` (e.g. `0.6`) shrinks it; `blob_fill`,
+  `pg_fill`, `reduced` are glyph-specific.
+
+### Attach — relative placement
+
+`{ "child": "ser", "parent": "asp", "edge": "top", "offset": [0, -34] }` places
+`ser` at `asp`'s **top** edge, nudged by `(dx, dy)`. `parent: null` (or omitted)
+attaches to the scene frame. `edge` ∈ `top` `bottom` `left` `right` `center`,
+or `cavity_top` / `cavity_bottom` / `cavity_center` to drop a child *inside* a
+parent blob's pocket. `offset` is the only explicit number — everything else is
+solved, and the solver spreads co-located slots so they don't overlap.
+
+### SceneEdge (`connect`) — intra-scene arrows
+
+`{ "from_anchor": "ser.lp_a1", "to_anchor": "sub.carbonylC", "type": "curly",
+"style": {"curl":"cw","bow":22} }`. Anchors are `slot_id.anchor`. `type` ∈
+`dashed` (interaction/forming bond), `hbond`, `curly` (arrow-pushing — point it
+from a real lone-pair/bond anchor), `departs` (leaving group), `transition`,
+`binds`, `activates`, `inhibits`, `generic`. Curly-arrow style: `curl`
+(`cw`/`ccw`), `bow` (curvature), `arc` (`s`/`n`/…); a `dashed` half-bond takes
+`style.partial: true`.
+
+### TierEdge (`transitions`) — cross-scene arrows
+
+`{ "from_ref": "s1@right", "to_ref": "s2@left", "type": "transition",
+"on_rail": "mid" }`. Endpoints are `scene@edge` (frame edge: `left`/`right`/…),
+`scene.slot.anchor`, or `rail:NAME`. `on_rail` clamps both ends to a declared
+rail so a row of step-to-step arrows lines up at the same height.
+
+### Worked skeleton (renders + verifies clean)
+
+A two-step mechanism row + summary band. (The full four-step reference is the
+fixture `showcase/aspirin_cox1_v3_acceptance.json` — read it.)
+
+```json
+{
+  "archetype": "mechanism_cartoon",
+  "tiers": [
+    { "id": "title", "role": "title", "height_frac": 0.14,
+      "label": "Serine Nucleophilic Attack", "subtitle": "Active-site acylation" },
+    { "id": "mech", "role": "scene_row", "height_frac": 0.6,
+      "style": { "band_fill": "#F1F4F0" },
+      "rails": [ { "name": "mid", "axis": "y", "at": 0.5 } ],
+      "scenes": [
+        { "id": "s1", "badge": "1", "label": "Substrate bound",
+          "slots": [
+            { "id": "sub", "kind": "molecule",
+              "style": { "smiles": "CC(=O)NC[C:1](=O)NC",
+                         "anchor_names": { "1": "carbonylC" } } },
+            { "id": "ser", "kind": "residue", "label": "Ser195",
+              "style": { "residue": "ser" } } ],
+          "attach": [ { "child": "ser", "parent": "sub", "edge": "top",
+                        "offset": [0, -34] } ],
+          "connect": [] },
+        { "id": "s2", "badge": "2", "label": "Nucleophilic attack",
+          "slots": [
+            { "id": "sub", "kind": "molecule",
+              "style": { "smiles": "CC(=O)NC[C:1](=O)NC",
+                         "anchor_names": { "1": "carbonylC" } } },
+            { "id": "ser", "kind": "residue", "label": "Ser195",
+              "style": { "residue": "ser" } } ],
+          "attach": [ { "child": "ser", "parent": "sub", "edge": "top",
+                        "offset": [0, -34] } ],
+          "connect": [ { "from_anchor": "ser.lp_a1", "to_anchor": "sub.carbonylC",
+                         "type": "curly", "style": { "curl": "cw", "bow": 22 } } ] }
+      ],
+      "transitions": [ { "from_ref": "s1@right", "to_ref": "s2@left",
+                         "type": "transition", "on_rail": "mid" } ] }
+  ]
+}
+```
+
+Render it with the Step 5 command (no `--smiles-map`):
+
+```bash
+~/Desktop/.venv/bin/python -m imageGen render-spec ~/Desktop/scratch/mech.json \
+    -o ~/Desktop/scratch/mech.png --verify --autocrop
+```
+
+### What the tier engine does NOT render yet
+
+Stay inside the supported surface — the schema validates more than the renderer
+draws:
+
+- **Slot kinds** `box`, `group`, `generic` are accepted by the schema but raise
+  `NotImplementedError` at layout. Only `molecule`/`residue`/`glyph`/`blob`/`text`
+  draw.
+- **Tier roles** `summary_bar` / `band` render a band background only (no inner
+  scenes). For a summary with content, use `scene_row` + `style.band_fill`.
+- **`Tier.content`** (an embedded leaf Figure inside a band) is not laid out.
+- **Attach `edge`** `anchor` / `custom` are not solved — use the face or cavity
+  edges above.
 
 ---
 
 ## IR reference
 
 The IR (intermediate representation) is a `Figure` — a strict, validated
-Pydantic model. Unknown fields are rejected. Build it as JSON.
+Pydantic model. Unknown fields are rejected. Build it as JSON. The fields below
+describe the **leaf** figure (`entities`/`relations`/`panels`); the **tier**
+container (`tiers` → `Tier`/`Scene`/`Slot`/`Attach`/`SceneEdge`/`TierEdge`/`Rail`/
+`StepSequence`) is documented above in *Tier figures (the V3 scene chassis)*.
 
 ### `Figure`
 
@@ -260,12 +469,14 @@ Pydantic model. Unknown fields are rejected. Build it as JSON.
 | `compartments` | list of `Compartment` | no* | |
 | `relations` | list of `Relation` | no* | |
 | `panels` | list of `Panel` | no* | |
+| `tiers` | list of `Tier` | no* | the V3 scene chassis — see *Tier figures* above |
 | `annotations` | list of `Annotation` | no | |
 | `glossary` | list of `GlossaryEntry` | no | abbreviation key; draws a boxed "Abbreviations" strip below the figure when non-empty |
 
-**\*Leaf-XOR-panel rule:** a figure is *either* a leaf (has
-`entities`/`compartments`/`relations`) *or* multi-panel (has `panels`) —
-never both.
+**\*One container per figure:** a figure is *either* a **leaf** (has
+`entities`/`compartments`/`relations`), *multi-panel* (has `panels`), *or* a
+**tier** figure (has `tiers`) — never more than one. `render_figure` dispatches
+on whichever is populated.
 
 ### `Entity`
 
@@ -386,7 +597,10 @@ must not overlap).
 - Entity, compartment, and panel `id`s are unique within a figure.
 - Every `relation.source`/`target` references an existing entity.
 - Every `entity.location` references an existing compartment.
-- Leaf-XOR-panel (above). Panel grids must not overlap.
+- One container per figure (leaf / panels / tiers — above). Panel grids must not
+  overlap.
+- Tier figures: slot ids unique within a scene; `attach`/`connect`/`transition`
+  refs must resolve to a declared slot/scene/rail; ids carry no `.` or `__`.
 
 ---
 
@@ -469,8 +683,11 @@ Read the full pydantic error message before changing anything. Check:
 
 - Are all `relation.source`/`target` values valid entity `id`s?
 - Are all `entity.location` values valid compartment `id`s?
-- Is the figure mixing top-level `entities`/`relations` with `panels`
-  (forbidden by the Leaf-XOR-panel rule)?
+- Is the figure mixing more than one container — `entities`/`relations`,
+  `panels`, or `tiers` (only one is allowed)?
+- For tier figures: does every `connect`/`attach`/`transition` reference name a
+  slot/scene/rail that exists, and is each `slot.kind` one of the rendered kinds
+  (`molecule`/`residue`/`glyph`/`blob`/`text`)?
 
 Fix only what the error message identifies, then revalidate before rendering.
 
@@ -532,9 +749,12 @@ Worked examples — each `tests/fixtures/<file>` is a complete, validated IR.
    `{"alcohol": "CCO", "aldehyde": "CC=O"}`. See
    `tests/fixtures/oxidation_reaction.json`.
 
-5. **"Cartoon the SN2 substitution mechanism."** → `mechanism_cartoon` with
-   `binds`/`generic` relations and `acs` style. See
-   `tests/fixtures/mechanism_cartoon.json`.
+5. **"Cartoon how aspirin acetylates COX-1 Ser530."** (or any active-site /
+   catalytic / arrow-pushing mechanism) → `mechanism_cartoon`, a **tier figure**:
+   a title tier + a `scene_row` of mechanism steps (molecule + residue slots,
+   curly/H-bond `connect` edges on real atom anchors, rail-aligned `transitions`)
+   + an optional summary `scene_row`. Author `tiers` IR JSON — see *Tier figures
+   (the V3 scene chassis)*. Reference: `showcase/aspirin_cox1_v3_acceptance.json`.
 
 6. **"A labelled diagram of a eukaryotic cell."** → `cellular_schematic`
    with five compartments and entities localised via `location`. See

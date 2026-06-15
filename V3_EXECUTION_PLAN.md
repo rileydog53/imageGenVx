@@ -830,7 +830,14 @@ them. Two standing corrections: **cleanness before correctness gating** (an
 unreadable-but-correct figure is worthless); the current defects are **concrete and
 rule-fixable** ("sit it left", "arrowhead needs clearance"), not uncanny-valley.
 
-- [ ] **P.1 — Sync `SKILL.md` to the V3 chassis.** Document the chassis IR
+- [x] **P.1 — Sync `SKILL.md` to the V3 chassis.** ✅ LANDED 2026-06-15. Added a
+  *Tier figures (the V3 scene chassis)* section, reclassified `mechanism_cartoon`
+  as a tier archetype (authored as `tiers` IR JSON; fixture →
+  `showcase/aspirin_cox1_v3_acceptance.json`), documented the slot-kind anchor
+  grammar, and logged the engine-can't-express gaps (fed to P.2 in `V3_STATUS.md`).
+  *Verified:* two new tier figures authored + rendered through the documented
+  `render-spec` path, both pass semantic/legibility/convention. Original spec ↓
+- [ ] ~~**P.1 — Sync `SKILL.md` to the V3 chassis.**~~ Document the chassis IR
   (`Tier`/`Scene`/`Slot`/`SceneEdge`/`StepSequence`/`Attach`/`Rail`/`TierEdge`);
   reclassify `mechanism_cartoon` (and any mechanism/active-site request) as a
   **tier** figure with the scene-graph authoring pattern; teach residues
