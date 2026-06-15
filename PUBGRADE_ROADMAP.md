@@ -58,7 +58,7 @@ corpus is the bottleneck and will reprioritise this list.
 | 2 | **labels** | ~ | Label-occupancy seed landed; **leader lines are the real fix and are now confirmed REQUIRED** (see note ↓). Observed defects: scene captions clip, residue labels float far from their slot, edge labels (`H-bond`, `new bond`) crowd onto arrows. The single biggest readability gap. |
 | 3 | **orientation** | ☐ | Molecules are posed as RDKit lays them out, not so the reaction *reads* left-to-right. A mechanism should flow with the nucleophile/electrophile oriented consistently across steps. |
 | 4 | **layering · contrast** | ☐ | Band fills, slot colours, and arrow strokes are not tuned for figure-ground contrast; overlapping ink can lose the eye. Polish pass. |
-| 5 | **density · arrows** | ☐ | Arrows are fixed-geometry, not ink-relative; cells are looser than a journal panel. Tighten inter-cell gutters and scale arrows to the structures they connect. |
+| 5 | **density · arrows** | ~ | Transition-arrow **clearance** landed (D5 — dedicated `tier_transition_standoff`). Still open: arrows are fixed-geometry not ink-relative, and cells are looser than a journal panel. Tighten inter-cell gutters and scale arrows to the structures they connect. |
 | 6 | **pubgrade-defaults** | ☐ | No first-class `publication` style preset, and `mechanism_cartoon` still defaults through the generic path. Needs a real preset + the routing flip so the *default* call is the pub-grade call. |
 
 ---
@@ -108,9 +108,12 @@ Grounded in the aspirin acceptance artifact and the two P.1 verification renders
 - **D4 — transition labels overlap the arrow shaft.** A `TierEdge` label
   ("hydrolysis", "peptide substrate") sits across the arrow rather than above it.
   *Fix:* place at the arrow midpoint with a fixed above-shaft offset. (dims 2, 5)
-- **D5 — arrowhead clearance.** Transition arrowheads can land within ~1 cm of the
-  next scene's structure. *Fix:* inset the arrow endpoints off the scene frame by
-  a min clearance. (dim 5)
+- **D5 — arrowhead clearance.** ✅ FIXED 2026-06-15. Cross-cell transition
+  arrows now use a dedicated `tier_transition_standoff` (20px, ~one bond length),
+  separate from the tight `tier_edge_standoff` that intra-scene atom edges need —
+  so the arrowhead clears the next scene's structure without pulling curly/H-bond
+  arrows off their atoms. Guarded by a behavioural test (the standoff moves the
+  transition arrow but leaves intra-scene edges byte-identical). (dim 5)
 - **D6 — reaction doesn't read directionally.** Within a step the substrate may be
   posed so the attacked atom faces away from the attacking residue. *Fix:* the
   orientation pass (dim 3).

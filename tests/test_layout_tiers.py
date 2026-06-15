@@ -95,6 +95,30 @@ def test_tiered_slice_renders_to_png():
     assert out.exists() and out.stat().st_size > 0
 
 
+def test_transition_standoff_is_separate_and_larger_than_edge_standoff():
+    # D5 (pub-grade): cross-cell transition arrows stand off the scene content
+    # edge by more than intra-scene atom edges, so the arrowhead clears the next
+    # structure. The default must keep that ordering...
+    from imageGen.layout.tier_layout import TIER_DEFAULT_PARAMS
+    assert (TIER_DEFAULT_PARAMS["tier_transition_standoff"]
+            > TIER_DEFAULT_PARAMS["tier_edge_standoff"])
+
+    # ...and the standoff must flow ONLY to the cross-cell transition: inflating
+    # it moves the transition arrow but leaves intra-scene atom edges untouched.
+    fig = _aspirin_hydrolysis_figure()
+
+    def edge_svg(extra: dict, ir_id: str) -> str:
+        entries = layout_tiers(
+            fig, layout_params={"tier_canvas": (600, 300), **extra})
+        e = next(x for x in entries if x.ir_id == ir_id)
+        return e.primitive(*e.args, **e.kwargs).tostring()
+
+    tedge = "tedge_s_aspirin@right_s_salicylic@left"
+    bond = "edge_mol.acetyl_C_mol.ester_O"
+    assert edge_svg({}, tedge) != edge_svg({"tier_transition_standoff": 60.0}, tedge)
+    assert edge_svg({}, bond) == edge_svg({"tier_transition_standoff": 60.0}, bond)
+
+
 def test_empty_tiers_rejected():
     with pytest.raises(ValueError, match="tiers populated"):
         layout_tiers(Figure.model_validate(

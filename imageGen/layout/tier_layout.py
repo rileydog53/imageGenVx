@@ -95,6 +95,12 @@ TIER_DEFAULT_PARAMS: dict[str, Any] = {
     "chem_target_bond_px": 22.0,
     "tier_mol_pad": 14.0,
     "tier_edge_standoff": 8.0,
+    # D5 (pub-grade): cross-cell transition arrows stand off the scene *content*
+    # edge by more than intra-scene atom edges do, so the arrowhead clears the
+    # next scene's structure instead of crowding it (~one bond length). Kept
+    # separate from tier_edge_standoff, which must stay tight so curly/H-bond
+    # arrows still originate on their atoms.
+    "tier_transition_standoff": 20.0,
     "tier_title_font_size": 18,
     "tier_subtitle_font_size": 13,
     # Title->subtitle baseline separation as a multiple of the title font size.
@@ -1314,10 +1320,11 @@ def layout_tiers(
                         f"Tier '{tier.id}' transition uses a 'rail:' endpoint; "
                         "bare-rail endpoints are not in the Step-3 slice "
                         "(use a scene/slot anchor with on_rail to ride a rail)")
+                t_standoff = float(params["tier_transition_standoff"])
                 p0, p1 = registry.resolve_edge(
                     _ref_to_key(te.from_ref), _ref_to_key(te.to_ref),
-                    from_standoff=float(params["tier_edge_standoff"]),
-                    to_standoff=float(params["tier_edge_standoff"]),
+                    from_standoff=t_standoff,
+                    to_standoff=t_standoff,
                     on_rail=te.on_rail,
                 )
                 # Structural cascade: tier ⊕ this transition's style (no preset).
