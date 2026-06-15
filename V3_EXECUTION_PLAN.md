@@ -1,5 +1,15 @@
 # V3 Execution Plan — Steps 5 → 7 (hardened)
 
+> ## ⇨ ACTIVE FOCUS HAS MOVED: see **[Phase P — Pub-grade](#phase-p--pub-grade-post-feature-complete)** at the bottom of this doc.
+> Steps 1–7 are **done** (engine feature-complete). The current work is the
+> **pub-grade phase**, and its first three items take priority over *everything*
+> else (including any unticked nit below): **(P.1) sync `SKILL.md` to the chassis,
+> (P.2) write `PUBGRADE_ROADMAP.md`, (P.3) make the corpus real.** Rationale and
+> the full picture live in `V3_STATUS.md` → "CURRENT FOCUS" and in Phase P here.
+> The headline finding: **the skill can't produce a tier figure**, so the chassis
+> is unreachable through a skill call and its corpus is N = 1 (the aspirin figure,
+> hand-authored). Fix the door first.
+
 **Status:** active forward plan. Supersedes the *sequencing* of
 `V3_IR_NODESHAPES_PROPOSAL.md §3` Steps 5–7 and `V3_SCENE_CHASSIS_SCOPE.md §4`
 for everything **not yet landed**. Steps 1–4 stay as recorded in `V3_STATUS.md`.
@@ -801,6 +811,55 @@ modules (no cycle); all 7 public re-exports resolve; **AST pure-move proof** —
 
 ---
 
+## Phase P — Pub-grade (post-feature-complete)
+
+**Why this phase exists.** Steps 1–7 made the *engine* feature-complete, but the
+output is not publication-grade, and a 2026-06-14 review found the structural
+reason: **`SKILL.md` is out of sync with the V3 engine** (it documents the
+pre-chassis leaf IR, calls `mechanism_cartoon` a Leaf figure, and has zero
+authoring guidance for Tier/Scene/Slot/residue/blob/content-sizing). The entire
+Steps 1–7 arc never touched the skill. So **a skill call cannot produce a tier
+figure** — it emits leaf IR → boxes-and-arrows — and every tier figure to date
+(incl. the aspirin acceptance artifact) was hand-authored in a script. The chassis
+corpus is **N = 1**; "pub-grade by default" is unmeasurable until that changes.
+
+**Hard priority: P.1 → P.2 → P.3 come before any other pub-grade work.** The six
+scout dimensions (below) are **deferred — reassess after P.1–P.3**, because the
+corpus will tell us which actually matter and the skill is the bottleneck on all of
+them. Two standing corrections: **cleanness before correctness gating** (an
+unreadable-but-correct figure is worthless); the current defects are **concrete and
+rule-fixable** ("sit it left", "arrowhead needs clearance"), not uncanny-valley.
+
+- [ ] **P.1 — Sync `SKILL.md` to the V3 chassis.** Document the chassis IR
+  (`Tier`/`Scene`/`Slot`/`SceneEdge`/`StepSequence`/`Attach`/`Rail`/`TierEdge`);
+  reclassify `mechanism_cartoon` (and any mechanism/active-site request) as a
+  **tier** figure with the scene-graph authoring pattern; teach residues
+  (`style.residue`), blobs + cavities, curly/H-bond/TS/inhibits edges, atom anchors
+  (`a{map}`/`bond_*`/`lp_*`), and that molecule sizing is automatic (no hand-set
+  `scale`). Keep the leaf/panel guidance for the figures that stay leaf. **As you
+  write it, log every place the engine can't yet express what the skill should
+  promise** (feeds P.2). *Done when:* a skill call for an active-site mechanism
+  authors tier IR that renders through the chassis (not boxes-and-arrows).
+- [ ] **P.2 — Write `PUBGRADE_ROADMAP.md`.** Fold in: the 6-dimension scout report
+  (sizing ✅ keystone landed; labels ~ occupancy-seed landed, leaders pending;
+  orientation; layering·contrast; density·arrows; pubgrade-defaults), the **concrete
+  defect list**, and the **render-critic + corpus** plan (a vision-scored pub-grade
+  rubric — the missing quality instrument). Currently this lives only in chat.
+- [ ] **P.3 — Make the corpus real.** Author ~10 diverse figures **through the skill
+  path** (mechanism, multi-step, a tier pathway, a binding event, …) and add them to
+  the test/showcase set, so overfitting to aspirin is visible and "by default" is
+  measured. *Done when:* the suite renders + checks ≥10 tier figures, none
+  hand-authored in a one-off script.
+
+**Deferred — reassess after P.1–P.3 (do NOT start before):** the render critic
+(vision quality scoring), `orientation` (pose molecules so the reaction reads),
+leader-line labels, `density_arrows` (ink-relative arrows + tighter cells),
+`layering_contrast` polish, and `pubgrade_defaults` (a first-class `publication`
+preset + the routing flip). The keystone `sizing` work already landed (commit
+`131a918`); its generality is unproven until P.3.
+
+---
+
 *Authored 2026-06-11 from the verified architecture scan. Update the checkboxes
 as items land; when a step completes, fold its record into `V3_STATUS.md` and
-tick it here.*
+tick it here. Phase P appended 2026-06-14 after the pub-grade review.*

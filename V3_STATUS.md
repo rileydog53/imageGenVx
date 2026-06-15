@@ -19,8 +19,63 @@ first, then dive into the detail docs linked below.
 | 0c | **Pre-Step-7 seams** — `PrimitiveSpec` single-site registry, `list_style_keys()` + `styles --keys` CLI, `LoweringPlan.coerced_from` record. Suite: 1082 → 1097. | ✅ LANDED (2026-06-13) |
 | 7 | **Primitive refresh + expansion** — curly arrows (V3-C4), TS partial bonds, organic shaded blobs, per-atom anchors. **Aspirin/COX-1 reproduction is the acceptance test** (gated by MF-1/2/3). | ✅ LANDED (2026-06-14) — **V3 FEATURE-COMPLETE** |
 
-**Current test count:** 1153 passing. **🎉 The V3 scene chassis is feature-complete
-— all numbered steps (1–7) have landed.**
+**Current test count:** 1156 passing. The V3 scene **engine** is feature-complete
+(numbered steps 1–7). **But the work is NOT done** — see the pub-grade phase below.
+
+---
+
+## ← CURRENT FOCUS: the pub-grade phase (post-feature-complete)
+
+The engine is feature-complete; the **output is not yet publication-grade**, and a
+review (2026-06-14) found the real reason: **`SKILL.md` is out of sync with the V3
+engine.** It still documents the pre-chassis leaf IR and classifies
+`mechanism_cartoon` as a **Leaf** figure, with zero authoring guidance for
+Tier/Scene/Slot/residue/blob/content-sizing. The **entire Steps 1–7 arc never
+updated the skill.** Consequences:
+
+- A **skill call cannot produce a tier figure** — it emits leaf IR (entities +
+  relations) → boxes-and-arrows, not the chassis. So the chassis is unreachable
+  through the front door.
+- Every tier figure to date — **including the aspirin acceptance artifact** — was
+  hand-authored in a Python script. The chassis corpus is therefore **N = 1**
+  (the ~10 fixture figures are all *leaf*, testing the old engine), and
+  "pub-grade by default via a skill call" is currently **structurally impossible**.
+
+> **Leaf vs tier:** a *leaf* figure is the V2 model — flat `entities` + `relations`
+> → graph-laid boxes-and-arrows (mapk_cascade, gpcr_signaling, …). A *tier* figure
+> is the V3 chassis — `tiers` → `scenes` → `slots` (molecules/residues/blobs)
+> placed by relative anchoring, with atom-anchored edges (the aspirin figure).
+> `render_figure` dispatches on which container is populated.
+
+**Three findings, in priority order — everything else waits behind these:**
+
+1. **Sync `SKILL.md` to the chassis.** Teach Tier/Scene/Slot/residue/blob/
+   content-sizing authoring; reclassify `mechanism_cartoon` as a tier figure;
+   document the new IR models. *The door must open onto the chassis before
+   anything downstream matters.* As we write it, flag anything the engine can't
+   yet express so we don't promise checks the renderer can't cash.
+2. **Write the pub-grade roadmap doc** (`PUBGRADE_ROADMAP.md`). Capture the
+   6-dimension scout report (sizing ✓ / labels ~ / orientation / layering·contrast
+   / density·arrows / pubgrade-defaults), the concrete defect list, and the
+   **critic + corpus** plan — currently trapped in chat.
+3. **Make the corpus real.** Author ~10 diverse figures **through the skill path**
+   (not hand-written scripts) and test them, so overfitting to aspirin becomes
+   visible and "by default" is actually measured.
+
+**Once #1–#3 land, reassess whether the remaining scout dimensions** (orientation,
+leader-line labels, density/arrows, the publication preset + routing flip, the
+render-critic) are still needed as scoped — the corpus will tell us.
+
+**Corrections logged (2026-06-14):**
+- **Correctness gating comes AFTER cleanness** — an unreadable-but-correct figure
+  is worthless (you can't read the handwriting). Cleanness first.
+- The current defects are **concrete and fixable** ("that should sit a little
+  left", "the arrowhead needs ~1cm clearance", "can't tell which arrowhead that
+  is") — **not** uncanny-valley. Rules can fix them.
+
+**Pub-grade keystone (content-aware molecule sizing + label-occupancy seed)** landed
+2026-06-14 (commit `131a918`) — but validated on the one hand-authored figure;
+its generality is **unproven until the corpus exists** (finding 3).
 
 > **Chassis Phase 0a + Step 5 COMPLETE — landed 2026-06-12.** The chassis arc
 > (`V3_CHASSIS_ARC_BLUEPRINT.md`) shipped in commit boundaries C1–C7:
