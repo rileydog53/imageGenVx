@@ -29,16 +29,6 @@
           "label": "Substrate (aspirin)\nenters active site",
           "slots": [
             {
-              "id": "cox",
-              "kind": "blob",
-              "style": {
-                "blob_fill": "#CBD5E8",
-                "blob_stroke": "#6B7D95",
-                "blob_highlight": "#EEF3FB",
-                "blob_cavity_fill": "#DCE6F2"
-              }
-            },
-            {
               "id": "asp",
               "kind": "molecule",
               "style": {
@@ -49,7 +39,7 @@
                   "3": "esterO",
                   "5": "cooh"
                 },
-                "scale": 0.34
+                "scale": 1.0
               }
             },
             {
@@ -58,7 +48,7 @@
               "label": "Ser530",
               "style": {
                 "residue": "ser530",
-                "scale": 0.26,
+                "scale": 1.0,
                 "label_font_color": "#7B52AB"
               }
             },
@@ -68,33 +58,28 @@
               "label": "His513",
               "style": {
                 "residue": "his513",
-                "scale": 0.26,
+                "scale": 1.0,
                 "label_font_color": "#2563A8"
               }
             }
           ],
           "attach": [
             {
-              "child": "asp",
-              "parent": "cox",
-              "edge": "cavity_center"
-            },
-            {
               "child": "ser",
-              "parent": "cox",
+              "parent": "asp",
               "edge": "top",
               "offset": [
-                -30,
-                -8
+                0,
+                -34
               ]
             },
             {
               "child": "his",
-              "parent": "cox",
+              "parent": "asp",
               "edge": "bottom",
               "offset": [
-                22,
-                8
+                0,
+                30
               ]
             }
           ],
@@ -113,16 +98,6 @@
           "label": "Nucleophilic attack\nby Ser530",
           "slots": [
             {
-              "id": "cox",
-              "kind": "blob",
-              "style": {
-                "blob_fill": "#CBD5E8",
-                "blob_stroke": "#6B7D95",
-                "blob_highlight": "#EEF3FB",
-                "blob_cavity_fill": "#DCE6F2"
-              }
-            },
-            {
               "id": "asp",
               "kind": "molecule",
               "style": {
@@ -133,7 +108,7 @@
                   "3": "esterO",
                   "5": "cooh"
                 },
-                "scale": 0.34
+                "scale": 1.0
               }
             },
             {
@@ -142,7 +117,7 @@
               "label": "Ser530",
               "style": {
                 "residue": "ser530",
-                "scale": 0.26,
+                "scale": 1.0,
                 "label_font_color": "#7B52AB"
               }
             },
@@ -152,33 +127,28 @@
               "label": "His513",
               "style": {
                 "residue": "his513",
-                "scale": 0.26,
+                "scale": 1.0,
                 "label_font_color": "#2563A8"
               }
             }
           ],
           "attach": [
             {
-              "child": "asp",
-              "parent": "cox",
-              "edge": "cavity_center"
-            },
-            {
               "child": "ser",
-              "parent": "cox",
+              "parent": "asp",
               "edge": "top",
               "offset": [
-                -30,
-                -8
+                0,
+                -34
               ]
             },
             {
               "child": "his",
-              "parent": "cox",
+              "parent": "asp",
               "edge": "bottom",
               "offset": [
-                22,
-                8
+                0,
+                30
               ]
             }
           ],
@@ -209,16 +179,6 @@
           "label": "Acetyl transfer &\nleaving group departure",
           "slots": [
             {
-              "id": "cox",
-              "kind": "blob",
-              "style": {
-                "blob_fill": "#CBD5E8",
-                "blob_stroke": "#6B7D95",
-                "blob_highlight": "#EEF3FB",
-                "blob_cavity_fill": "#DCE6F2"
-              }
-            },
-            {
               "id": "asp",
               "kind": "molecule",
               "style": {
@@ -229,7 +189,7 @@
                   "3": "esterO",
                   "5": "cooh"
                 },
-                "scale": 0.34
+                "scale": 1.0
               }
             },
             {
@@ -238,7 +198,7 @@
               "label": "Ser530",
               "style": {
                 "residue": "ser530",
-                "scale": 0.26,
+                "scale": 1.0,
                 "label_font_color": "#7B52AB"
               }
             },
@@ -248,7 +208,7 @@
               "label": "His513",
               "style": {
                 "residue": "his513",
-                "scale": 0.26,
+                "scale": 1.0,
                 "label_font_color": "#2563A8"
               }
             },
@@ -258,7 +218,6 @@
               "label": "salicylic acid",
               "style": {
                 "smiles": "O=C(O)c1ccccc1O",
-                "scale": 0.3,
                 "chem_atom_O": "#33AA33",
                 "chem_bond_stroke": "#33AA33",
                 "label_font_color": "#33AA33"
@@ -267,35 +226,30 @@
           ],
           "attach": [
             {
-              "child": "asp",
-              "parent": "cox",
-              "edge": "cavity_center"
-            },
-            {
               "child": "ser",
-              "parent": "cox",
+              "parent": "asp",
               "edge": "top",
               "offset": [
-                -30,
-                -8
+                0,
+                -34
               ]
             },
             {
               "child": "his",
-              "parent": "cox",
+              "parent": "asp",
               "edge": "bottom",
               "offset": [
-                22,
-                8
+                0,
+                30
               ]
             },
             {
               "child": "sal",
-              "parent": "cox",
+              "parent": "asp",
               "edge": "right",
               "offset": [
-                10,
-                36
+                40,
+                30
               ]
             }
           ],
@@ -322,22 +276,11 @@
           "label": "Irreversible\nacetylation of Ser530",
           "slots": [
             {
-              "id": "cox",
-              "kind": "blob",
-              "style": {
-                "blob_fill": "#CBD5E8",
-                "blob_stroke": "#6B7D95",
-                "blob_highlight": "#EEF3FB",
-                "blob_cavity_fill": "#DCE6F2"
-              }
-            },
-            {
               "id": "ser",
               "kind": "residue",
               "label": "acetyl\u2013Ser530",
               "style": {
                 "residue": "*CO[C:1](=O)C",
-                "scale": 0.3,
                 "label_font_color": "#7B52AB"
               }
             },
@@ -347,28 +290,19 @@
               "label": "His513",
               "style": {
                 "residue": "his513",
-                "scale": 0.26,
+                "scale": 1.0,
                 "label_font_color": "#2563A8"
               }
             }
           ],
           "attach": [
             {
-              "child": "ser",
-              "parent": "cox",
-              "edge": "top",
-              "offset": [
-                -30,
-                -8
-              ]
-            },
-            {
               "child": "his",
-              "parent": "cox",
+              "parent": "ser",
               "edge": "bottom",
               "offset": [
-                22,
-                8
+                0,
+                30
               ]
             }
           ],
@@ -413,8 +347,7 @@
               "kind": "molecule",
               "label": "arachidonic acid",
               "style": {
-                "smiles": "CCCCC/C=C\\C/C=C\\C/C=C\\C/C=C\\CCCC(=O)O",
-                "scale": 0.5
+                "smiles": "CCCCC/C=C\\C/C=C\\C/C=C\\C/C=C\\CCCC(=O)O"
               }
             },
             {

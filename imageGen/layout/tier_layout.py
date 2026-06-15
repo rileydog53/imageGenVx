@@ -64,9 +64,11 @@ from imageGen.layout.anchors import AnchorRegistry
 from imageGen.layout.label_placement import LabelRequest, place_labels
 from imageGen.layout.types import LayoutEntry
 from imageGen.primitives.chemistry import (
+    molecule_natural_size,
     render_molecule_anchored,
     render_residue_anchored,
 )
+from imageGen.primitives._mol_render import _RESIDUE_SMILES
 from imageGen.primitives.primitive_specs import PRIMITIVE_REGISTRY
 from imageGen.primitives.proteins import protein_blob
 from imageGen.styles.loader import merge_style
@@ -84,6 +86,14 @@ TIER_DEFAULT_PARAMS: dict[str, Any] = {
     "tier_margin": 20.0,
     "tier_gutter": 24.0,
     "tier_slot_size": (180.0, 140.0),
+    # Content-aware chemistry sizing (pub-grade): every MOLECULE/RESIDUE renders
+    # at this bond length, so the whole figure shares one chemistry scale instead
+    # of each molecule auto-filling its slot box (which made bond length swing
+    # ~10x). The drawn box is derived from the molecule, not the slot. ``tier_mol_pad``
+    # is the label margin around that box. Set ``chem_target_bond_px`` to 0/None to
+    # fall back to the legacy slot-box sizing.
+    "chem_target_bond_px": 22.0,
+    "tier_mol_pad": 14.0,
     "tier_edge_standoff": 8.0,
     "tier_title_font_size": 18,
     "tier_subtitle_font_size": 13,
@@ -634,12 +644,18 @@ def _layout_scene(
                 raise ValueError(
                     f"{slot.kind.value} slot '{scene.id}.{slot.id}' needs {need}")
             names = {int(k): v for k, v in (style.get("anchor_names") or {}).items()}
-            # P5.4 Nit-2: render at the integer pixel size actually used and
-            # centre on that SAME rounded size, so the molecule (and its
-            # published anchors) sit dead-centre instead of drifting up to half a
-            # pixel from the int() floor. Default (180, 140) rounds to itself.
-            rw, rh = int(round(ssw)), int(round(ssh))
-            top_left = (center[0] - rw / 2.0, center[1] - rh / 2.0)
+            # Pub-grade content-aware sizing: render at the shared
+            # ``chem_target_bond_px`` bond length so every structure in the figure
+            # is one consistent scale; the box is derived from the molecule (not the
+            # slot). ``style['scale']`` multiplies the bond length. Passing
+            # ``center=`` lets the renderer bake the placement + return absolute
+            # anchors (no slot-box top-left math). Falls back to the legacy
+            # slot-box size when ``chem_target_bond_px`` is unset.
+            tbp = float(params.get("chem_target_bond_px") or 0.0) * scale
+            target_bp = tbp if tbp > 0.0 else None
+            mol_pad = float(params["tier_mol_pad"])
+            size_arg = ((int(round(ssw)), int(round(ssh)))
+                        if target_bp is None else (1, 1))
             # Content cascade: preset ⊕ tier ⊕ scene ⊕ this slot's style
             # overrides (content/control keys dropped). Empty → the renderer's
             # DEFAULT_STYLE, byte-identical to the no-style call.
@@ -650,16 +666,19 @@ def _layout_scene(
                               "scale")})
             if is_residue:
                 ag = render_residue_anchored(
-                    str(residue or smiles), size=(rw, rh), anchor_names=names,
-                    style_dict=mol_style or None,
-                    attach_anchor=str(style.get("attach_anchor", "attach")))
+                    str(residue or smiles), size=size_arg, center=center,
+                    anchor_names=names, style_dict=mol_style or None,
+                    attach_anchor=str(style.get("attach_anchor", "attach")),
+                    target_bond_px=target_bp, size_pad=mol_pad)
             else:
-                ag = render_molecule_anchored(str(smiles), size=(rw, rh),
-                                              anchor_names=names,
-                                              style_dict=mol_style or None)
-            registry.publish(scoped, ag.anchors, offset=top_left)
+                ag = render_molecule_anchored(
+                    str(smiles), size=size_arg, center=center, anchor_names=names,
+                    style_dict=mol_style or None, target_bond_px=target_bp,
+                    size_pad=mol_pad)
+            # center= baked the placement → anchors are already absolute.
+            registry.publish(scoped, ag.anchors)
             entries.append(LayoutEntry(
-                (lambda g=ag.group: g), (), {}, top_left, ir_id=scoped))
+                (lambda g=ag.group: g), (), {}, (0.0, 0.0), ir_id=scoped))
         elif slot.kind == SlotKind.TEXT:
             # P5.4 Nit-3: publish the `center` anchor at the visual MIDLINE (so an
             # edge to a text slot's centre meets its middle), and drop the
@@ -801,6 +820,10 @@ def _layout_scene(
             entries, requests,
             layout_params={"label_anchor_gap": float(params["tier_caption_gap"])},
             style_dict=label_style,
+            # Seed occupancy with the slot ink boxes so a caption / residue label
+            # never lands on top of the chemistry (molecule entries are closures,
+            # invisible to place_labels' own bbox extraction).
+            extra_occupied=boxes,
         )
     return entries
 
@@ -896,28 +919,66 @@ def _caption_group(
     return g
 
 
+def _slot_eff_smiles(slot: Slot) -> str | None:
+    """The SMILES a MOLECULE/RESIDUE slot draws (resolving a residue name)."""
+    style = slot.style or {}
+    if slot.kind == SlotKind.RESIDUE:
+        res = style.get("residue")
+        if res:
+            return _RESIDUE_SMILES.get(res, res)
+        return style.get("smiles")
+    return style.get("smiles")
+
+
+def _slot_drawn_size(
+    slot: Slot, slot_size: tuple[float, float], params: dict[str, Any],
+) -> tuple[float, float]:
+    """The ``(w, h)`` a slot's glyph actually draws at — the ink, not the cell.
+
+    Pub-grade sizing: a MOLECULE/RESIDUE is sized to its *content* at the shared
+    ``chem_target_bond_px`` bond length (so every structure in the figure renders
+    at one scale), a BLOB/GLYPH at the (scaled) slot box. ``style['scale']`` is an
+    optional multiplier on the bond length (chemistry) or the box (blob/glyph).
+    Falls back to the legacy slot-box size when ``chem_target_bond_px`` is unset or
+    the SMILES can't be parsed."""
+    sw, sh = slot_size
+    style = slot.style or {}
+    scale = float(style.get("scale", 1.0))
+    if slot.kind in (SlotKind.MOLECULE, SlotKind.RESIDUE):
+        tbp = float(params.get("chem_target_bond_px") or 0.0) * scale
+        smi = _slot_eff_smiles(slot)
+        if tbp > 0.0 and smi:
+            try:
+                return molecule_natural_size(
+                    str(smi), tbp, float(params["tier_mol_pad"]))
+            except Exception:
+                pass
+        return (sw * scale, sh * scale)
+    if slot.kind in (SlotKind.BLOB, SlotKind.GLYPH):
+        return (sw * scale, sh * scale)
+    return (sw, sh)
+
+
 def _slot_bbox(
     slot: Slot, center: tuple[float, float], slot_size: tuple[float, float],
     params: dict[str, Any],
 ) -> tuple[float, float, float, float]:
     """Absolute ``(minx, miny, maxx, maxy)`` a slot occupies around its centre.
 
-    A MOLECULE fills the full slot box; a TEXT slot is roughly measured from its
-    label. The union of these (computed by the caller) is the scene's *content*
-    extent — what cross-cell transition arrows reach to, instead of the wider
-    cell frame (the cell-vs-content fix)."""
+    Sized by the *drawn ink* (``_slot_drawn_size``) for chemistry/blob/glyph and by
+    the measured label for TEXT. The union of these (computed by the caller) is the
+    scene's *content* extent — what cross-cell transition arrows reach to, instead
+    of the wider cell frame (the cell-vs-content fix)."""
     cxc, cyc = center
-    # RESIDUE (a real fragment), BLOB (an organic surface) and GLYPH (a registered
-    # icon) all fill the slot box exactly like a MOLECULE.
-    if slot.kind in (SlotKind.MOLECULE, SlotKind.RESIDUE, SlotKind.BLOB,
-                     SlotKind.GLYPH):
-        sw, sh = slot_size
-        return (cxc - sw / 2.0, cyc - sh / 2.0, cxc + sw / 2.0, cyc + sh / 2.0)
     if slot.kind == SlotKind.TEXT:
         fs = int(params["tier_text_font_size"])
         w = max(1, len(slot.label or "")) * fs * 0.6
         half_h = fs * 0.7
         return (cxc - w / 2.0, cyc - half_h, cxc + w / 2.0, cyc + half_h)
+    if slot.kind in (SlotKind.MOLECULE, SlotKind.RESIDUE, SlotKind.BLOB,
+                     SlotKind.GLYPH):
+        w, h = _slot_drawn_size(slot, slot_size, params)
+        return (cxc - w / 2.0, cyc - h / 2.0, cxc + w / 2.0, cyc + h / 2.0)
     return (cxc, cyc, cxc, cyc)
 
 

@@ -31,6 +31,7 @@ import svgwrite.container
 import svgwrite.text
 
 from rdkit import Chem
+from rdkit.Chem import rdDepictor
 from rdkit.Chem.Draw import rdMolDraw2D
 
 from imageGen.primitives._anchors import AnchoredGroup
@@ -210,6 +211,7 @@ def _rdkit_mol_to_svg_and_coords(
     size: tuple[int, int],
     style_name: str,
     style: dict,
+    fixed_bond_px: float | None = None,
 ) -> tuple[str, dict[int, tuple[float, float]]]:
     """Render *mol* via MolDraw2DSVG; return (raw SVG, {atom_idx: (x, y)}).
 
@@ -235,6 +237,12 @@ def _rdkit_mol_to_svg_and_coords(
     else:
         opts.baseFontSize = 0.6 * float(style["chem_atom_font_scale"])
     opts.bondLineWidth = bond_width
+    if fixed_bond_px is not None:
+        # P-sizing: pin the drawn bond length so every molecule shares one scale
+        # (content-aware sizing — the box is derived from the molecule, not the
+        # molecule squeezed into a fixed box). Default None keeps the historic
+        # fill-the-box behaviour for leaf/panel callers byte-identical.
+        opts.fixedBondLength = float(fixed_bond_px)
 
     palette: dict[int, tuple[float, float, float]] = {}
     for symbol, atomic_num in _ELEMENT_TO_ATOMIC_NUM.items():
@@ -322,6 +330,7 @@ def _inline_molecule_anchored(
     style_name: str,
     style: dict,
     translate: tuple[float, float] = (0.0, 0.0),
+    fixed_bond_px: float | None = None,
 ) -> tuple[svgwrite.container.Group, dict[int, tuple[float, float]]]:
     """Like :func:`_inline_molecule`, but also return ``{atom_idx: (x, y)}``.
 
@@ -331,7 +340,8 @@ def _inline_molecule_anchored(
     body in one place: same restyle + width/height/viewBox handling as
     ``_inline_molecule``.
     """
-    raw_svg, atom_coords = _rdkit_mol_to_svg_and_coords(mol, size, style_name, style)
+    raw_svg, atom_coords = _rdkit_mol_to_svg_and_coords(
+        mol, size, style_name, style, fixed_bond_px=fixed_bond_px)
     svg_root = _restyle_rdkit_svg(raw_svg, style)
     width, height = size
     svg_root.set("width", str(width))
@@ -389,6 +399,51 @@ def render_molecule(
     return _inline_molecule(mol, size, style, merged_style, translate=translate)
 
 
+def _natural_box(
+    mol: "Chem.Mol", target_bond_px: float, pad: float
+) -> tuple[int, int]:
+    """Pixel ``(w, h)`` that renders *mol* at ~``target_bond_px`` bond length.
+
+    Computes a 2D depiction with RDKit's default algorithm (the same one
+    ``DrawMolecule`` would use, so leaf/panel renders are unaffected) and scales
+    the conformer bbox by ``target_bond_px / median-bond`` — so the box is sized
+    to the MOLECULE rather than the molecule squeezed into a fixed box. This is
+    what gives every molecule in a figure one consistent bond scale.
+    """
+    if mol.GetNumConformers() == 0:
+        rdDepictor.Compute2DCoords(mol)
+    conf = mol.GetConformer()
+    n = mol.GetNumAtoms()
+    if n == 0:
+        side = max(int(round(2.0 * pad)), 1)
+        return side, side
+    xs = [conf.GetAtomPosition(i).x for i in range(n)]
+    ys = [conf.GetAtomPosition(i).y for i in range(n)]
+    bonds = [
+        math.hypot(conf.GetAtomPosition(b.GetBeginAtomIdx()).x
+                   - conf.GetAtomPosition(b.GetEndAtomIdx()).x,
+                   conf.GetAtomPosition(b.GetBeginAtomIdx()).y
+                   - conf.GetAtomPosition(b.GetEndAtomIdx()).y)
+        for b in mol.GetBonds()
+    ]
+    median = sorted(bonds)[len(bonds) // 2] if bonds else 1.5
+    ppu = target_bond_px / (median or 1.5)
+    w = (max(xs) - min(xs)) * ppu + 2.0 * pad
+    h = (max(ys) - min(ys)) * ppu + 2.0 * pad
+    floor = int(round(2.0 * pad))
+    return max(int(round(w)), floor), max(int(round(h)), floor)
+
+
+def molecule_natural_size(
+    smiles: str, target_bond_px: float, pad: float = 16.0
+) -> tuple[int, int]:
+    """The ``(w, h)`` pixel box a SMILES occupies rendered at ``target_bond_px``
+    bond length — the pre-render size predictor the tier solver needs before it
+    places a molecule slot. Matches the box :func:`render_molecule_anchored` uses
+    internally for the same ``target_bond_px`` (both call :func:`_natural_box`)."""
+    return _natural_box(_smiles_to_mol(smiles), target_bond_px, pad)
+
+
 def render_molecule_anchored(
     smiles: str,
     size: tuple[int, int] = (200, 150),
@@ -399,6 +454,8 @@ def render_molecule_anchored(
     *,
     open_valence: bool = False,
     attach_anchor: str = "attach",
+    target_bond_px: float | None = None,
+    size_pad: float = 16.0,
 ) -> AnchoredGroup:
     """Render a molecule AND publish per-atom anchor points (V3 scene chassis).
 
@@ -449,12 +506,6 @@ def render_molecule_anchored(
         raise ValueError(f"Unknown style {style!r} (expected 'skeletal' or 'ball_stick')")
     merged_style = {**DEFAULT_STYLE, **(style_dict or {})}
     mol = _smiles_to_mol(smiles)
-    width, height = size
-    if center is not None:
-        cx, cy = center
-        translate = (cx - width / 2.0, cy - height / 2.0)
-    else:
-        translate = (0.0, 0.0)
 
     # Capture the atom-map -> index mapping, then clear the map numbers so they
     # don't render as "C:1" labels. Indices are unaffected by clearing, so the
@@ -479,8 +530,22 @@ def render_molecule_anchored(
     for atom in mol.GetAtoms():
         atom.SetAtomMapNum(0)
 
+    # Content-aware sizing: when target_bond_px is set, derive the box from the
+    # molecule so every structure in a figure renders at one bond scale (the
+    # 2D-coord conformer computed here is reused by the draw — no re-layout). When
+    # None, keep the caller's fixed box → leaf/panel renders byte-identical.
+    if target_bond_px is not None:
+        size = _natural_box(mol, target_bond_px, size_pad)
+    width, height = size
+    if center is not None:
+        cx, cy = center
+        translate = (cx - width / 2.0, cy - height / 2.0)
+    else:
+        translate = (0.0, 0.0)
+
     group, atom_coords = _inline_molecule_anchored(
-        mol, size, style, merged_style, translate=translate
+        mol, size, style, merged_style, translate=translate,
+        fixed_bond_px=target_bond_px,
     )
     anchors: dict[str, tuple[float, float]] = {}
     for idx, xy in atom_coords.items():
@@ -530,6 +595,8 @@ def render_residue_anchored(
     center: tuple[float, float] | None = None,
     anchor_names: dict[int, str] | None = None,
     attach_anchor: str = "attach",
+    target_bond_px: float | None = None,
+    size_pad: float = 16.0,
 ) -> AnchoredGroup:
     """Render an amino-acid side chain as a real molecular fragment (MF-1).
 
@@ -563,6 +630,7 @@ def render_residue_anchored(
     ag = render_molecule_anchored(
         smiles, size=size, style=style, style_dict=style_dict, center=center,
         anchor_names=anchor_names, open_valence=True, attach_anchor=attach_anchor,
+        target_bond_px=target_bond_px, size_pad=size_pad,
     )
     if not any(k == attach_anchor or k.startswith(attach_anchor) for k in ag.anchors):
         raise ValueError(

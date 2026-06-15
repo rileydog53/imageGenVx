@@ -183,6 +183,44 @@ def test_lone_pair_anchor_offset_outward_from_heteroatom():
     assert "lp_a1" not in ag.anchors
 
 
+def test_content_aware_sizing_one_bond_scale_across_molecules():
+    # Content-aware sizing (target_bond_px) renders every molecule at one bond
+    # length, so a small fragment and a big molecule share a scale instead of
+    # auto-filling their boxes (which swung bond length ~10x). The box is derived
+    # from the molecule, so a bigger molecule gets a bigger box.
+    import statistics
+    from imageGen.primitives.chemistry import molecule_natural_size
+
+    def median_bond_px(smi):
+        from rdkit import Chem
+        m = Chem.MolFromSmiles(smi)
+        ag = render_molecule_anchored(smi, target_bond_px=24.0)
+        bl = []
+        for b in m.GetBonds():
+            p = ag.anchors[f"atom{b.GetBeginAtomIdx()}"]
+            q = ag.anchors[f"atom{b.GetEndAtomIdx()}"]
+            bl.append(math.hypot(p[0] - q[0], p[1] - q[1]))
+        return statistics.median(bl)
+
+    aspirin = median_bond_px("CC(=O)Oc1ccccc1C(=O)O")
+    big = median_bond_px("CCCCCCCCCCCCCCCCCCCC(=O)O")
+    assert abs(aspirin - 24.0) < 6.0 and abs(big - 24.0) < 6.0  # both near target
+    assert abs(aspirin - big) < 6.0                              # consistent
+    # bigger molecule -> bigger derived box
+    w_small, _ = molecule_natural_size("CCO", 24.0)
+    w_big, _ = molecule_natural_size("CCCCCCCCCCCCCCCCCCCC(=O)O", 24.0)
+    assert w_big > w_small
+
+
+def test_content_sizing_default_off_is_byte_identical():
+    # No target_bond_px -> the caller's fixed box is honoured (leaf/panel paths).
+    ag = render_molecule_anchored("CCO", size=(123, 77))
+    # anchors stay inside the requested box
+    for _n, (x, y) in ag.anchors.items():
+        if _n.startswith("atom"):
+            assert 0 <= x <= 123 and 0 <= y <= 77
+
+
 def test_bond_and_lone_pair_anchors_shift_with_center():
     base = render_molecule_anchored(CARBONYL, size=MOL_SIZE, anchor_names=CARBONYL_NAMES)
     w, h = MOL_SIZE

@@ -167,19 +167,22 @@ def test_autocrop_does_not_grow_canvas(tmp_path):
 
 def test_scene_frame_anchor_tracks_content_not_cell():
     # A single molecule centred in a wide cell: the scene-frame 'right' anchor
-    # must sit at the molecule's right edge (centre + sw/2), NOT the cell right
-    # edge — so a cross-cell arrow spans the visible molecule gap.
+    # tracks the molecule's CONTENT extent (now content-aware sized to its real
+    # ink), NOT the cell right edge — so a cross-cell arrow spans the visible
+    # molecule gap rather than the inter-cell gutter.
+    from imageGen.layout.tier_layout import _slot_drawn_size
     scene = Scene.model_validate({
         "id": "s", "slots": [{"id": "mol", "kind": "molecule",
                               "style": {"smiles": "CCO"}}]})
     reg = AnchorRegistry()
-    cell = (0.0, 0.0, 400.0, 200.0)  # cell much wider than the slot
+    cell = (0.0, 0.0, 400.0, 200.0)  # cell much wider than the molecule
     _layout_scene(scene, cell, reg, dict(TIER_DEFAULT_PARAMS))
-    sw, _sh = TIER_DEFAULT_PARAMS["tier_slot_size"]
+    mol_w, _h = _slot_drawn_size(scene.slots[0], TIER_DEFAULT_PARAMS["tier_slot_size"],
+                                 dict(TIER_DEFAULT_PARAMS))
     cell_cx = cell[0] + cell[2] / 2.0
     right_x, _y = reg.resolve("s.right")
-    assert right_x == pytest.approx(cell_cx + sw / 2.0)
-    assert right_x < cell[0] + cell[2]  # strictly inside the cell frame
+    assert right_x == pytest.approx(cell_cx + mol_w / 2.0)  # at the molecule edge
+    assert cell_cx < right_x < cell[0] + cell[2]  # past centre, inside the cell
 
 
 def test_transition_endpoints_lie_in_the_molecule_gap():

@@ -333,3 +333,24 @@ def test_label_placementrender_entries_to_png():
     composed = place_labels(entries, requests)
     out = render_entries_to_png(composed, "label_placement_nfkb.png")
     assert out.exists() and out.stat().st_size > 0
+
+
+def test_place_labels_respects_extra_occupied_seed():
+    """A caller-supplied occupancy box (e.g. a tier molecule's ink, invisible to
+    the engine's own bbox extraction) pushes a label clear of it — the fix that
+    keeps residue/caption labels off the chemistry."""
+    from imageGen.layout.label_placement import (
+        _bbox_from_center, _estimate_text_bbox, _overlaps,
+    )
+    req = LabelRequest(text="Ser530", anchor=(250.0, 150.0), anchor_size=(0.0, 0.0),
+                       priority=("below", "above", "right", "left"))
+    # The label's unseeded first-choice spot...
+    free = place_labels([], [req])
+    fx, fy = free[-1].args[1]
+    # ...is blocked by a small ink box there; the seed must move the label clear.
+    ink = (fx - 30.0, fy - 12.0, fx + 30.0, fy + 12.0)
+    seeded = place_labels([], [req], extra_occupied=[ink])
+    sx, sy = seeded[-1].args[1]
+    placed = _bbox_from_center((sx, sy), _estimate_text_bbox("Ser530", 11))
+    assert not _overlaps(placed, ink, 1.0), "label still overlaps the seeded ink box"
+    assert (sx, sy) != (fx, fy)  # the seed actually moved it

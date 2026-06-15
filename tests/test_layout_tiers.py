@@ -889,21 +889,21 @@ def test_text_parent_slide_uses_text_width():
     assert cx_c < px + 0.5 * sw  # strictly less than the old molecule-width slide
 
 
-def test_molecule_centering_uses_rounded_render_size():
-    # Nit-2: a fractional slot size rounds for BOTH the render size and the
-    # centring offset, so the rendered molecule box stays centred on the cell
-    # centre (no int()-floor drift).
+def test_content_sized_molecule_is_centred_on_the_cell():
+    # Content-aware sizing renders the molecule at a derived box and centres it on
+    # the cell centre (the renderer bakes center=, so the scene-frame centre — the
+    # content centroid of a lone slot — lands on the cell centre).
     from imageGen.layout.anchors import AnchorRegistry
     from imageGen.layout.tier_layout import TIER_DEFAULT_PARAMS, _layout_scene
-    params = {**TIER_DEFAULT_PARAMS, "tier_slot_size": (181.6, 141.4)}
     scene = Scene.model_validate({"id": "s", "slots": [
         {"id": "mol", "kind": "molecule", "style": {"smiles": "CCO"}}]})
     reg = AnchorRegistry()
-    entries = _layout_scene(scene, (0.0, 0.0, 400.0, 200.0), reg, params)
-    mol = next(e for e in entries if e.ir_id == "s.mol")
-    rw = round(181.6)
-    # the rendered box (top_left .. top_left + rw) is centred on the cell centre
-    assert mol.position[0] + rw / 2.0 == pytest.approx(200.0)
+    _layout_scene(scene, (0.0, 0.0, 400.0, 200.0), reg, dict(TIER_DEFAULT_PARAMS))
+    cxr, cyr = reg.resolve("s.center")
+    assert cxr == pytest.approx(200.0, abs=1.0) and cyr == pytest.approx(100.0, abs=1.0)
+    # atom anchors straddle the cell centre (molecule really is centred there)
+    xs = [reg.resolve(f"s.mol.atom{i}")[0] for i in range(3)]
+    assert min(xs) < 200.0 < max(xs)
 
 
 def test_text_slot_center_anchor_is_midline():

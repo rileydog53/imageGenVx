@@ -71,10 +71,10 @@ def test_acceptance_mf2_curly_arrows_originate_on_real_anchors():
 
 
 def test_acceptance_mf3_active_site_fragments_do_not_overlap(tmp_path):
-    # The solver spreads the blob / aspirin / Ser530 / His513 so their boxes are
-    # disjoint — assert the four slot groups all render with distinct ids present.
+    # The solver spreads the three active-site fragments (substrate + Ser530 +
+    # His513) so they render as distinct, legible groups — assert all present.
     fig = _figure()
     out = render_figure(fig, tmp_path / "acc.svg")
     txt = out.read_text()
-    for sid in ("s1.cox", "s1.asp", "s1.ser", "s1.his"):
+    for sid in ("s1.asp", "s1.ser", "s1.his"):
         assert f'id="{sid}"' in txt

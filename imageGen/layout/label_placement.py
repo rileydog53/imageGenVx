@@ -468,6 +468,7 @@ def place_labels(
     *,
     canvas: tuple[float, float] | None = None,
     strict_labels: bool = False,
+    extra_occupied: list[Bbox] | None = None,
 ) -> list[LayoutEntry]:
     """Place each LabelRequest near its anchor, relaxing on collision.
 
@@ -513,7 +514,11 @@ def place_labels(
     margin = float(params["label_collision_margin"])
     font_size = float((style_dict or {}).get("label_font_size", 11))
 
-    occupied: list[Bbox] = [
+    # Seed with caller-supplied ink boxes (e.g. the tier engine's molecule/residue
+    # extents, which are closures invisible to `_entry_bbox`) so labels avoid the
+    # chemistry, not just other labels.
+    occupied: list[Bbox] = list(extra_occupied or [])
+    occupied += [
         bbox for bbox in (_entry_bbox(e) for e in entries) if bbox is not None
     ]
     # Bug 2: reserve a thin corridor along every arrow shaft so relation
