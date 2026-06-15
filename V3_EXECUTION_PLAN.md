@@ -858,7 +858,15 @@ rule-fixable** ("sit it left", "arrowhead needs clearance"), not uncanny-valley.
   orientation; layering·contrast; density·arrows; pubgrade-defaults), the **concrete
   defect list**, and the **render-critic + corpus** plan (a vision-scored pub-grade
   rubric — the missing quality instrument). Currently this lives only in chat.
-- [ ] **P.3 — Make the corpus real.** Author ~10 diverse figures **through the skill
+- [x] **P.3 — Make the corpus real.** ✅ LANDED 2026-06-15. 10 diverse tier
+  figures authored as IR JSON through the skill path under `showcase/corpus/`
+  (mechanisms, an SN2, a binding event, a glyph "tier pathway", a `step_sequence`,
+  a redox, competitive inhibition); `tests/test_corpus_tier_figures.py` renders +
+  checks all 10 (suite 1156 → 1177). **Corpus finding:** every figure renders
+  clean, and the label defects (D1/D2/D4) recur across figures — dimension 2
+  (labels/leader lines) is the top pub-grade priority. See
+  `showcase/corpus/README.md`. Original spec ↓
+- [ ] ~~**P.3 — Make the corpus real.**~~ Author ~10 diverse figures **through the skill
   path** (mechanism, multi-step, a tier pathway, a binding event, …) and add them to
   the test/showcase set, so overfitting to aspirin is visible and "by default" is
   measured. *Done when:* the suite renders + checks ≥10 tier figures, none

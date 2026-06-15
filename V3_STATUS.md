@@ -19,7 +19,7 @@ first, then dive into the detail docs linked below.
 | 0c | **Pre-Step-7 seams** — `PrimitiveSpec` single-site registry, `list_style_keys()` + `styles --keys` CLI, `LoweringPlan.coerced_from` record. Suite: 1082 → 1097. | ✅ LANDED (2026-06-13) |
 | 7 | **Primitive refresh + expansion** — curly arrows (V3-C4), TS partial bonds, organic shaded blobs, per-atom anchors. **Aspirin/COX-1 reproduction is the acceptance test** (gated by MF-1/2/3). | ✅ LANDED (2026-06-14) — **V3 FEATURE-COMPLETE** |
 
-**Current test count:** 1156 passing. The V3 scene **engine** is feature-complete
+**Current test count:** 1177 passing (1156 engine + 21 corpus). The V3 scene **engine** is feature-complete
 (numbered steps 1–7). **But the work is NOT done** — see the pub-grade phase below.
 
 ---
@@ -70,9 +70,14 @@ updated the skill.** Consequences:
    6-dimension scout report (sizing ✓ / labels ~ / orientation / layering·contrast
    / density·arrows / pubgrade-defaults), the concrete defect list, and the
    **critic + corpus** plan — currently trapped in chat.
-3. **Make the corpus real.** Author ~10 diverse figures **through the skill path**
-   (not hand-written scripts) and test them, so overfitting to aspirin becomes
-   visible and "by default" is actually measured.
+3. ✅ **DONE (2026-06-15) — corpus is real (N = 10).** 10 diverse tier figures
+   authored as IR JSON through the skill path under `showcase/corpus/` (see its
+   README), pinned by `tests/test_corpus_tier_figures.py` (suite 1156 → **1177**).
+   None is a one-off Python script. **Finding:** all 10 render clean, and the
+   label defects (D1 residue/glyph labels drift, D2 caption clipping, D4
+   transition labels overlap arrows) **recur across figures** — so they are
+   general chassis behaviour, not aspirin tuning. **Dimension 2 (labels / leader
+   lines) is the corpus-confirmed top pub-grade priority.**
 
 **Once #1–#3 land, reassess whether the remaining scout dimensions** (orientation,
 leader-line labels, density/arrows, the publication preset + routing flip, the

@@ -1,0 +1,48 @@
+{
+  "archetype": "mechanism_cartoon",
+  "tiers": [
+    { "id": "title", "role": "title", "height_frac": 0.13,
+      "label": "Acetylcholinesterase Hydrolyses Acetylcholine",
+      "subtitle": "Ser203 of the catalytic triad attacks the ester carbonyl" },
+    { "id": "mech", "role": "scene_row", "height_frac": 0.62,
+      "style": { "band_fill": "#F0F2F8" },
+      "rails": [ { "name": "mid", "axis": "y", "at": 0.5 } ],
+      "scenes": [
+        { "id": "s1", "badge": "1", "label": "Acetylcholine bound;\nHis447 polarises Ser203",
+          "slots": [
+            { "id": "ach", "kind": "molecule", "label": "acetylcholine",
+              "style": { "smiles": "C[C:1](=[O:2])[O:3]CC[N+](C)(C)C", "anchor_names": { "1": "carbonylC", "2": "carbonylO", "3": "esterO" } } },
+            { "id": "ser", "kind": "residue", "label": "Ser203", "style": { "residue": "ser", "label_font_color": "#2E7D32" } },
+            { "id": "his", "kind": "residue", "label": "His447", "style": { "residue": "his", "label_font_color": "#1565C0" } } ],
+          "attach": [
+            { "child": "ser", "parent": "ach", "edge": "top", "offset": [0, -34] },
+            { "child": "his", "parent": "ach", "edge": "bottom", "offset": [0, 30] } ],
+          "connect": [ { "from_anchor": "his.a1", "to_anchor": "ser.a1", "type": "hbond", "label": "H-bond" } ] },
+        { "id": "s2", "badge": "2", "label": "Nucleophilic attack\nby Ser203",
+          "slots": [
+            { "id": "ach", "kind": "molecule", "label": "acetylcholine",
+              "style": { "smiles": "C[C:1](=[O:2])[O:3]CC[N+](C)(C)C", "anchor_names": { "1": "carbonylC", "2": "carbonylO", "3": "esterO" } } },
+            { "id": "ser", "kind": "residue", "label": "Ser203", "style": { "residue": "ser", "label_font_color": "#2E7D32" } },
+            { "id": "his", "kind": "residue", "label": "His447", "style": { "residue": "his", "label_font_color": "#1565C0" } } ],
+          "attach": [
+            { "child": "ser", "parent": "ach", "edge": "top", "offset": [0, -34] },
+            { "child": "his", "parent": "ach", "edge": "bottom", "offset": [0, 30] } ],
+          "connect": [
+            { "from_anchor": "ser.lp_a1", "to_anchor": "ach.carbonylC", "type": "curly", "style": { "curl": "cw", "bow": 22 } },
+            { "from_anchor": "ach.bond_carbonylC_carbonylO", "to_anchor": "ach.carbonylO", "type": "curly", "style": { "arc": "s", "bow": 12 } } ] },
+        { "id": "s3", "badge": "3", "label": "Acyl-enzyme;\ncholine departs",
+          "slots": [
+            { "id": "ser", "kind": "residue", "label": "acetyl-Ser203", "style": { "residue": "*CO[C:1](=O)C", "label_font_color": "#2E7D32" } },
+            { "id": "his", "kind": "residue", "label": "His447", "style": { "residue": "his", "label_font_color": "#1565C0" } },
+            { "id": "cho", "kind": "molecule", "label": "choline",
+              "style": { "smiles": "OCC[N+](C)(C)C", "chem_atom_O": "#33AA33", "chem_bond_stroke": "#33AA33", "label_font_color": "#33AA33" } } ],
+          "attach": [
+            { "child": "his", "parent": "ser", "edge": "bottom", "offset": [0, 30] },
+            { "child": "cho", "parent": "ser", "edge": "right", "offset": [44, 26] } ],
+          "connect": [] }
+      ],
+      "transitions": [
+        { "from_ref": "s1@right", "to_ref": "s2@left", "type": "transition", "on_rail": "mid" },
+        { "from_ref": "s2@right", "to_ref": "s3@left", "type": "transition", "on_rail": "mid" } ] }
+  ]
+}

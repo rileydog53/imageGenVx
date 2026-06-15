@@ -1,0 +1,40 @@
+{
+  "archetype": "mechanism_cartoon",
+  "tiers": [
+    { "id": "title", "role": "title", "height_frac": 0.14,
+      "label": "Imine Formation",
+      "subtitle": "Nucleophilic addition of an amine to an aldehyde carbonyl" },
+    { "id": "mech", "role": "scene_row", "height_frac": 0.62,
+      "style": { "band_fill": "#F5F1F6" },
+      "rails": [ { "name": "mid", "axis": "y", "at": 0.5 } ],
+      "scenes": [
+        { "id": "s1", "badge": "1", "label": "Amine approaches\ncarbonyl",
+          "slots": [
+            { "id": "ald", "kind": "molecule", "label": "butanal",
+              "style": { "smiles": "CCC[C:1]=[O:2]", "anchor_names": { "1": "carbonylC", "2": "carbonylO" } } },
+            { "id": "amine", "kind": "molecule", "label": "ethylamine",
+              "style": { "smiles": "[N:1]CC", "anchor_names": { "1": "aminN" }, "chem_atom_N": "#1565C0", "label_font_color": "#1565C0" } } ],
+          "attach": [ { "child": "amine", "parent": "ald", "edge": "top", "offset": [0, -40] } ],
+          "connect": [] },
+        { "id": "s2", "badge": "2", "label": "Nucleophilic\naddition",
+          "slots": [
+            { "id": "ald", "kind": "molecule", "label": "butanal",
+              "style": { "smiles": "CCC[C:1]=[O:2]", "anchor_names": { "1": "carbonylC", "2": "carbonylO" } } },
+            { "id": "amine", "kind": "molecule", "label": "ethylamine",
+              "style": { "smiles": "[N:1]CC", "anchor_names": { "1": "aminN" }, "chem_atom_N": "#1565C0", "label_font_color": "#1565C0" } } ],
+          "attach": [ { "child": "amine", "parent": "ald", "edge": "top", "offset": [0, -40] } ],
+          "connect": [
+            { "from_anchor": "amine.lp_aminN", "to_anchor": "ald.carbonylC", "type": "curly", "style": { "curl": "cw", "bow": 22 } },
+            { "from_anchor": "ald.bond_carbonylC_carbonylO", "to_anchor": "ald.carbonylO", "type": "curly", "style": { "arc": "s", "bow": 12 } } ] },
+        { "id": "s3", "badge": "3", "label": "Carbinolamine",
+          "slots": [
+            { "id": "prod", "kind": "molecule", "label": "carbinolamine",
+              "style": { "smiles": "CCC[C:1]([O:2])[N:3]CC", "anchor_names": { "1": "c", "2": "oh", "3": "n" } } } ],
+          "attach": [],
+          "connect": [] }
+      ],
+      "transitions": [
+        { "from_ref": "s1@right", "to_ref": "s2@left", "type": "transition", "on_rail": "mid" },
+        { "from_ref": "s2@right", "to_ref": "s3@left", "type": "transition", "on_rail": "mid" } ] }
+  ]
+}

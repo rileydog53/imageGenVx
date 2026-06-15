@@ -1,0 +1,29 @@
+{
+  "archetype": "mechanism_cartoon",
+  "tiers": [
+    { "id": "title", "role": "title", "height_frac": 0.14,
+      "label": "Substrate Binding in an Enzyme Active Site",
+      "subtitle": "Recognition of succinate by a binding pocket" },
+    { "id": "bind", "role": "scene_row", "height_frac": 0.66,
+      "style": { "band_fill": "#EFF4EF" },
+      "rails": [ { "name": "mid", "axis": "y", "at": 0.5 } ],
+      "scenes": [
+        { "id": "s1", "badge": "1", "label": "Apo enzyme\n(empty pocket)",
+          "slots": [
+            { "id": "enz", "kind": "blob", "label": "enzyme",
+              "style": { "blob_fill": "#9CB89C" } } ],
+          "attach": [],
+          "connect": [] },
+        { "id": "s2", "badge": "2", "label": "Substrate bound",
+          "slots": [
+            { "id": "enz", "kind": "blob", "label": "enzyme",
+              "style": { "blob_fill": "#9CB89C" } },
+            { "id": "lig", "kind": "molecule", "label": "succinate",
+              "style": { "smiles": "OC(=O)CCC(=O)O", "scale": 0.85 } } ],
+          "attach": [ { "child": "lig", "parent": "enz", "edge": "cavity_center", "offset": [0, 0] } ],
+          "connect": [] }
+      ],
+      "transitions": [
+        { "from_ref": "s1@right", "to_ref": "s2@left", "type": "transition", "on_rail": "mid", "label": "substrate" } ] }
+  ]
+}

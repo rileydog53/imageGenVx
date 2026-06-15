@@ -1,0 +1,38 @@
+{
+  "archetype": "mechanism_cartoon",
+  "tiers": [
+    { "id": "title", "role": "title", "height_frac": 0.14,
+      "label": "Substrate Phosphorylation by a Kinase",
+      "subtitle": "Phosphoryl transfer from ATP, shown as a state sequence" },
+    { "id": "mech", "role": "scene_row", "height_frac": 0.6,
+      "style": { "band_fill": "#EEF2F8" },
+      "rails": [ { "name": "mid", "axis": "y", "at": 0.5 } ],
+      "step_sequence": {
+        "id": "phos",
+        "cumulative": true,
+        "base": {
+          "id": "base",
+          "slots": [
+            { "id": "sub", "kind": "molecule", "label": "substrate -OH",
+              "style": { "smiles": "OCC", "anchor_names": {} } },
+            { "id": "atp", "kind": "glyph", "label": "ATP",
+              "style": { "glyph": "tablet", "scale": 0.5 } } ],
+          "attach": [ { "child": "atp", "parent": "sub", "edge": "top", "offset": [0, -40] } ],
+          "connect": []
+        },
+        "steps": [
+          { "id": "s1", "badge": "1", "label": "Substrate + ATP bound", "deltas": [] },
+          { "id": "s2", "badge": "2", "label": "Phosphoryl transfer",
+            "deltas": [
+              { "op": "add_label", "target": "atp", "value": { "label": "ADP" } } ] },
+          { "id": "s3", "badge": "3", "label": "Phosphorylated product",
+            "deltas": [
+              { "op": "replace", "target": "sub",
+                "value": { "kind": "molecule", "label": "phospho-substrate",
+                           "style": { "smiles": "O=P(O)(O)OCC" } } },
+              { "op": "remove", "target": "atp" } ] }
+        ]
+      }
+    }
+  ]
+}

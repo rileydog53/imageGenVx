@@ -1,0 +1,41 @@
+{
+  "archetype": "mechanism_cartoon",
+  "tiers": [
+    { "id": "title", "role": "title", "height_frac": 0.16,
+      "label": "EGFR Signaling to ERK",
+      "subtitle": "A kinase cascade and its pharmacologic inhibition" },
+    { "id": "cascade", "role": "scene_row", "height_frac": 0.46,
+      "style": { "band_fill": "#EEF2F8" },
+      "scenes": [
+        { "id": "casc", "label": "Activation cascade",
+          "slots": [
+            { "id": "egfr", "kind": "glyph", "label": "EGFR", "style": { "glyph": "protein_blob", "scale": 0.55, "blob_fill": "#7FA0C0" } },
+            { "id": "ras", "kind": "glyph", "label": "Ras", "style": { "glyph": "protein_blob", "scale": 0.5, "blob_fill": "#88B0A0" } },
+            { "id": "raf", "kind": "glyph", "label": "Raf", "style": { "glyph": "protein_blob", "scale": 0.5, "blob_fill": "#88B0A0" } },
+            { "id": "erk", "kind": "glyph", "label": "ERK", "style": { "glyph": "protein_blob", "scale": 0.55, "blob_fill": "#C0A07F" } } ],
+          "attach": [
+            { "child": "ras", "parent": "egfr", "edge": "right", "offset": [64, 0] },
+            { "child": "raf", "parent": "ras", "edge": "right", "offset": [64, 0] },
+            { "child": "erk", "parent": "raf", "edge": "right", "offset": [64, 0] } ],
+          "connect": [
+            { "from_anchor": "egfr.center", "to_anchor": "ras.center", "type": "activates" },
+            { "from_anchor": "ras.center", "to_anchor": "raf.center", "type": "activates" },
+            { "from_anchor": "raf.center", "to_anchor": "erk.center", "type": "activates" } ] }
+      ] },
+    { "id": "drug", "role": "scene_row", "height_frac": 0.34,
+      "style": { "band_fill": "#F8EEEE" },
+      "scenes": [
+        { "id": "inhib", "label": "Targeted inhibition",
+          "slots": [
+            { "id": "tki", "kind": "glyph", "label": "EGFR inhibitor", "style": { "glyph": "tablet", "scale": 0.55 } },
+            { "id": "egfr2", "kind": "glyph", "label": "EGFR", "style": { "glyph": "protein_blob", "scale": 0.55, "blob_fill": "#7FA0C0" } },
+            { "id": "erk2", "kind": "glyph", "label": "reduced ERK signal", "style": { "glyph": "protein_blob", "scale": 0.5, "blob_fill": "#BBBBBB" } } ],
+          "attach": [
+            { "child": "egfr2", "parent": "tki", "edge": "right", "offset": [64, 0] },
+            { "child": "erk2", "parent": "egfr2", "edge": "right", "offset": [80, 0] } ],
+          "connect": [
+            { "from_anchor": "tki.center", "to_anchor": "egfr2.center", "type": "inhibits" },
+            { "from_anchor": "egfr2.center", "to_anchor": "erk2.center", "type": "transition", "style": { "stroke": "#AAAAAA" } } ] }
+      ] }
+  ]
+}

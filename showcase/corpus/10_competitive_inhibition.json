@@ -1,0 +1,34 @@
+{
+  "archetype": "mechanism_cartoon",
+  "tiers": [
+    { "id": "title", "role": "title", "height_frac": 0.15,
+      "label": "Competitive Enzyme Inhibition",
+      "subtitle": "Substrate and inhibitor compete for the same active site" },
+    { "id": "compete", "role": "scene_row", "height_frac": 0.85,
+      "style": { "band_fill": "#EEF2F8" },
+      "scenes": [
+        { "id": "normal", "label": "Normal turnover",
+          "slots": [
+            { "id": "sub", "kind": "glyph", "label": "substrate", "style": { "glyph": "pg_cluster", "scale": 0.5, "pg_fill": "#4A7ABF" } },
+            { "id": "enz", "kind": "blob", "label": "enzyme", "style": { "blob_fill": "#8FA8C8" } },
+            { "id": "prod", "kind": "glyph", "label": "product", "style": { "glyph": "pg_cluster", "scale": 0.5, "pg_fill": "#33AA66" } } ],
+          "attach": [
+            { "child": "enz", "parent": "sub", "edge": "right", "offset": [64, 0] },
+            { "child": "prod", "parent": "enz", "edge": "right", "offset": [64, 0] } ],
+          "connect": [
+            { "from_anchor": "sub.center", "to_anchor": "enz.center", "type": "binds" },
+            { "from_anchor": "enz.center", "to_anchor": "prod.center", "type": "transition", "label": "catalysis" } ] },
+        { "id": "blocked", "label": "Inhibitor present",
+          "slots": [
+            { "id": "inh", "kind": "glyph", "label": "competitive inhibitor", "style": { "glyph": "tablet", "scale": 0.55 } },
+            { "id": "enz2", "kind": "blob", "label": "enzyme", "style": { "blob_fill": "#8FA8C8" } },
+            { "id": "prod2", "kind": "glyph", "label": "no product", "style": { "glyph": "pg_cluster", "scale": 0.5, "pg_fill": "#BBBBBB" } } ],
+          "attach": [
+            { "child": "enz2", "parent": "inh", "edge": "right", "offset": [64, 0] },
+            { "child": "prod2", "parent": "enz2", "edge": "right", "offset": [64, 0] } ],
+          "connect": [
+            { "from_anchor": "inh.center", "to_anchor": "enz2.cavity_center", "type": "inhibits", "label": "blocks site" },
+            { "from_anchor": "enz2.center", "to_anchor": "prod2.center", "type": "transition", "style": { "stroke": "#AAAAAA" } } ] }
+      ] }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "archetype": "mechanism_cartoon",
+  "tiers": [
+    { "id": "title", "role": "title", "height_frac": 0.14,
+      "label": "Disulfide Bond Formation",
+      "subtitle": "Oxidation pairs two cysteine thiols into a cystine bridge" },
+    { "id": "mech", "role": "scene_row", "height_frac": 0.62,
+      "style": { "band_fill": "#FBF6EC" },
+      "rails": [ { "name": "mid", "axis": "y", "at": 0.5 } ],
+      "scenes": [
+        { "id": "s1", "badge": "1", "label": "Two reduced\ncysteine thiols",
+          "slots": [
+            { "id": "c1", "kind": "residue", "label": "Cys -SH", "style": { "residue": "cys", "label_font_color": "#B8860B" } },
+            { "id": "c2", "kind": "residue", "label": "Cys -SH", "style": { "residue": "cys", "label_font_color": "#B8860B" } } ],
+          "attach": [ { "child": "c2", "parent": "c1", "edge": "bottom", "offset": [0, 42] } ],
+          "connect": [] },
+        { "id": "s2", "badge": "2", "label": "Oxidation forms\nthe S-S bond",
+          "slots": [
+            { "id": "c1", "kind": "residue", "label": "Cys", "style": { "residue": "cys", "label_font_color": "#B8860B" } },
+            { "id": "c2", "kind": "residue", "label": "Cys", "style": { "residue": "cys", "label_font_color": "#B8860B" } } ],
+          "attach": [ { "child": "c2", "parent": "c1", "edge": "bottom", "offset": [0, 42] } ],
+          "connect": [
+            { "from_anchor": "c1.a1", "to_anchor": "c2.a1", "type": "dashed", "label": "new S-S bond" } ] },
+        { "id": "s3", "badge": "3", "label": "Cystine bridge",
+          "slots": [
+            { "id": "ss", "kind": "molecule", "label": "cystine bridge",
+              "style": { "smiles": "C(S[S:1]C[*])[*]", "anchor_names": { "1": "sulfur" }, "chem_atom_S": "#B8860B" } } ],
+          "attach": [],
+          "connect": [] }
+      ],
+      "transitions": [
+        { "from_ref": "s1@right", "to_ref": "s2@left", "type": "transition", "on_rail": "mid", "label": "[O]" },
+        { "from_ref": "s2@right", "to_ref": "s3@left", "type": "transition", "on_rail": "mid" } ] }
+  ]
+}

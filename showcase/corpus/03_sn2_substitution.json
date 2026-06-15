@@ -1,0 +1,42 @@
+{
+  "archetype": "mechanism_cartoon",
+  "tiers": [
+    { "id": "title", "role": "title", "height_frac": 0.14,
+      "label": "Bimolecular Nucleophilic Substitution (SN2)",
+      "subtitle": "Backside attack of hydroxide on methyl bromide" },
+    { "id": "mech", "role": "scene_row", "height_frac": 0.62,
+      "style": { "band_fill": "#F0F2F8" },
+      "rails": [ { "name": "mid", "axis": "y", "at": 0.5 } ],
+      "scenes": [
+        { "id": "s1", "badge": "1", "label": "Hydroxide approaches",
+          "slots": [
+            { "id": "sub", "kind": "molecule", "label": "methyl bromide",
+              "style": { "smiles": "[C:1][Br:2]", "anchor_names": { "1": "alphaC", "2": "br" } } },
+            { "id": "nuc", "kind": "molecule", "label": "hydroxide",
+              "style": { "smiles": "[O-:1]", "anchor_names": { "1": "oxy" }, "chem_atom_O": "#1565C0", "label_font_color": "#1565C0" } } ],
+          "attach": [ { "child": "nuc", "parent": "sub", "edge": "left", "offset": [-46, 0] } ],
+          "connect": [] },
+        { "id": "s2", "badge": "2", "label": "Concerted attack\n& departure",
+          "slots": [
+            { "id": "sub", "kind": "molecule", "label": "methyl bromide",
+              "style": { "smiles": "[C:1][Br:2]", "anchor_names": { "1": "alphaC", "2": "br" } } },
+            { "id": "nuc", "kind": "molecule", "label": "hydroxide",
+              "style": { "smiles": "[O-:1]", "anchor_names": { "1": "oxy" }, "chem_atom_O": "#1565C0", "label_font_color": "#1565C0" } } ],
+          "attach": [ { "child": "nuc", "parent": "sub", "edge": "left", "offset": [-46, 0] } ],
+          "connect": [
+            { "from_anchor": "nuc.lp_oxy", "to_anchor": "sub.alphaC", "type": "curly", "style": { "curl": "ccw", "bow": 20 } },
+            { "from_anchor": "sub.bond_alphaC_br", "to_anchor": "sub.br", "type": "departs", "label": "leaving group" } ] },
+        { "id": "s3", "badge": "3", "label": "Products",
+          "slots": [
+            { "id": "prod", "kind": "molecule", "label": "methanol",
+              "style": { "smiles": "[C:1][O:2]", "anchor_names": { "1": "c", "2": "o" } } },
+            { "id": "lg", "kind": "molecule", "label": "bromide",
+              "style": { "smiles": "[Br-]", "label_font_color": "#8A6D1B" } } ],
+          "attach": [ { "child": "lg", "parent": "prod", "edge": "right", "offset": [44, 0] } ],
+          "connect": [] }
+      ],
+      "transitions": [
+        { "from_ref": "s1@right", "to_ref": "s2@left", "type": "transition", "on_rail": "mid" },
+        { "from_ref": "s2@right", "to_ref": "s3@left", "type": "transition", "on_rail": "mid" } ] }
+  ]
+}
