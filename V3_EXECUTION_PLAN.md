@@ -847,7 +847,13 @@ rule-fixable** ("sit it left", "arrowhead needs clearance"), not uncanny-valley.
   write it, log every place the engine can't yet express what the skill should
   promise** (feeds P.2). *Done when:* a skill call for an active-site mechanism
   authors tier IR that renders through the chassis (not boxes-and-arrows).
-- [ ] **P.2 — Write `PUBGRADE_ROADMAP.md`.** Fold in: the 6-dimension scout report
+- [x] **P.2 — Write `PUBGRADE_ROADMAP.md`.** ✅ LANDED 2026-06-15. Folds in the
+  6-dimension scout report (sizing ✅ / labels ~ / orientation / layering·contrast
+  / density·arrows / pubgrade-defaults), a concrete observed-defect list (D1–D6,
+  grounded in the aspirin artifact + the P.1 verification renders), the
+  engine-can't-express gaps (G1–G5), and the render-critic + corpus plan
+  (corpus-first, critic-after). Original spec ↓
+- [ ] ~~**P.2 — Write `PUBGRADE_ROADMAP.md`.**~~ Fold in: the 6-dimension scout report
   (sizing ✅ keystone landed; labels ~ occupancy-seed landed, leaders pending;
   orientation; layering·contrast; density·arrows; pubgrade-defaults), the **concrete
   defect list**, and the **render-critic + corpus** plan (a vision-scored pub-grade
