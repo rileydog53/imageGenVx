@@ -19,8 +19,18 @@ first, then dive into the detail docs linked below.
 | 0c | **Pre-Step-7 seams** — `PrimitiveSpec` single-site registry, `list_style_keys()` + `styles --keys` CLI, `LoweringPlan.coerced_from` record. Suite: 1082 → 1097. | ✅ LANDED (2026-06-13) |
 | 7 | **Primitive refresh + expansion** — curly arrows (V3-C4), TS partial bonds, organic shaded blobs, per-atom anchors. **Aspirin/COX-1 reproduction is the acceptance test** (gated by MF-1/2/3). | ✅ LANDED (2026-06-14) — **V3 FEATURE-COMPLETE** |
 
-**Current test count:** 1177 passing (1156 engine + 21 corpus). The V3 scene **engine** is feature-complete
+**Current test count:** 1184 passing. The V3 scene **engine** is feature-complete
 (numbered steps 1–7). **But the work is NOT done** — see the pub-grade phase below.
+
+> **Pub-grade dim-2 (leader lines) — first half landed 2026-06-24.**
+> `tier_label_leaders` (a post-pass on `place_labels`, sibling of the pathway
+> `pathway_extlabel_leaders`) tethers any slot/edge label the placement ladder
+> pushed >22px from its anchor back to its glyph with a hairline dashed leader
+> (reusing `_leader_line`). **Fixes D1** (residue/`Ser530` drift) across the corpus
+> and the *drifted* slice of D3; snug labels stay leader-free. **Still open:** the
+> *last-resort-overlap* labels (D3 `breaking`, D4 transitions) need a wider
+> whitespace search in `place_labels` — the second half of the feature. Suite 1177
+> → 1184. See `PUBGRADE_ROADMAP.md` dim 2.
 
 ---
 

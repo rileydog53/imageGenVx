@@ -621,6 +621,76 @@ def scene_label_requests(
     return requests
 
 
+# px between a slot/edge anchor box edge and its label edge before the label
+# reads as detached and earns a tether. A label that lands snug (gap ≈ the
+# caption anchor gap, ~12px) stays leader-free so the figure isn't cluttered;
+# only a label that ``place_labels`` had to push into far whitespace — the D1
+# residue-label drift, the D3 edge-label flight — crosses this threshold.
+_TIER_LEADER_MIN_GAP = 22.0
+
+
+def tier_label_leaders(
+    entries: list[LayoutEntry],
+    leader_anchors: dict[str, tuple[tuple[float, float], tuple[float, float]]],
+    style_dict: dict | None = None,
+) -> list[LayoutEntry]:
+    """Tether drifted scene-local labels back to their slot/edge anchor (D1, D3).
+
+    Sibling of ``pathway_extlabel_leaders`` for the tier engine. Runs as a
+    post-pass on the ``place_labels`` output: a slot or edge label that the
+    placement ladder pushed into far whitespace (its edge sits more than
+    ``_TIER_LEADER_MIN_GAP`` from its anchor box) gets a hairline dashed leader
+    so a reader can see which structure it names. A label that landed snug beside
+    its anchor gets none — no clutter. Captions are deliberately absent from
+    ``leader_anchors`` (they are positional + band-clamped), so they never tether.
+
+    ``leader_anchors`` maps a *placed* label ir_id (``label_<…>``) to its anchor
+    ``(center, (half_w, half_h))`` — a slot's drawn box, or an edge midpoint with
+    a zero-size box. Leaders are inserted immediately before the first label entry
+    so they draw over content but under the label text, mirroring the pathway
+    pass. A no-op (returns the input unchanged) when nothing drifted.
+    """
+    from imageGen.layout._pathway_bands import _bbox_exit_point  # noqa: PLC0415
+    from imageGen.layout._pathway_labels import _leader_line  # noqa: PLC0415
+    from imageGen.layout.label_placement import (  # noqa: PLC0415 — break cycle
+        _DEFAULT_LABEL_STYLE,
+        _estimate_text_bbox,
+        _label_primitive,
+    )
+
+    leaders: list[LayoutEntry] = []
+    first_label_idx = len(entries)
+    for i, e in enumerate(entries):
+        if e.primitive is not _label_primitive:
+            continue
+        first_label_idx = min(first_label_idx, i)
+        geom = leader_anchors.get(e.ir_id or "")
+        if geom is None:
+            continue
+        anchor_center, (ahw, ahh) = geom
+        label_center = e.args[1]
+        fs = float(
+            (e.kwargs.get("style_dict") or _DEFAULT_LABEL_STYLE)["label_font_size"]
+        )
+        lw, lh = _estimate_text_bbox(str(e.args[0]), fs)
+        box_exit = _bbox_exit_point(anchor_center, ahw, ahh, label_center, 0.0)
+        label_exit = _bbox_exit_point(label_center, lw / 2, lh / 2, anchor_center, 0.0)
+        if math.hypot(label_exit[0] - box_exit[0],
+                      label_exit[1] - box_exit[1]) <= _TIER_LEADER_MIN_GAP:
+            continue
+        leaders.append(LayoutEntry(
+            primitive=_leader_line,
+            args=(label_exit, box_exit),
+            kwargs={"style_dict": style_dict} if style_dict else {},
+            position=(0.0, 0.0),
+            ir_id=f"leader_{(e.ir_id or '')[len('label_'):]}",
+        ))
+
+    if not leaders:
+        return entries
+    return entries[:first_label_idx] + leaders + entries[first_label_idx:]
+
+
 def _layout_scene(
     scene: Scene, rect: tuple[float, float, float, float],
     registry: AnchorRegistry, params: dict[str, Any],
@@ -883,6 +953,23 @@ def _layout_scene(
             # invisible to place_labels' own bbox extraction), plus the band walls.
             extra_occupied=boxes + band_walls,
         )
+        # dim-2 leader lines: tether any slot / edge label that the placement
+        # ladder pushed far from its anchor (D1 residue-label drift, D3 edge
+        # labels) back to the structure it names. Anchors keyed by the *placed*
+        # label ir_id; captions are intentionally excluded → never tethered.
+        leader_anchors: dict[str, tuple[tuple[float, float], tuple[float, float]]] = {}
+        for slot in scene.slots:
+            if slot.label and slot.kind != SlotKind.TEXT and slot.id in centers:
+                bx0, by0, bx1, by1 = _slot_bbox(slot, centers[slot.id], (sw, sh), params)
+                leader_anchors[f"label_slot_{scene.id}_{slot.id}_label"] = (
+                    ((bx0 + bx1) / 2.0, (by0 + by1) / 2.0),
+                    ((bx1 - bx0) / 2.0, (by1 - by0) / 2.0),
+                )
+        for edge in scene.connect:
+            if edge.label and edge.ir_id in edge_anchors:
+                leader_anchors[f"label_{edge.ir_id}_label"] = (
+                    edge_anchors[edge.ir_id], (0.0, 0.0))
+        entries = tier_label_leaders(entries, leader_anchors, style_dict=label_style)
     return entries
 
 

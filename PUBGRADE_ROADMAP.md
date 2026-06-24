@@ -55,7 +55,7 @@ corpus is the bottleneck and will reprioritise this list.
 | # | Dimension | State | What's wrong / what it needs |
 |---|---|---|---|
 | 1 | **sizing** | ✅ | Content-aware molecule sizing landed (keystone `131a918`): every structure renders at one consistent bond length, no hand-set `scale`. **Generality unproven until P.3** — validated on one hand-authored figure. |
-| 2 | **labels** | ~ | Label-occupancy seed landed; **leader lines are the real fix and are now confirmed REQUIRED** (see note ↓). Observed defects: scene captions clip, residue labels float far from their slot, edge labels (`H-bond`, `new bond`) crowd onto arrows. The single biggest readability gap. |
+| 2 | **labels** | ~ | **Leader lines landed (2026-06-24)** — a `tier_label_leaders` post-pass tethers any slot/edge label the placement ladder pushed >22px from its anchor back to the structure it names (hairline dashed, reusing the pathway `_leader_line`). Fixes **D1** (residue/`Ser530` drift) across the whole corpus; snug labels stay leader-free. **Still open:** labels stuck in *last-resort overlap* (D3 `breaking`, D4 transition labels) don't drift to whitespace, so the post-pass can't tether them — needs a wider whitespace search in `place_labels` for leader-eligible labels (the second half of the feature). D2 caption clipping still open. |
 | 3 | **orientation** | ☐ | Molecules are posed as RDKit lays them out, not so the reaction *reads* left-to-right. A mechanism should flow with the nucleophile/electrophile oriented consistently across steps. |
 | 4 | **layering · contrast** | ☐ | Band fills, slot colours, and arrow strokes are not tuned for figure-ground contrast; overlapping ink can lose the eye. Polish pass. |
 | 5 | **density · arrows / containment** | ~ | Landed: transition-arrow clearance (D5); **content-aware per-tier cell width** (scenes no longer overflow into neighbours); **content centering** in the cell (chains no longer hang out one side); **inter-tier band gap** + **content-aware band heights** (bands tall enough for their labels); **4-wall label containment** (labels can't spill out of their band onto the page). Still open: arrows are fixed-geometry not ink-relative; blob/cluster sizing is uneven (dim 1). |
@@ -89,6 +89,18 @@ with the connector itself seeded into `place_labels` occupancy. This is a real
 feature (a new label-placement mode), not a parameter change — scope it as such.
 The two rule tweaks were reverted; the suite stays at 1177.
 
+**Landed 2026-06-24 (first half).** `tier_label_leaders` (a post-pass on the
+`place_labels` output, sibling of the pathway `pathway_extlabel_leaders`) tethers a
+drifted slot/edge label back to its anchor with a hairline dashed connector,
+reusing the existing `_leader_line` primitive for visual consistency. It fires only
+when the placed label edge is >`_TIER_LEADER_MIN_GAP` (22px) from its anchor box —
+exactly the labels the existing nudge ladder already pushed into whitespace — so
+the common snug case stays leader-free and no existing figure regresses (suite 1177
+→ 1184). This closes **D1** and the *drifted* slice of **D3**. The **second half**
+— placing an otherwise-overlapping label *into* nearest whitespace (a wider search
+in `place_labels` for leader-eligible requests, then seeding the connector into
+occupancy) — is still open and is what D3 `breaking` / D4 transition labels need.
+
 ---
 
 ## Concrete defect list (observed)
@@ -96,15 +108,24 @@ The two rule tweaks were reverted; the suite stays at 1177.
 Grounded in the aspirin acceptance artifact and the two P.1 verification renders
 (chymotrypsin acylation + the doc skeleton). Each is concrete and rule-fixable.
 
-- **D1 — residue labels float.** A residue attached `top`/`bottom` with an offset
-  gets its label placed far to the right of the structure (e.g. "Ser195" drifting
-  to the band's right edge), reading as detached. (dim 2)
+- **D1 — residue labels float.** ✅ FIXED 2026-06-24. A residue attached
+  `top`/`bottom` with an offset got its label placed far from the structure (e.g.
+  "Ser530"/"Ser195" drifting to the band edge), reading as detached. The
+  `tier_label_leaders` post-pass now draws a hairline dashed leader from the
+  drifted label back to its slot box whenever the gap exceeds
+  `_TIER_LEADER_MIN_GAP` (22px), so the association is visible; snug labels (e.g.
+  His57 directly under its imidazole) get none. Confirmed across the corpus
+  (figs 01/02/07/08). (dim 2)
 - **D2 — scene captions clip / drop lines.** Multi-line scene `label`s (`"\n"`)
   lose their second line in tight bands ("Tetrahedral" without "intermediate").
   *Fix:* reserve caption headroom from the measured label height. (dim 2)
-- **D3 — edge labels collide with arrows.** `H-bond` / `new bond` / `breaking`
-  land on top of the line they annotate (the warned "placed with overlap"). *Fix:*
-  leader lines or a perpendicular offset off the edge midpoint. (dim 2)
+- **D3 — edge labels collide with arrows.** ~ PARTIAL 2026-06-24. `H-bond` /
+  `new bond` that the ladder *nudged* clear of their arrow now get a
+  `tier_label_leaders` tether (the s1 H-bond edge in aspirin/chymotrypsin). But
+  `breaking` and any edge label stuck in **last-resort overlap** sits snug on the
+  shaft (gap < threshold) so the post-pass can't tether it. *Remaining fix:* a
+  wider whitespace search in `place_labels` for leader-eligible labels, so an
+  otherwise-overlapping label is pushed into clear space and then tethered. (dim 2)
 - **D4 — transition labels overlap the arrow shaft.** A `TierEdge` label
   ("hydrolysis", "peptide substrate") sits across the arrow rather than above it.
   *Fix:* place at the arrow midpoint with a fixed above-shaft offset. (dims 2, 5)
