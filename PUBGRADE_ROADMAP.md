@@ -58,7 +58,7 @@ corpus is the bottleneck and will reprioritise this list.
 | 2 | **labels** | ~ | Label-occupancy seed landed; **leader lines are the real fix and are now confirmed REQUIRED** (see note ↓). Observed defects: scene captions clip, residue labels float far from their slot, edge labels (`H-bond`, `new bond`) crowd onto arrows. The single biggest readability gap. |
 | 3 | **orientation** | ☐ | Molecules are posed as RDKit lays them out, not so the reaction *reads* left-to-right. A mechanism should flow with the nucleophile/electrophile oriented consistently across steps. |
 | 4 | **layering · contrast** | ☐ | Band fills, slot colours, and arrow strokes are not tuned for figure-ground contrast; overlapping ink can lose the eye. Polish pass. |
-| 5 | **density · arrows** | ~ | Transition-arrow **clearance** landed (D5 — dedicated `tier_transition_standoff`). Still open: arrows are fixed-geometry not ink-relative, and cells are looser than a journal panel. Tighten inter-cell gutters and scale arrows to the structures they connect. |
+| 5 | **density · arrows / containment** | ~ | Landed: transition-arrow clearance (D5); **content-aware per-tier cell width** (scenes no longer overflow into neighbours); **content centering** in the cell (chains no longer hang out one side); **inter-tier band gap** + **content-aware band heights** (bands tall enough for their labels); **4-wall label containment** (labels can't spill out of their band onto the page). Still open: arrows are fixed-geometry not ink-relative; blob/cluster sizing is uneven (dim 1). |
 | 6 | **pubgrade-defaults** | ☐ | No first-class `publication` style preset, and `mechanism_cartoon` still defaults through the generic path. Needs a real preset + the routing flip so the *default* call is the pub-grade call. |
 
 ---
@@ -117,6 +117,16 @@ Grounded in the aspirin acceptance artifact and the two P.1 verification renders
 - **D6 — reaction doesn't read directionally.** Within a step the substrate may be
   posed so the attacked atom faces away from the attacking residue. *Fix:* the
   orientation pass (dim 3).
+- **D7 — content escapes its band ("out of the box").** ✅ FIXED 2026-06-15.
+  Scenes overflowed their cell into neighbours (cells were sized for one slot),
+  horizontal chains hung off one side (root pinned at cell centre), and labels
+  spilled out of the gray band onto the white page. Fixed by content-aware
+  per-tier cell width, post-solve content centring, content-aware band heights
+  (small-frac bands keep a natural-height floor), an inter-tier band gap, and
+  4-wall per-cell label containment. Confirmed on figs 06/10/01.
+- **D8 — steps don't separate / merge into one blob-chain.** ✅ FIXED 2026-06-15
+  (same change): neighbouring scenes now sit in distinct, padded cells, so a row
+  of steps reads as discrete steps instead of one continuous chain.
 
 ---
 

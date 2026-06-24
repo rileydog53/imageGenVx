@@ -85,6 +85,11 @@ TIER_DEFAULT_PARAMS: dict[str, Any] = {
     "tier_canvas": (600.0, 300.0),
     "tier_margin": 20.0,
     "tier_gutter": 24.0,
+    # Vertical gap between stacked tiers. A clean strip between bands (a) reads as
+    # intentional panel separation so a reader can tell the bands apart, and (b)
+    # buffers the seam so a caption at the bottom of one band and a label/arrow at
+    # the top of the next don't collide (the cross-band overlap defect).
+    "tier_band_gap": 18.0,
     "tier_slot_size": (180.0, 140.0),
     # Content-aware chemistry sizing (pub-grade): every MOLECULE/RESIDUE renders
     # at this bond length, so the whole figure shares one chemistry scale instead
@@ -210,18 +215,22 @@ def _tier_rects(
     w, h = canvas
     inner_w = w - 2 * margin
     inner_h = h - 2 * margin
+    gap = float(params["tier_band_gap"])
+    # Reserve the inter-band gaps before distributing the rest by weight, so the
+    # bands + gaps exactly fill the inner height (pinned or auto-sized).
+    avail_h = max(0.0, inner_h - gap * max(0, len(tiers) - 1))
     fracs = [t.height_frac for t in tiers]
     if tiers and all(f is not None for f in fracs):
         weights = [float(f) for f in fracs]
     else:
         weights = [_tier_natural_height(t, params) for t in tiers]
     total = sum(weights) or 1.0
-    heights = [inner_h * (wt / total) for wt in weights]
+    heights = [avail_h * (wt / total) for wt in weights]
     rects: list[tuple[Tier, tuple[float, float, float, float]]] = []
     y = margin
     for tier, th in zip(tiers, heights):
         rects.append((tier, (margin, y, inner_w, th)))
-        y += th
+        y += th + gap
     return rects
 
 
@@ -245,16 +254,29 @@ def tier_canvas(
     params = {**TIER_DEFAULT_PARAMS, **(layout_params or {})}
     margin = float(params["tier_margin"])
     gutter = float(params["tier_gutter"])
-    sw, _sh = params["tier_slot_size"]
-    cell_w = float(sw) + 2 * float(params["tier_cell_pad_x"])
-    max_cols = max(
-        (_tier_scene_count(t) for t in figure.tiers if t.role == TierRole.SCENE_ROW),
-        default=1,
-    ) or 1
-    width = 2 * margin + max_cols * cell_w + (max_cols - 1) * gutter
-    height = 2 * margin + sum(
-        _tier_natural_height(t, params) for t in figure.tiers
+    # Content-aware, PER-TIER width: each SCENE_ROW sizes its columns to its own
+    # widest scene (not a single slot, and not one global max), so a multi-slot
+    # scene no longer overflows its cell into the neighbour ("steps out of the
+    # box / merged steps") AND a wide summary band doesn't blow the mechanism row
+    # out to a sparse, long-arrow layout. The canvas is the widest tier's block.
+    width = 2 * margin + max(
+        (_tier_block_width(t, params, gutter)
+         for t in figure.tiers if t.role == TierRole.SCENE_ROW),
+        default=0.0,
     )
+    naturals = [_tier_natural_height(t, params) for t in figure.tiers]
+    gap_total = float(params["tier_band_gap"]) * max(0, len(figure.tiers) - 1)
+    fracs = [t.height_frac for t in figure.tiers]
+    if figure.tiers and all(f is not None and f > 0 for f in fracs):
+        # Honour the author's fracs as PROPORTIONS, but size the inner height so
+        # every band's frac-share still clears its natural height (content + label
+        # room) — otherwise a small-frac band (e.g. a 0.25 summary) is too short to
+        # hold its labels and they spill across the band edge.
+        sf = sum(float(f) for f in fracs)
+        inner = max(n * sf / float(f) for n, f in zip(naturals, fracs))
+    else:
+        inner = sum(naturals)
+    height = 2 * margin + inner + gap_total
     min_w, min_h = params["tier_canvas_min"]
     return (max(width, float(min_w)), max(height, float(min_h)))
 
@@ -519,6 +541,22 @@ def _solve_slot_centers(
                 f"{[a.child for a in still]}")
         pending = still
     _deoverlap_coincident(scene, centers, extent)
+    # Centre the whole scene's content in the cell. The solve pins a single root
+    # at the cell centre and grows children outward (a left->right chain then
+    # occupies only the right half and spills past the cell edge — ERK hanging
+    # out of the band). Shifting every centre by (cell centre − content centre)
+    # seats the content symmetrically in its cell on both axes.
+    if centers:
+        boxes = [
+            (c[0] - extent(sid)[0] / 2.0, c[1] - extent(sid)[1] / 2.0,
+             c[0] + extent(sid)[0] / 2.0, c[1] + extent(sid)[1] / 2.0)
+            for sid, c in centers.items()
+        ]
+        bcx = (min(b[0] for b in boxes) + max(b[2] for b in boxes)) / 2.0
+        bcy = (min(b[1] for b in boxes) + max(b[3] for b in boxes)) / 2.0
+        dx, dy = cx - bcx, cy - bcy
+        if dx or dy:
+            centers = {sid: (c[0] + dx, c[1] + dy) for sid, c in centers.items()}
     return centers
 
 
@@ -822,14 +860,28 @@ def _layout_scene(
             "label_font_color": str(scene_content.get(
                 "label_font_color", params["tier_text_color"])),
         }
+        # Band-clamp: forbid label positions outside this scene's band (the cell's
+        # vertical slice) so a caption / slot label / edge label never crosses into
+        # a neighbouring tier or spills onto the white page below its band — the
+        # "out of the box / in and out of the background" defect. Modelled as two
+        # wide occupancy walls (above the band top, below the band bottom); a label
+        # that would cross a seam is pushed to an in-band position instead.
+        rx, ry, rw, rh = rect
+        big = 1.0e5
+        band_walls = [
+            (rx - big, ry - big, rx + rw + big, ry),             # above band top
+            (rx - big, ry + rh, rx + rw + big, ry + rh + big),   # below band bottom
+            (rx - big, ry - big, rx, ry + rh + big),             # left of cell
+            (rx + rw, ry - big, rx + rw + big, ry + rh + big),   # right of cell
+        ]
         entries = place_labels(
             entries, requests,
             layout_params={"label_anchor_gap": float(params["tier_caption_gap"])},
             style_dict=label_style,
             # Seed occupancy with the slot ink boxes so a caption / residue label
             # never lands on top of the chemistry (molecule entries are closures,
-            # invisible to place_labels' own bbox extraction).
-            extra_occupied=boxes,
+            # invisible to place_labels' own bbox extraction), plus the band walls.
+            extra_occupied=boxes + band_walls,
         )
     return entries
 
@@ -999,6 +1051,75 @@ def _slot_bbox_size(
     the full molecule slot size."""
     minx, miny, maxx, maxy = _slot_bbox(slot, (0.0, 0.0), slot_size, params)
     return (maxx - minx, maxy - miny)
+
+
+def _scene_content_width(scene: Scene, params: dict[str, Any]) -> float:
+    """The intrinsic drawn width of a scene's content (max−min x of its solved
+    slot boxes). Pub-grade containment: cells were sized for a *single* slot, so
+    a scene that spreads several slots horizontally (e.g. ``enz`` right of
+    ``sub`` right of ``pill``) overflows its cell and collides with the next
+    scene. Sizing the column to the widest scene's content keeps each step inside
+    its own cell. For a single-root scene the span is offset-driven and so
+    independent of the rect; multi-root scenes spread across the neutral rect, so
+    they report a sensible (generous) width rather than a circular one."""
+    slots = scene.slots
+    if not slots:
+        return 0.0
+    sw, sh = params["tier_slot_size"]
+    slot_extents = {s.id: _slot_bbox_size(s, (sw, sh), params) for s in slots}
+    neutral = (0.0, 0.0, float(sw) * max(1, len(slots)), float(sh))
+    try:
+        centers = _solve_slot_centers(scene, neutral, (sw, sh),
+                                      slot_extents=slot_extents)
+    except Exception:
+        return neutral[2]
+    boxes = [_slot_bbox(s, centers[s.id], (sw, sh), params)
+             for s in slots if s.id in centers]
+    if not boxes:
+        return 0.0
+    return max(b[2] for b in boxes) - min(b[0] for b in boxes)
+
+
+def _tier_cell_width(tier: Tier, params: dict[str, Any]) -> float:
+    """The cell width a SCENE_ROW tier needs: its widest scene's drawn content
+    (floored at one slot) plus horizontal cell padding each side."""
+    sw, _sh = params["tier_slot_size"]
+    content = max(
+        (_scene_content_width(sc, params) for sc in tier_rendered_scenes(tier)),
+        default=0.0,
+    )
+    return max(float(sw), content) + 2 * float(params["tier_cell_pad_x"])
+
+
+def _tier_block_width(tier: Tier, params: dict[str, Any], gutter: float) -> float:
+    """The total horizontal extent a SCENE_ROW tier's columns occupy
+    (``n * cell_w + (n-1) * gutter``) — the per-tier driver of canvas width."""
+    n = _tier_scene_count(tier)
+    if n <= 0:
+        return 0.0
+    return n * _tier_cell_width(tier, params) + (n - 1) * gutter
+
+
+def _row_cell_rects(
+    rect: tuple[float, float, float, float], n: int, gutter: float,
+    cell_w: float,
+) -> list[tuple[float, float, float, float]]:
+    """Split ``rect`` into ``n`` columns of width ``cell_w``, centred in ``rect``.
+
+    Unlike ``_column_rects`` (which stretches columns to fill ``rect``), this
+    keeps each column at its natural content width and centres the block, so a
+    tight mechanism row stays compact even when the canvas is widened by another
+    tier. Falls back to fill when ``cell_w`` would exceed the available
+    fill-width (a pinned/cramped canvas) — so pinned-canvas callers are
+    unchanged."""
+    x, y, w, h = rect
+    if n <= 0:
+        return []
+    fill_w = (w - gutter * (n - 1)) / n
+    cw = min(cell_w, fill_w) if cell_w > 0 else fill_w
+    block = n * cw + (n - 1) * gutter
+    x0 = x + max(0.0, (w - block) / 2.0)
+    return [(x0 + i * (cw + gutter), y, cw, h) for i in range(n)]
 
 
 def _ref_to_key(ref: str) -> str:
@@ -1262,7 +1383,8 @@ def layout_tiers(
                 gutter_rect = (tx, ty + th * (1.0 - gfrac), tw, th * gfrac)
             else:
                 main_rect, gutter_rect = rect, None
-            cols = _column_rects(main_rect, len(row_scenes), gutter)
+            cell_w = _tier_cell_width(tier, params)
+            cols = _row_cell_rects(main_rect, len(row_scenes), gutter, cell_w)
             for scene, cell in zip(row_scenes, cols):
                 # P5.1: solve + publish each scene inside a registry layer so a
                 # mid-scene failure rolls back its partial anchor publishes
@@ -1279,7 +1401,12 @@ def layout_tiers(
             # each in its own committing layer, so their anchors join the base
             # registry for transition resolution below.
             if gutter_rect is not None:
-                ocols = _column_rects(gutter_rect, len(tier.overlays), gutter)
+                ocell_w = max(
+                    (_scene_content_width(sc, params) + 2 * float(
+                        params["tier_cell_pad_x"]) for sc in tier.overlays),
+                    default=float(params["tier_slot_size"][0]))
+                ocols = _row_cell_rects(
+                    gutter_rect, len(tier.overlays), gutter, ocell_w)
                 for scene, cell in zip(tier.overlays, ocols):
                     with registry.layer():
                         overlay_entries = _layout_scene(

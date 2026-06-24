@@ -119,6 +119,54 @@ def test_transition_standoff_is_separate_and_larger_than_edge_standoff():
     assert edge_svg({}, bond) == edge_svg({"tier_transition_standoff": 60.0}, bond)
 
 
+def _scene_row_figure(scene_dict: dict, height_frac: float = 0.8) -> Figure:
+    return Figure.model_validate({
+        "archetype": "mechanism_cartoon",
+        "tiers": [
+            {"id": "t", "role": "title", "height_frac": 1.0 - height_frac,
+             "label": "T"},
+            {"id": "row", "role": "scene_row", "height_frac": height_frac,
+             "scenes": [scene_dict]},
+        ],
+    })
+
+
+def test_multislot_scene_widens_the_canvas():
+    # Pub-grade containment: a scene that spreads several slots horizontally must
+    # get a wider cell than a single-slot scene, else it overflows into its
+    # neighbour ("steps out of the box"). Canvas width is content-driven.
+    from imageGen.layout.tier_layout import tier_canvas
+    one = _scene_row_figure({
+        "id": "s", "slots": [{"id": "a", "kind": "glyph",
+                              "style": {"glyph": "tablet"}}]})
+    three = _scene_row_figure({
+        "id": "s",
+        "slots": [{"id": "a", "kind": "glyph", "style": {"glyph": "tablet"}},
+                  {"id": "b", "kind": "glyph", "style": {"glyph": "tablet"}},
+                  {"id": "c", "kind": "glyph", "style": {"glyph": "tablet"}}],
+        "attach": [{"child": "b", "parent": "a", "edge": "right", "offset": [70, 0]},
+                   {"child": "c", "parent": "b", "edge": "right", "offset": [70, 0]}]})
+    assert tier_canvas(three)[0] > tier_canvas(one)[0]
+
+
+def test_small_frac_band_keeps_its_natural_height_floor():
+    # A small height_frac must not starve a band below the room its content +
+    # labels need; the canvas grows so every band's frac-share clears its natural
+    # height (the "summary band too short, labels spill" fix).
+    from imageGen.layout.tier_layout import (
+        _tier_natural_height, _tier_rects, TIER_DEFAULT_PARAMS, tier_canvas,
+    )
+    fig = _scene_row_figure({
+        "id": "s", "slots": [{"id": "a", "kind": "glyph",
+                              "style": {"glyph": "tablet"}}]},
+        height_frac=0.15)  # deliberately tiny summary-style band
+    canvas = tier_canvas(fig)
+    rects = _tier_rects(fig.tiers, canvas, float(TIER_DEFAULT_PARAMS["tier_margin"]),
+                        TIER_DEFAULT_PARAMS)
+    for tier, (_x, _y, _w, h) in rects:
+        assert h >= _tier_natural_height(tier, TIER_DEFAULT_PARAMS) - 1e-6
+
+
 def test_empty_tiers_rejected():
     with pytest.raises(ValueError, match="tiers populated"):
         layout_tiers(Figure.model_validate(
@@ -711,10 +759,12 @@ def test_attach_resolves_regardless_of_declaration_order():
         {"child": "b", "parent": "a", "edge": "right"},
     ])
     centers = _solve_slot_centers(scene, (0.0, 0.0, 300.0, 100.0), (50.0, 40.0))
-    # a is the only root -> cell centre; b/c step right by half a slot width each
-    assert centers["a"] == (150.0, 50.0)
-    assert centers["b"] == (175.0, 50.0)
-    assert centers["c"] == (200.0, 50.0)
+    # b/c each step right by half a slot width; the chain is then centred in the
+    # cell (its bbox midpoint sits on the cell centre x=150), so a/b/c shift left.
+    assert centers["b"][0] - centers["a"][0] == 25.0
+    assert centers["c"][0] - centers["b"][0] == 25.0
+    assert (centers["a"][0] + centers["c"][0]) / 2.0 == 150.0  # block centred
+    assert centers["a"][1] == centers["b"][1] == centers["c"][1] == 50.0
 
 
 def test_attach_cycle_raises():
@@ -795,12 +845,14 @@ def test_slot_extents_widen_the_parent_slide():
         "attach": [{"child": "b", "parent": "a", "edge": "right"}],
     })
     rect = (0.0, 0.0, 300.0, 100.0)
-    # a sole root → cell centre 150; uniform: b = a + 0.5 * 50
-    assert _solve_slot_centers(scene, rect, (50.0, 40.0))["b"][0] == 150.0 + 25.0
-    # wide parent extent: b = a + 0.5 * 200
+    # The invariant is the parent-slide DISTANCE (b − a): half the parent's
+    # extent. (Absolute coords then shift when the chain is centred in the cell.)
+    uniform = _solve_slot_centers(scene, rect, (50.0, 40.0))
+    assert uniform["b"][0] - uniform["a"][0] == 25.0   # 0.5 * uniform 50
+    # wide parent extent: the slide uses the parent's real width
     wide = _solve_slot_centers(scene, rect, (50.0, 40.0),
                                slot_extents={"a": (200.0, 40.0)})
-    assert wide["b"][0] == 150.0 + 100.0
+    assert wide["b"][0] - wide["a"][0] == 100.0        # 0.5 * 200
 
 
 def test_scene_label_requests_covers_caption_slot_and_edge():
