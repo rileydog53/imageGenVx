@@ -19,8 +19,11 @@ first, then dive into the detail docs linked below.
 | 0c | **Pre-Step-7 seams** — `PrimitiveSpec` single-site registry, `list_style_keys()` + `styles --keys` CLI, `LoweringPlan.coerced_from` record. Suite: 1082 → 1097. | ✅ LANDED (2026-06-13) |
 | 7 | **Primitive refresh + expansion** — curly arrows (V3-C4), TS partial bonds, organic shaded blobs, per-atom anchors. **Aspirin/COX-1 reproduction is the acceptance test** (gated by MF-1/2/3). | ✅ LANDED (2026-06-14) — **V3 FEATURE-COMPLETE** |
 
-**Current test count:** 1186 passing. The V3 scene **engine** is feature-complete
+**Current test count:** 1205 passing. The V3 scene **engine** is feature-complete
 (numbered steps 1–7). **But the work is NOT done** — see the pub-grade phase below.
+Pub-grade dims closed: 1 (sizing), 2 (labels), 3 (orientation/D6); dim 5 mostly
+done; remaining dim 4 (layering·contrast) + dim 6 (publication preset) + optional
+render-critic.
 
 > **Pub-grade dim-2 (leader lines) — landed in full 2026-06-24 (both halves).**
 > (1) `place_labels` gained a leader-eligible *whitespace ring search*: a
@@ -48,6 +51,25 @@ first, then dive into the detail docs linked below.
 > struck-through). `_layout_scene` now reserves transition lanes (strips at `fcy`
 > in the cell side margins) as label occupancy, pushing such labels above/below
 > the row. Suite 1189 → 1190.
+
+> **Pub-grade dim 3 — orientation (D6) — CLOSED 2026-06-25.** Molecules were posed
+> in RDKit's canonical pose with no aiming, so a substrate's attacked atom could
+> face away from the attacking residue (worst: fig 08; also 02/01/aspirin
+> acceptance). New: `_orient_conformer` (`primitives/_mol_render.py`) rigidly
+> rotates the *shared* conformer about its centroid so a chosen atom faces a
+> chosen direction, applied before `_natural_box`/draw so box + depiction +
+> anchors move together; **gated to the tier path** (`target_bond_px` set) so the
+> leaf/panel path is byte-identical. `_scene_orientations` (`layout/tier_layout.py`)
+> infers `(reactive_atom, direction)` from each `CURLY` SceneEdge + the `Attach`
+> placing the two reactants, threaded into **both** the size predictor
+> (`molecule_natural_size`) and the renderer so the posed box matches the drawn
+> box. An **80° deadband** leaves already-readable structures in canonical pose
+> (corpus 05 — the proposed 30–45° was too tight and re-posed it into a caption
+> collision). v1 = curly attack edges only; H-bond-driver, reflection tie-break,
+> and cross-step scaffold consistency are deferred (logged in
+> `PUBGRADE_ROADMAP.md`). +15 tests (`tests/test_orientation_d6.py`, incl. a
+> geometric end-to-end check + a deadband-window guard). Suite 1190 → 1205. See
+> `D6_ORIENTATION_SCOPE.md`.
 
 ---
 

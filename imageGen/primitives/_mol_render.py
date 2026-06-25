@@ -33,6 +33,7 @@ import svgwrite.text
 from rdkit import Chem
 from rdkit.Chem import rdDepictor
 from rdkit.Chem.Draw import rdMolDraw2D
+from rdkit.Geometry import Point3D
 
 from imageGen.primitives._anchors import AnchoredGroup
 
@@ -435,13 +436,147 @@ def _natural_box(
 
 
 def molecule_natural_size(
-    smiles: str, target_bond_px: float, pad: float = 16.0
+    smiles: str, target_bond_px: float, pad: float = 16.0,
+    *,
+    orient_to: str | None = None,
+    orient_direction: str | None = None,
+    orient_reflect: bool = False,
+    orient_deadband_deg: float = 30.0,
+    anchor_names: dict[int, str] | None = None,
 ) -> tuple[int, int]:
     """The ``(w, h)`` pixel box a SMILES occupies rendered at ``target_bond_px``
     bond length — the pre-render size predictor the tier solver needs before it
     places a molecule slot. Matches the box :func:`render_molecule_anchored` uses
-    internally for the same ``target_bond_px`` (both call :func:`_natural_box`)."""
-    return _natural_box(_smiles_to_mol(smiles), target_bond_px, pad)
+    internally for the same ``target_bond_px`` (both call :func:`_natural_box`).
+
+    D6: when the same ``orient_*`` arguments the renderer will use are supplied,
+    the predictor orients its (independent, but deterministic and identical) pose
+    too, so the predicted box matches the box the rotated molecule will actually
+    occupy — otherwise a rotated-to-tall molecule would be sized as if still
+    wide. The rotation is deterministic, so predictor and renderer agree."""
+    mol = _smiles_to_mol(smiles)
+    if orient_to is not None and orient_direction is not None:
+        _orient_conformer(
+            mol, orient_to, orient_direction, anchor_names,
+            reflect=orient_reflect, deadband_deg=orient_deadband_deg,
+        )
+    return _natural_box(mol, target_bond_px, pad)
+
+
+# ---------------------------------------------------------------------------
+# D6 -- directional orientation (pub-grade dim 3)
+# ---------------------------------------------------------------------------
+#
+# RDKit lays a molecule out in its own canonical pose; nothing aims a chosen
+# atom in a chosen direction. For a mechanism to read left-to-right the attacked
+# atom (the electrophile a SceneEdge.to_anchor names) should face the partner
+# residue (the side a Slot is Attach'd to). ``_orient_conformer`` rigidly rotates
+# the shared conformer about its centroid so that atom points the requested way,
+# BEFORE the box is measured and the molecule is drawn -- so the drawn depiction
+# and every published anchor move together (they all derive from this one
+# conformer). The transform is rigid (rotation/reflection only), so bond lengths
+# and angles are untouched. Callers gate this to the V3 tier path
+# (``target_bond_px`` set); the leaf/panel path never orients, so it stays
+# byte-identical. See ``D6_ORIENTATION_SCOPE.md``.
+
+# Desired direction -> angle in the RDKit conformer frame (y points UP). The SVG
+# drawer flips y for display, so conf +y renders at the TOP of the image: 'up'
+# maps to +pi/2 here and the atom lands at the top of the drawn group.
+_DIRECTION_ANGLE: dict[str, float] = {
+    "right": 0.0,
+    "up": math.pi / 2.0,
+    "left": math.pi,
+    "down": -math.pi / 2.0,
+}
+
+
+def _resolve_atom_index(
+    token: str,
+    map_to_idx: dict[int, int],
+    anchor_names: dict[int, str] | None,
+) -> int | None:
+    """Resolve an anchor token (the atom part of a 'slot.anchor' ref) to an RDKit
+    atom index, or ``None`` if it does not name a single atom.
+
+    Handles the forms :func:`render_molecule_anchored` publishes: a human name
+    from *anchor_names* (e.g. ``'carbonyl_C'``), an atom-map alias (``'a1'``), a
+    raw index (``'atom5'``), and the lone-pair / bond aliases (``'lp_a1'``,
+    ``'bond_a1_a2'``) by falling back to their first atom -- so an edge that
+    targets a bond or lone pair still yields an atom to aim.
+    """
+    if not token:
+        return None
+    if anchor_names:
+        for mnum, name in anchor_names.items():
+            if name == token and mnum in map_to_idx:
+                return map_to_idx[mnum]
+    if token.startswith("atom") and token[4:].isdigit():
+        return int(token[4:])
+    if token.startswith("a") and token[1:].isdigit():
+        return map_to_idx.get(int(token[1:]))
+    if token.startswith("lp_"):
+        return _resolve_atom_index(token[3:], map_to_idx, anchor_names)
+    if token.startswith("lp") and token[2:].isdigit():
+        return int(token[2:])
+    if token.startswith("bond_"):
+        first = token[len("bond_"):].split("_", 1)[0]
+        return _resolve_atom_index(first, map_to_idx, anchor_names)
+    return None
+
+
+def _orient_conformer(
+    mol: "Chem.Mol",
+    orient_to: str,
+    direction: str,
+    anchor_names: dict[int, str] | None = None,
+    *,
+    reflect: bool = False,
+    deadband_deg: float = 30.0,
+) -> None:
+    """Rigidly rotate *mol*'s 2D conformer so atom *orient_to* faces *direction*.
+
+    In-place and no-op-safe: if the molecule is empty, the direction is unknown,
+    the target can't be resolved or sits at the centroid, or the needed rotation
+    is within *deadband_deg* of the current pose (and no reflection is asked
+    for), the conformer is left exactly as RDKit laid it out -- so an
+    already-aligned molecule stays byte-stable. Rotation is rigid (about the atom
+    centroid) so geometry is preserved. Must run before the bbox is measured and
+    before the molecule is drawn.
+    """
+    if direction not in _DIRECTION_ANGLE:
+        return
+    n = mol.GetNumAtoms()
+    if n == 0:
+        return
+    map_to_idx = {
+        a.GetAtomMapNum(): a.GetIdx() for a in mol.GetAtoms() if a.GetAtomMapNum()
+    }
+    idx = _resolve_atom_index(orient_to, map_to_idx, anchor_names)
+    if idx is None or idx >= n:
+        return
+    if mol.GetNumConformers() == 0:
+        rdDepictor.Compute2DCoords(mol)
+    conf = mol.GetConformer()
+    cx = sum(conf.GetAtomPosition(i).x for i in range(n)) / n
+    cy = sum(conf.GetAtomPosition(i).y for i in range(n)) / n
+    # coords relative to centroid, optionally mirrored across the vertical axis
+    pts = []
+    for i in range(n):
+        p = conf.GetAtomPosition(i)
+        x = -(p.x - cx) if reflect else (p.x - cx)
+        pts.append((x, p.y - cy, p.z))
+    tx, ty, _ = pts[idx]
+    if math.hypot(tx, ty) < 1e-9:
+        return
+    theta = _DIRECTION_ANGLE[direction] - math.atan2(ty, tx)
+    theta = (theta + math.pi) % (2.0 * math.pi) - math.pi  # normalize to (-pi, pi]
+    if not reflect and abs(theta) <= math.radians(deadband_deg):
+        return  # already close enough; leave the canonical pose untouched
+    cos_t, sin_t = math.cos(theta), math.sin(theta)
+    for i, (x, y, z) in enumerate(pts):
+        conf.SetAtomPosition(
+            i, Point3D(x * cos_t - y * sin_t + cx, x * sin_t + y * cos_t + cy, z)
+        )
 
 
 def render_molecule_anchored(
@@ -456,6 +591,10 @@ def render_molecule_anchored(
     attach_anchor: str = "attach",
     target_bond_px: float | None = None,
     size_pad: float = 16.0,
+    orient_to: str | None = None,
+    orient_direction: str | None = None,
+    orient_reflect: bool = False,
+    orient_deadband_deg: float = 30.0,
 ) -> AnchoredGroup:
     """Render a molecule AND publish per-atom anchor points (V3 scene chassis).
 
@@ -515,6 +654,18 @@ def render_molecule_anchored(
         for a in mol.GetAtoms()
         if a.GetAtomMapNum()
     }
+    # D6: orient so the requested atom faces the requested direction. Runs while
+    # the atom-map numbers are still present (they let _orient_conformer resolve
+    # an 'a{n}' / named target) and BEFORE _natural_box measures the box, so the
+    # rotated bbox, the drawn depiction, and the published anchors all derive from
+    # this one transformed conformer. Tier path only -- the target_bond_px=None
+    # leaf/panel path skips this and stays byte-identical.
+    if (target_bond_px is not None and orient_to is not None
+            and orient_direction is not None):
+        _orient_conformer(
+            mol, orient_to, orient_direction, anchor_names,
+            reflect=orient_reflect, deadband_deg=orient_deadband_deg,
+        )
     # P7.1: open-valence (residue) rendering. A dummy atom marks where a side
     # chain joins the rest of the protein; blanking its label makes the bond to
     # it render as a dangling stub (an open valence) rather than a '*' glyph —
@@ -597,6 +748,10 @@ def render_residue_anchored(
     attach_anchor: str = "attach",
     target_bond_px: float | None = None,
     size_pad: float = 16.0,
+    orient_to: str | None = None,
+    orient_direction: str | None = None,
+    orient_reflect: bool = False,
+    orient_deadband_deg: float = 30.0,
 ) -> AnchoredGroup:
     """Render an amino-acid side chain as a real molecular fragment (MF-1).
 
@@ -631,6 +786,8 @@ def render_residue_anchored(
         smiles, size=size, style=style, style_dict=style_dict, center=center,
         anchor_names=anchor_names, open_valence=True, attach_anchor=attach_anchor,
         target_bond_px=target_bond_px, size_pad=size_pad,
+        orient_to=orient_to, orient_direction=orient_direction,
+        orient_reflect=orient_reflect, orient_deadband_deg=orient_deadband_deg,
     )
     if not any(k == attach_anchor or k.startswith(attach_anchor) for k in ag.anchors):
         raise ValueError(

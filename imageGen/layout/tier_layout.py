@@ -415,6 +415,61 @@ _SLOT_EDGE_OFFSETS = {
     "cavity_center": (0.0, 0.0),
 }
 
+# D6 (orientation / dim 3): map an Attach edge to the facing direction
+# _orient_conformer understands, and to its opposite (a child sits at the
+# parent's edge, so the parent faces that edge and the child faces back).
+_EDGE_TO_DIRECTION = {"top": "up", "bottom": "down", "left": "left", "right": "right"}
+_OPPOSITE_EDGE = {"top": "bottom", "bottom": "top", "left": "right", "right": "left"}
+
+# Only re-pose a molecule whose reactive atom is more than this far from the
+# desired direction — i.e. correct *gross* (≈right-angle-or-worse) misorientation
+# and leave a structure that already reads roughly the right way in its canonical
+# pose (avoids needless churn / new collisions: a near-aligned aldehyde rotated
+# fully upright would collide with its own caption — corpus fig 05). The corpus
+# separates "must fix" substrates (~85–96° off) from "already fine" ones (~71°
+# off), so the cut sits at 80°. MUST be identical in the predictor and the
+# renderer or their boxes desync. See D6_ORIENTATION_SCOPE.md (open question 4).
+_ORIENT_DEADBAND_DEG = 80.0
+
+
+def _scene_orientations(scene: Scene) -> dict[str, tuple[str, str]]:
+    """Per-slot ``(reactive_atom_token, direction)`` so each reactant is posed to
+    face its partner — the D6 orientation inference (see ``D6_ORIENTATION_SCOPE.md``).
+
+    v1 driver: a ``CURLY`` nucleophilic-attack ``SceneEdge`` names the two
+    reacting atoms (``from`` = nucleophile, ``to`` = electrophile); the ``Attach``
+    that places the two reacting slots gives the spatial relationship (the child
+    sits at the parent's ``edge``). The parent's reactive atom is aimed toward
+    that edge and the child's toward the opposite edge, so the attacked atom and
+    the attacking atom point at each other and the step reads directionally.
+    Returns only slots it can resolve; everything else keeps RDKit's canonical
+    pose. Conservative by design — H-bond/dashed edges, ``center``/``cavity_*``
+    attaches, and indirectly-related slots are left alone in v1."""
+    out: dict[str, tuple[str, str]] = {}
+    for edge in scene.connect:
+        if edge.type != SceneEdgeType.CURLY:
+            continue
+        from_slot, _, from_atom = edge.from_anchor.partition(".")
+        to_slot, _, to_atom = edge.to_anchor.partition(".")
+        if not from_atom or not to_atom or from_slot == to_slot:
+            continue
+        att = next(
+            (a for a in scene.attach
+             if a.parent is not None
+             and {a.parent, a.child} == {from_slot, to_slot}),
+            None,
+        )
+        if att is None or att.edge.value not in _EDGE_TO_DIRECTION:
+            continue  # no direct attach, or center/cavity edge -> no facing
+        atom_of = {from_slot: from_atom, to_slot: to_atom}
+        out.setdefault(
+            att.parent, (atom_of[att.parent], _EDGE_TO_DIRECTION[att.edge.value]))
+        out.setdefault(
+            att.child,
+            (atom_of[att.child], _EDGE_TO_DIRECTION[_OPPOSITE_EDGE[att.edge.value]]))
+    return out
+
+
 # Gap left between two slot boxes that the attach solve landed on the same
 # point and that ``_deoverlap_coincident`` then pushes apart.
 _DEOVERLAP_MARGIN = 8.0
@@ -737,7 +792,12 @@ def _layout_scene(
     # P5.4 Nit-1: give the solver each slot's real extent so the child slide
     # uses the *parent's* box (a TEXT parent no longer pushes a child a full
     # molecule-width away) and de-overlap uses the child's own width.
-    slot_extents = {s.id: _slot_bbox_size(s, (sw, sh), params) for s in scene.slots}
+    # D6: infer per-slot orientation (reactive atom -> facing direction) from the
+    # scene's curly edges + attaches BEFORE sizing, so the predicted box matches
+    # the box the *posed* molecule will draw (the solve depends on it).
+    orient_map = _scene_orientations(scene)
+    slot_extents = {s.id: _slot_bbox_size(s, (sw, sh), params, orient_map.get(s.id))
+                    for s in scene.slots}
     centers = _solve_slot_centers(scene, rect, (sw, sh), slot_extents=slot_extents)
     boxes: list[tuple[float, float, float, float]] = []
     for slot in scene.slots:
@@ -763,6 +823,7 @@ def _layout_scene(
                 raise ValueError(
                     f"{slot.kind.value} slot '{scene.id}.{slot.id}' needs {need}")
             names = {int(k): v for k, v in (style.get("anchor_names") or {}).items()}
+            o_to, o_dir = orient_map.get(slot.id, (None, None))
             # Pub-grade content-aware sizing: render at the shared
             # ``chem_target_bond_px`` bond length so every structure in the figure
             # is one consistent scale; the box is derived from the molecule (not the
@@ -788,12 +849,15 @@ def _layout_scene(
                     str(residue or smiles), size=size_arg, center=center,
                     anchor_names=names, style_dict=mol_style or None,
                     attach_anchor=str(style.get("attach_anchor", "attach")),
-                    target_bond_px=target_bp, size_pad=mol_pad)
+                    target_bond_px=target_bp, size_pad=mol_pad,
+                    orient_to=o_to, orient_direction=o_dir,
+                    orient_deadband_deg=_ORIENT_DEADBAND_DEG)
             else:
                 ag = render_molecule_anchored(
                     str(smiles), size=size_arg, center=center, anchor_names=names,
                     style_dict=mol_style or None, target_bond_px=target_bp,
-                    size_pad=mol_pad)
+                    size_pad=mol_pad, orient_to=o_to, orient_direction=o_dir,
+                    orient_deadband_deg=_ORIENT_DEADBAND_DEG)
             # center= baked the placement → anchors are already absolute.
             registry.publish(scoped, ag.anchors)
             entries.append(LayoutEntry(
@@ -1118,6 +1182,7 @@ def _slot_eff_smiles(slot: Slot) -> str | None:
 
 def _slot_drawn_size(
     slot: Slot, slot_size: tuple[float, float], params: dict[str, Any],
+    orient: tuple[str, str] | None = None,
 ) -> tuple[float, float]:
     """The ``(w, h)`` a slot's glyph actually draws at — the ink, not the cell.
 
@@ -1126,7 +1191,12 @@ def _slot_drawn_size(
     at one scale), a BLOB/GLYPH at the (scaled) slot box. ``style['scale']`` is an
     optional multiplier on the bond length (chemistry) or the box (blob/glyph).
     Falls back to the legacy slot-box size when ``chem_target_bond_px`` is unset or
-    the SMILES can't be parsed."""
+    the SMILES can't be parsed.
+
+    D6: when *orient* ``(reactive_atom, direction)`` is given the predicted box is
+    measured on the *oriented* pose (rotating a wide molecule upright makes it
+    tall) — the renderer applies the same deterministic rotation, so the predicted
+    box matches the drawn one."""
     sw, sh = slot_size
     style = slot.style or {}
     scale = float(style.get("scale", 1.0))
@@ -1135,8 +1205,13 @@ def _slot_drawn_size(
         smi = _slot_eff_smiles(slot)
         if tbp > 0.0 and smi:
             try:
+                o_to, o_dir = orient or (None, None)
+                names = {int(k): v
+                         for k, v in (style.get("anchor_names") or {}).items()}
                 return molecule_natural_size(
-                    str(smi), tbp, float(params["tier_mol_pad"]))
+                    str(smi), tbp, float(params["tier_mol_pad"]),
+                    orient_to=o_to, orient_direction=o_dir, anchor_names=names,
+                    orient_deadband_deg=_ORIENT_DEADBAND_DEG)
             except Exception:
                 pass
         return (sw * scale, sh * scale)
@@ -1147,7 +1222,7 @@ def _slot_drawn_size(
 
 def _slot_bbox(
     slot: Slot, center: tuple[float, float], slot_size: tuple[float, float],
-    params: dict[str, Any],
+    params: dict[str, Any], orient: tuple[str, str] | None = None,
 ) -> tuple[float, float, float, float]:
     """Absolute ``(minx, miny, maxx, maxy)`` a slot occupies around its centre.
 
@@ -1163,21 +1238,23 @@ def _slot_bbox(
         return (cxc - w / 2.0, cyc - half_h, cxc + w / 2.0, cyc + half_h)
     if slot.kind in (SlotKind.MOLECULE, SlotKind.RESIDUE, SlotKind.BLOB,
                      SlotKind.GLYPH):
-        w, h = _slot_drawn_size(slot, slot_size, params)
+        w, h = _slot_drawn_size(slot, slot_size, params, orient)
         return (cxc - w / 2.0, cyc - h / 2.0, cxc + w / 2.0, cyc + h / 2.0)
     return (cxc, cyc, cxc, cyc)
 
 
 def _slot_bbox_size(
     slot: Slot, slot_size: tuple[float, float], params: dict[str, Any],
+    orient: tuple[str, str] | None = None,
 ) -> tuple[float, float]:
     """The ``(w, h)`` a slot occupies (P5.4 Nit-1).
 
     The per-kind extent the solver slides a child by (the parent's box) and
     de-overlaps by (the child's own box). Reuses ``_slot_bbox``'s per-kind logic
     at a neutral origin, so a TEXT parent reports its measured width rather than
-    the full molecule slot size."""
-    minx, miny, maxx, maxy = _slot_bbox(slot, (0.0, 0.0), slot_size, params)
+    the full molecule slot size. *orient* (D6) measures the box on the posed
+    molecule so the solve uses the same extent the renderer will draw."""
+    minx, miny, maxx, maxy = _slot_bbox(slot, (0.0, 0.0), slot_size, params, orient)
     return (maxx - minx, maxy - miny)
 
 
@@ -1194,14 +1271,16 @@ def _scene_content_width(scene: Scene, params: dict[str, Any]) -> float:
     if not slots:
         return 0.0
     sw, sh = params["tier_slot_size"]
-    slot_extents = {s.id: _slot_bbox_size(s, (sw, sh), params) for s in slots}
+    orient_map = _scene_orientations(scene)
+    slot_extents = {s.id: _slot_bbox_size(s, (sw, sh), params, orient_map.get(s.id))
+                    for s in slots}
     neutral = (0.0, 0.0, float(sw) * max(1, len(slots)), float(sh))
     try:
         centers = _solve_slot_centers(scene, neutral, (sw, sh),
                                       slot_extents=slot_extents)
     except Exception:
         return neutral[2]
-    boxes = [_slot_bbox(s, centers[s.id], (sw, sh), params)
+    boxes = [_slot_bbox(s, centers[s.id], (sw, sh), params, orient_map.get(s.id))
              for s in slots if s.id in centers]
     if not boxes:
         return 0.0
