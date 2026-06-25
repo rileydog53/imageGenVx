@@ -81,6 +81,20 @@ _LARGE_NUDGES: tuple[tuple[float, float], ...] = (
     (0.0, -40.0), (0.0, 40.0), (-40.0, 0.0), (40.0, 0.0),
 )
 
+# Leader-eligible whitespace ring (used only when `LabelRequest.leader`): when
+# the nudge ladder above still can't clear a slot, a label that will be tethered
+# back to its anchor prefers being parked in the nearest open whitespace over
+# landing on top of the thing it annotates. Search radii widen outward; at each
+# radius 12 directions are tried, ordered so the cardinal (below/above/side)
+# positions win over diagonals — the nearest clear slot is taken. The caller's
+# leader line restores the visual association the distance would otherwise lose.
+_LEADER_RING_RADII: tuple[float, ...] = (52.0, 72.0, 96.0, 124.0, 156.0)
+_LEADER_RING_DIRS: tuple[tuple[float, float], ...] = (
+    (0.0, 1.0), (0.0, -1.0), (1.0, 0.0), (-1.0, 0.0),     # cardinals first
+    (0.71, 0.71), (-0.71, 0.71), (0.71, -0.71), (-0.71, -0.71),
+    (0.92, 0.38), (-0.92, 0.38), (0.92, -0.38), (-0.92, -0.38),
+)
+
 
 # ---------------------------------------------------------------------------
 # Layout knobs (flat namespaced keys; Phase 4 master preset will union these
@@ -117,12 +131,20 @@ class LabelRequest:
         ir_id: Raw IR id of the entity/relation this label belongs to.
             The compositor uses this to set `data-ir-id="label_{ir_id}"`
             on the emitted SVG element (D1). None for engine-internal labels.
+        leader: When True, the placement ladder prefers parking this label in
+            the nearest clear whitespace (a widening ring search) over a
+            last-resort *overlapping* placement. A caller that draws a leader
+            line back to the anchor (the tier engine's `tier_label_leaders`)
+            sets this so an otherwise-on-top-of-the-arrow label is pushed into
+            clear space and then tethered, instead of colliding. Default False
+            preserves the v1 ladder exactly for callers that don't tether.
     """
     text: str
     anchor: tuple[float, float]
     anchor_size: tuple[float, float]
     priority: tuple[str, ...] = _VALID_PRIORITIES
     ir_id: str | None = None
+    leader: bool = False
 
     def __post_init__(self) -> None:
         unknown = [p for p in self.priority if p not in _VALID_PRIORITIES]
@@ -404,6 +426,38 @@ def _first_fit(
     return None
 
 
+def _leader_ring(
+    request: LabelRequest,
+    label_size: tuple[float, float],
+    occupied: list[Bbox],
+    margin: float,
+    canvas: tuple[float, float] | None = None,
+) -> tuple[tuple[float, float], Bbox] | None:
+    """Return (center, bbox) of the nearest clear whitespace slot, else None.
+
+    Used only for leader-eligible labels. Walks `_LEADER_RING_RADII` outward and,
+    at each radius, the `_LEADER_RING_DIRS` directions (cardinals before
+    diagonals), placing the label *center* at `anchor + radius*dir`. The first
+    candidate that clears `occupied` (and stays in `canvas`, when bounded) is
+    returned — i.e. approximately the nearest open whitespace. None when even the
+    widest ring is fully blocked (the caller then falls back to overlap).
+    """
+    ax, ay = request.anchor
+    lw, lh = label_size
+    for radius in _LEADER_RING_RADII:
+        for dx, dy in _LEADER_RING_DIRS:
+            center = (ax + radius * dx, ay + radius * dy)
+            bbox = _bbox_from_center(center, label_size)
+            if canvas is not None:
+                cw, ch = canvas
+                x0, y0, x1, y1 = bbox
+                if x0 < 0 or x1 > cw or y0 < 0 or y1 > ch:
+                    continue
+            if not any(_overlaps(bbox, b, margin) for b in occupied):
+                return center, bbox
+    return None
+
+
 def _place_with_fallback(
     request: LabelRequest,
     occupied: list[Bbox],
@@ -446,6 +500,14 @@ def _place_with_fallback(
     # label bbox, so push the label further out perpendicular to the shaft.
     for dx, dy in _LARGE_NUDGES:
         hit = _first_fit(request, small, (ax + dx, ay + dy), occupied, gap, margin, canvas)
+        if hit is not None:
+            return (*hit, small_font, False)
+
+    # Step 3.75 (leader-eligible): a label that will be tethered prefers nearest
+    # open whitespace over landing on top of its anchor. Widening ring search;
+    # the caller draws a leader line back, so distance doesn't lose the link.
+    if request.leader:
+        hit = _leader_ring(request, small, occupied, margin, canvas)
         if hit is not None:
             return (*hit, small_font, False)
 

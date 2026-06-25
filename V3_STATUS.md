@@ -19,18 +19,20 @@ first, then dive into the detail docs linked below.
 | 0c | **Pre-Step-7 seams** — `PrimitiveSpec` single-site registry, `list_style_keys()` + `styles --keys` CLI, `LoweringPlan.coerced_from` record. Suite: 1082 → 1097. | ✅ LANDED (2026-06-13) |
 | 7 | **Primitive refresh + expansion** — curly arrows (V3-C4), TS partial bonds, organic shaded blobs, per-atom anchors. **Aspirin/COX-1 reproduction is the acceptance test** (gated by MF-1/2/3). | ✅ LANDED (2026-06-14) — **V3 FEATURE-COMPLETE** |
 
-**Current test count:** 1184 passing. The V3 scene **engine** is feature-complete
+**Current test count:** 1186 passing. The V3 scene **engine** is feature-complete
 (numbered steps 1–7). **But the work is NOT done** — see the pub-grade phase below.
 
-> **Pub-grade dim-2 (leader lines) — first half landed 2026-06-24.**
-> `tier_label_leaders` (a post-pass on `place_labels`, sibling of the pathway
-> `pathway_extlabel_leaders`) tethers any slot/edge label the placement ladder
-> pushed >22px from its anchor back to its glyph with a hairline dashed leader
-> (reusing `_leader_line`). **Fixes D1** (residue/`Ser530` drift) across the corpus
-> and the *drifted* slice of D3; snug labels stay leader-free. **Still open:** the
-> *last-resort-overlap* labels (D3 `breaking`, D4 transitions) need a wider
-> whitespace search in `place_labels` — the second half of the feature. Suite 1177
-> → 1184. See `PUBGRADE_ROADMAP.md` dim 2.
+> **Pub-grade dim-2 (leader lines) — landed in full 2026-06-24 (both halves).**
+> (1) `place_labels` gained a leader-eligible *whitespace ring search*: a
+> `LabelRequest.leader` label that exhausts the nudge ladder parks in the nearest
+> open whitespace instead of overlapping its anchor. (2) `tier_label_leaders` (a
+> post-pass, sibling of the pathway `pathway_extlabel_leaders`) tethers any drifted
+> slot/edge label back to its glyph with a hairline dashed `_leader_line`. Slot +
+> edge labels set `leader=True`. **Fixes D1** (residue/`Ser530` drift) **and D3**
+> (`breaking`/`new bond` now park off the shaft + tether) across the corpus; snug
+> labels stay leader-free. Residual: a label with no whitespace in its band still
+> overlaps (band-height, dim 1/5). Suite 1177 → 1186. See `PUBGRADE_ROADMAP.md`
+> dim 2.
 
 ---
 

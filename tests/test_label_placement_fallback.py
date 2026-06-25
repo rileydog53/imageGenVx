@@ -200,3 +200,39 @@ def test_legibility_tolerates_flagged_overlap(tmp_path):
     _write_two_label_svg(svg, flag_second=True)
     result = legibility_check(svg)  # must not raise
     assert result is not None
+
+
+# ---------------------------------------------------------------------------
+# Leader-eligible rung: nearest-whitespace ring search (dim-2, second half)
+# ---------------------------------------------------------------------------
+
+
+def test_leader_request_parks_in_whitespace_instead_of_overlapping():
+    """A `leader=True` request whose every adjacent + nudge slot is blocked
+    parks in the nearest open whitespace (ring search) rather than landing on
+    top of its anchor — the caller draws a leader line to restore the link."""
+    import math
+
+    # One big blocker covers the anchor and every nudge offset (±8/±24/±40);
+    # only space beyond the inner ring radius is clear.
+    occupied = [(150.0, 150.0, 250.0, 250.0)]
+    req = LabelRequest(text="X", anchor=(200, 200), anchor_size=(0, 0),
+                       priority=("below", "above", "right", "left"), leader=True)
+    center, _bbox, _font, overlap = _place_with_fallback(
+        req, occupied, _GAP, _MARGIN, _FONT
+    )
+    assert overlap is False, "leader request should find clear whitespace, not overlap"
+    # Landed well outside the blocked core (in the widening ring), not snug.
+    assert math.hypot(center[0] - 200, center[1] - 200) > 50.0
+
+
+def test_non_leader_request_still_overlaps_in_same_scenario():
+    """Identical scenario without `leader` falls to the last-resort overlap rung —
+    proving the ring search is gated on the flag and the v1 ladder is unchanged."""
+    occupied = [(150.0, 150.0, 250.0, 250.0)]
+    req = LabelRequest(text="X", anchor=(200, 200), anchor_size=(0, 0),
+                       priority=("below", "above", "right", "left"))
+    _center, _bbox, _font, overlap = _place_with_fallback(
+        req, occupied, _GAP, _MARGIN, _FONT
+    )
+    assert overlap is True

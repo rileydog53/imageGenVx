@@ -55,7 +55,7 @@ corpus is the bottleneck and will reprioritise this list.
 | # | Dimension | State | What's wrong / what it needs |
 |---|---|---|---|
 | 1 | **sizing** | ✅ | Content-aware molecule sizing landed (keystone `131a918`): every structure renders at one consistent bond length, no hand-set `scale`. **Generality unproven until P.3** — validated on one hand-authored figure. |
-| 2 | **labels** | ~ | **Leader lines landed (2026-06-24)** — a `tier_label_leaders` post-pass tethers any slot/edge label the placement ladder pushed >22px from its anchor back to the structure it names (hairline dashed, reusing the pathway `_leader_line`). Fixes **D1** (residue/`Ser530` drift) across the whole corpus; snug labels stay leader-free. **Still open:** labels stuck in *last-resort overlap* (D3 `breaking`, D4 transition labels) don't drift to whitespace, so the post-pass can't tether them — needs a wider whitespace search in `place_labels` for leader-eligible labels (the second half of the feature). D2 caption clipping still open. |
+| 2 | **labels** | ~ | **Leader lines landed in full (2026-06-24, both halves).** (a) `place_labels` gained a leader-eligible *whitespace ring search* — a `LabelRequest.leader` label whose adjacent + nudge slots are all blocked parks in the nearest open whitespace instead of landing on its anchor; (b) `tier_label_leaders` then tethers it (and any drifted label) back with a hairline dashed leader. Slot + edge labels set `leader=True`. Fixes **D1** (residue drift) and **D3** (`breaking`/`new bond` now park off the shaft + tether) across the corpus; snug labels stay leader-free. **Residual:** a label with genuinely no whitespace in its band (fig 01 `arachidonic acid`, a chain spanning the band) still overlaps — that's band-height (dim 1/5), not leaders. **Still open:** D2 caption clipping; a leader that crosses unrelated caption text (fig 05) is a minor aesthetic nit. |
 | 3 | **orientation** | ☐ | Molecules are posed as RDKit lays them out, not so the reaction *reads* left-to-right. A mechanism should flow with the nucleophile/electrophile oriented consistently across steps. |
 | 4 | **layering · contrast** | ☐ | Band fills, slot colours, and arrow strokes are not tuned for figure-ground contrast; overlapping ink can lose the eye. Polish pass. |
 | 5 | **density · arrows / containment** | ~ | Landed: transition-arrow clearance (D5); **content-aware per-tier cell width** (scenes no longer overflow into neighbours); **content centering** in the cell (chains no longer hang out one side); **inter-tier band gap** + **content-aware band heights** (bands tall enough for their labels); **4-wall label containment** (labels can't spill out of their band onto the page). Still open: arrows are fixed-geometry not ink-relative; blob/cluster sizing is uneven (dim 1). |
@@ -89,17 +89,23 @@ with the connector itself seeded into `place_labels` occupancy. This is a real
 feature (a new label-placement mode), not a parameter change — scope it as such.
 The two rule tweaks were reverted; the suite stays at 1177.
 
-**Landed 2026-06-24 (first half).** `tier_label_leaders` (a post-pass on the
-`place_labels` output, sibling of the pathway `pathway_extlabel_leaders`) tethers a
-drifted slot/edge label back to its anchor with a hairline dashed connector,
-reusing the existing `_leader_line` primitive for visual consistency. It fires only
-when the placed label edge is >`_TIER_LEADER_MIN_GAP` (22px) from its anchor box —
-exactly the labels the existing nudge ladder already pushed into whitespace — so
-the common snug case stays leader-free and no existing figure regresses (suite 1177
-→ 1184). This closes **D1** and the *drifted* slice of **D3**. The **second half**
-— placing an otherwise-overlapping label *into* nearest whitespace (a wider search
-in `place_labels` for leader-eligible requests, then seeding the connector into
-occupancy) — is still open and is what D3 `breaking` / D4 transition labels need.
+**Landed 2026-06-24 (both halves).** The feature is two cooperating pieces:
+
+1. **Whitespace ring search** (`place_labels`). `LabelRequest` gained a `leader`
+   flag. When a leader-eligible label exhausts the adjacent + nudge ladder, a new
+   rung walks widening radii (`_LEADER_RING_RADII`) × 12 directions and parks it
+   in the nearest clear whitespace instead of the last-resort *overlapping* slot.
+   Default `leader=False` keeps the v1 ladder byte-identical for every other caller.
+2. **Leader post-pass** (`tier_label_leaders`, sibling of the pathway
+   `pathway_extlabel_leaders`). Tethers any slot/edge label whose placed edge is
+   >`_TIER_LEADER_MIN_GAP` (22px) from its anchor box back with a hairline dashed
+   connector, reusing the existing `_leader_line` primitive. Snug labels (gap <
+   threshold) stay leader-free.
+
+Slot + edge labels opt in (`leader=True`), so an otherwise-on-the-arrow label is
+pushed into clear space *and* tethered. Closes **D1** and **D3**; suite 1177 →
+1186. Residual: a label with no whitespace anywhere in its band still overlaps
+(band-height, dim 1/5), and a leader can cross unrelated caption text (minor nit).
 
 ---
 
@@ -119,13 +125,13 @@ Grounded in the aspirin acceptance artifact and the two P.1 verification renders
 - **D2 — scene captions clip / drop lines.** Multi-line scene `label`s (`"\n"`)
   lose their second line in tight bands ("Tetrahedral" without "intermediate").
   *Fix:* reserve caption headroom from the measured label height. (dim 2)
-- **D3 — edge labels collide with arrows.** ~ PARTIAL 2026-06-24. `H-bond` /
-  `new bond` that the ladder *nudged* clear of their arrow now get a
-  `tier_label_leaders` tether (the s1 H-bond edge in aspirin/chymotrypsin). But
-  `breaking` and any edge label stuck in **last-resort overlap** sits snug on the
-  shaft (gap < threshold) so the post-pass can't tether it. *Remaining fix:* a
-  wider whitespace search in `place_labels` for leader-eligible labels, so an
-  otherwise-overlapping label is pushed into clear space and then tethered. (dim 2)
+- **D3 — edge labels collide with arrows.** ✅ FIXED 2026-06-24. With both
+  leader-line halves in place, an edge label (`H-bond` / `new bond` / `breaking`)
+  that the nudge ladder can't clear now runs the `place_labels` whitespace ring
+  search — it parks off the shaft in the nearest clear space and
+  `tier_label_leaders` tethers it back to the edge midpoint. Confirmed: the
+  aspirin `breaking` label moved up off the arrow with a leader, and the overlap
+  warning for it is gone. (dim 2)
 - **D4 — transition labels overlap the arrow shaft.** A `TierEdge` label
   ("hydrolysis", "peptide substrate") sits across the arrow rather than above it.
   *Fix:* place at the arrow midpoint with a fixed above-shaft offset. (dims 2, 5)

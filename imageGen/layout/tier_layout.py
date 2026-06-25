@@ -607,6 +607,7 @@ def scene_label_requests(
                 anchor_size=(sw, sh),
                 priority=("below", "right", "above", "left"),
                 ir_id=f"slot_{scene.id}_{slot.id}_label",
+                leader=True,   # park in whitespace + tether (tier_label_leaders)
             ))
 
     for edge in scene.connect:
@@ -617,6 +618,7 @@ def scene_label_requests(
                 anchor_size=(0.0, 0.0),
                 priority=("above", "below", "right", "left"),
                 ir_id=f"{edge.ir_id}_label",
+                leader=True,   # park off the shaft in whitespace + tether (D3)
             ))
     return requests
 
