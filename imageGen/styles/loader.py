@@ -57,6 +57,11 @@ from imageGen.styles._palette import PALETTE_RECIPE, apply_palette_recipe
 
 PRESET_DIR = Path(__file__).parent
 DEFAULT_PRESET = "cell_press"
+# Pub-grade default for the V3 scene chassis (dim-6). A tier figure with no
+# explicit preset resolves to this instead of DEFAULT_PRESET, so a cold skill
+# call onto the chassis is the pub-grade call (see compositor._resolve_style).
+# Leaf / panel figures keep DEFAULT_PRESET (the friendly cell_press identity).
+TIER_DEFAULT_PRESET = "publication"
 
 _HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 

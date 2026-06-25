@@ -122,7 +122,13 @@ class Figure(_IRBase):
     archetype: Archetype
     title: str | None = None
     caption: str | None = None
-    style_preset: str = "cell_press"
+    # None means "the author did not pick a preset" — the compositor resolves the
+    # default at render time (dim-6): tier/chassis figures fall back to the
+    # publication preset, leaf/panel figures to cell_press. An explicit name here
+    # (or the render --style kwarg) always wins. Kept Optional rather than
+    # hardcoding "cell_press" so a defaulted figure is distinguishable from one
+    # that explicitly chose cell_press.
+    style_preset: str | None = None
     # LT1: optional layout override. "circular" forces a ring layout for a
     # compartment-free cyclic pathway; None lets the engine auto-detect (a pure
     # single cycle rings automatically). Other values are ignored by the engine.

@@ -65,9 +65,9 @@ def test_load_style_unknown_raises_file_not_found():
         load_style("vogue")
 
 
-def test_list_presets_finds_three():
+def test_list_presets_finds_shipped_presets():
     presets = list_presets()
-    assert set(presets) == {"cell_press", "nature", "acs"}
+    assert set(presets) == {"cell_press", "nature", "acs", "publication"}
     assert presets == sorted(presets)
 
 
@@ -75,13 +75,13 @@ def test_list_presets_finds_three():
 # Preset content validation (each shipped preset)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("name", ["cell_press", "nature", "acs"])
+@pytest.mark.parametrize("name", ["cell_press", "nature", "acs", "publication"])
 def test_preset_palette_length(name):
     p = load_preset_full(name)
     assert len(p.palette) == 8
 
 
-@pytest.mark.parametrize("name", ["cell_press", "nature", "acs"])
+@pytest.mark.parametrize("name", ["cell_press", "nature", "acs", "publication"])
 def test_preset_palette_hex_format(name):
     p = load_preset_full(name)
     for c in p.palette:
@@ -90,7 +90,7 @@ def test_preset_palette_hex_format(name):
         int(c[1:], 16)  # parses as hex
 
 
-@pytest.mark.parametrize("name", ["cell_press", "nature", "acs"])
+@pytest.mark.parametrize("name", ["cell_press", "nature", "acs", "publication"])
 def test_preset_meta_present(name):
     p = load_preset_full(name)
     assert p.meta.name == name

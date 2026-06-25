@@ -1,0 +1,31 @@
+{
+  "meta": {
+    "name": "publication",
+    "description": "Pub-grade default for the V3 scene chassis (tier figures). Inherits cell_press, then refines the content-channel keys that reach tier molecules / blobs / text for print-grade figure-ground contrast: deeper CPK heteroatoms (amber S / orange P were too pale on a light band), crisp near-black bonds + FG labels, and a lighter-fill / darker-stroke protein blob so a residue sitting in the cavity stays legible. Edge colour semantics (hbond blue / dashed gray / curly auburn / inhibits red) live in the tier engine's _EDGE_DEFAULTS, not here."
+  },
+  "inherits": "cell_press",
+  "palette": [
+    "#4878A8", "#C77F0A", "#5E8C61", "#7E5A9B",
+    "#B05A5E", "#3F4C8C", "#9C4A1A", "#5C4080"
+  ],
+  "overrides": {
+    "label_font_family": "Helvetica, Arial, sans-serif",
+    "label_font_size": 11,
+    "label_font_color": "#1A1A1A",
+
+    "chem_bond_stroke": "#141414",
+    "chem_bond_stroke_width": 2.0,
+    "chem_atom_C": "#141414",
+    "chem_atom_N": "#15489C",
+    "chem_atom_O": "#C0282A",
+    "chem_atom_P": "#C85C12",
+    "chem_atom_S": "#B07A0A",
+    "chem_fg_label_color": "#1A1A1A",
+
+    "blob_fill": "#D2DCE8",
+    "blob_stroke": "#566377",
+    "blob_highlight": "#EAF0F6",
+    "blob_cavity_fill": "#8FA3BD",
+    "blob_stroke_width": 1.6
+  }
+}

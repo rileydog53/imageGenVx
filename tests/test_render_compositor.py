@@ -113,6 +113,64 @@ def test_resolve_style_falls_back_to_default():
     assert d == load_style(DEFAULT_PRESET)
 
 
+# --- Dim 6: pub-grade routing flip (tier figures default to publication) -----
+
+def _bare_tier_figure(**extra):
+    """A minimal tier (chassis) figure for routing tests."""
+    from imageGen.ir.schema import Figure
+    return Figure.model_validate({
+        "archetype": "mechanism_cartoon",
+        "tiers": [{"id": "t", "role": "title"}],
+        **extra,
+    })
+
+
+def test_dim6_tier_figure_defaults_to_publication():
+    # A tier figure with no preset (kwarg or ir) resolves to publication, not
+    # cell_press — the cold skill call onto the chassis is the pub-grade call.
+    from imageGen.styles.loader import TIER_DEFAULT_PRESET, load_style
+    ir = _bare_tier_figure()
+    assert ir.style_preset is None
+    assert _resolve_style(ir, None) == load_style(TIER_DEFAULT_PRESET)
+
+
+def test_dim6_leaf_figure_still_defaults_to_cell_press():
+    # The flip is tier-only: a leaf figure keeps the friendly cell_press default.
+    from imageGen.styles.loader import DEFAULT_PRESET, load_style
+    ir = load_fixture(MAPK).model_copy(update={"style_preset": None})
+    assert not ir.tiers
+    assert _resolve_style(ir, None) == load_style(DEFAULT_PRESET)
+
+
+def test_dim6_explicit_preset_wins_on_tier_figure():
+    # An explicit ir.style_preset (even cell_press) is honoured on a tier figure —
+    # the flip only fills the *unset* default, distinguishable now that the schema
+    # default is None rather than the literal "cell_press".
+    from imageGen.styles.loader import load_style
+    ir = _bare_tier_figure(style_preset="cell_press")
+    assert _resolve_style(ir, None) == load_style("cell_press")
+
+
+def test_dim6_kwarg_wins_over_tier_default():
+    # The render --style kwarg outranks the tier publication default.
+    from imageGen.styles.loader import load_style
+    ir = _bare_tier_figure()
+    assert _resolve_style(ir, "acs") == load_style("acs")
+
+
+def test_dim6_publication_inherits_cell_press_and_deepens_sulfur():
+    # The publication preset is a refinement of cell_press: it inherits the leaf
+    # identity (protein fills) but deepens the pale-amber sulfur for print contrast
+    # and crisps the bond ink — the content-channel keys that reach tier molecules.
+    from imageGen.styles.loader import load_style
+    pub = load_style("publication")
+    cell = load_style("cell_press")
+    assert pub["protein_fill"] == cell["protein_fill"]   # inherited identity
+    assert pub["chem_atom_S"] == "#B07A0A"               # deeper than default #F9A825
+    assert pub["chem_atom_S"] != "#F9A825"
+    assert pub["chem_bond_stroke"] == "#141414"
+
+
 # ---------------------------------------------------------------------------
 # Format resolution
 # ---------------------------------------------------------------------------

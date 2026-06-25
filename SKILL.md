@@ -164,7 +164,7 @@ positional lists — far less to type than raw IR JSON:
 
 ```yaml
 archetype: pathway
-style: nature              # cell_press (default) | nature | acs
+style: nature              # publication (tier default) | cell_press (leaf default) | nature | acs
 title: MAPK cascade        # optional
 entities:
   - [ras, protein, Ras]            # [id, type, label]  (+ optional 4th: compartment id)
@@ -464,7 +464,7 @@ container (`tiers` → `Tier`/`Scene`/`Slot`/`Attach`/`SceneEdge`/`TierEdge`/`Ra
 | `archetype` | archetype value | yes | one of the five above |
 | `title` | string | no | |
 | `caption` | string | no | |
-| `style_preset` | string | no | defaults to `"cell_press"` |
+| `style_preset` | string | no | omit to auto-pick (tier→`publication`, leaf→`cell_press`); set to override |
 | `entities` | list of `Entity` | no* | |
 | `compartments` | list of `Compartment` | no* | |
 | `relations` | list of `Relation` | no* | |
@@ -633,9 +633,16 @@ the modification as the relation between modifier and substrate (e.g. a kinase
 
 Pass `--style` (or `style_preset` in the IR) to pick a journal aesthetic:
 
-- `cell_press` — soft, friendly, rounded. **Default.**
+- `publication` — crisp, print-grade chemistry (deeper CPK heteroatoms, crisp
+  bonds, cleaner blobs). **Default for `mechanism_cartoon` / tier figures** —
+  a cold tier render is the pub-grade render with no hand-tuning.
+- `cell_press` — soft, friendly, rounded. **Default for leaf figures** (pathways,
+  reaction schemes, panels).
 - `nature` — bolder, geometric, colorblind-safe palette.
-- `acs` — monochrome, formal; the chemistry default.
+- `acs` — monochrome, formal; an alternate chemistry style.
+
+You normally omit `style_preset` and let the archetype pick the right default
+(tier → `publication`, leaf → `cell_press`). Set it only to override.
 
 ---
 
@@ -710,7 +717,7 @@ Do not retry the same command unchanged. Check:
 - **CLI** (`python -m imageGen`): two modes —
   `render-spec SPEC.{yaml,json} -o OUT` (preferred; builds + validates from a
   flat spec) and the raw `IR_PATH -o OUT`. Shared flags:
-  `--style {cell_press,nature,acs}`, `--format {svg,png,pdf}` (else inferred
+  `--style {publication,cell_press,nature,acs}`, `--format {svg,png,pdf}` (else inferred
   from suffix), `--dpi N` (default 300), `--smiles-map FILE.json`,
   `--no-labels`, `--strict-labels`, `--canvas WxH`, `--verify`,
   `--autocrop` (trim the shipped figure in place — preferred),

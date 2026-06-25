@@ -59,7 +59,7 @@ corpus is the bottleneck and will reprioritise this list.
 | 3 | **orientation** | ✅ | **Closed 2026-06-25 (D6).** A rigid orientation pass poses each reactant so its reactive atom faces its partner. `_orient_conformer` (`_mol_render.py`) rotates the shared conformer about its centroid (verified rigid) before sizing/draw, gated to the tier path (leaf path byte-identical). `_scene_orientations` (`tier_layout.py`) infers `(reactive_atom, direction)` from each `CURLY` SceneEdge + the `Attach` placing the two reactants; threaded into both the size predictor and the renderer so the posed box matches. Fixes 08/02/01/aspirin-acceptance (carbonyl now faces the attacking Ser). An 80° deadband leaves already-readable structures (corpus 05) in their canonical pose. **Deferred to v2:** H-bond/dashed edges as drivers (v1 = curly only), reflection tie-break, cross-step scaffold consistency (fig 01's s1-vs-s2). See `D6_ORIENTATION_SCOPE.md`. |
 | 4 | **layering · contrast** | ✅ | **Closed 2026-06-25 (dim-4).** Edge colour vocabulary made semantically distinct: `hbond` → blue `#1A6FC9` (biochem convention; resolves inhibits-red conflict); `dashed` → neutral gray `#888888` (partial/TS bond); `curly` (electron-flow) → dark auburn `#8B2500` (distinct from black bond ink so arrows don't merge with bonds on overlap). `hbond` also carries its own thinner `stroke_width=1.5` (delicate dash convention). `inhibits` T-bar stays red — now the **only** red edge. +6 tests. Suite 1205 → 1211. |
 | 5 | **density · arrows / containment** | ~ | Landed: transition-arrow clearance (D5); **content-aware per-tier cell width** (scenes no longer overflow into neighbours); **content centering** in the cell (chains no longer hang out one side); **inter-tier band gap** + **content-aware band heights** (bands tall enough for their labels); **4-wall label containment** (labels can't spill out of their band onto the page). Still open: arrows are fixed-geometry not ink-relative; blob/cluster sizing is uneven (dim 1). |
-| 6 | **pubgrade-defaults** | ☐ | No first-class `publication` style preset, and `mechanism_cartoon` still defaults through the generic path. Needs a real preset + the routing flip so the *default* call is the pub-grade call. |
+| 6 | **pubgrade-defaults** | ✅ | **Closed 2026-06-25.** Shipped a first-class `publication` preset (`styles/publication.json`, inherits `cell_press`) that refines the content-channel keys reaching tier molecules/blobs/text: deeper CPK heteroatoms (pale amber S `#F9A825` → `#B07A0A`, orange P deepened), crisp near-black bonds + FG labels, and a lighter-fill/darker-stroke protein blob so a cavity residue stays legible. **Routing flip:** the schema default for `Figure.style_preset` is now `None` (was the literal `"cell_press"`), and `_resolve_style` falls a **tier** figure back to `publication` (leaf/panel keep `cell_press`) — so a cold skill call onto the chassis is the pub-grade call. Explicit preset (IR or `--style`) still wins. +9 tests. Suite 1211 → 1219. |
 
 ---
 
@@ -214,14 +214,16 @@ P.3 ✅ build the 10-figure corpus via the skill (makes "by default" measurable)
         ├─► dim 1 (sizing) ✅   dim 2 (labels) ✅ closed 2026-06-24
         ├─► dim 3 (orientation/D6) ✅ closed 2026-06-25
         ├─► dim 5 (density/containment) ~ (D5/D7/D8 done; arrows + blob sizing open)
-        └─► remaining: dim 6 (publication preset + routing flip) · the render-critic
+        └─► remaining: the (optional) render-critic
             [dim 4 (layering·contrast) ✅ closed 2026-06-25]
+            [dim 6 (publication preset + routing flip) ✅ closed 2026-06-25]
 ```
 
-**Corpus verdict (2026-06-25, updated):** dims 1 + 2 + 3 + 4 are all closed; dim 5
-is mostly done. The remaining items are **dim 6 (publication preset + routing flip)**
-and the still-optional render-critic. Recommended next: **dim 6** (make the *default*
-skill call the pub-grade call).
+**Corpus verdict (2026-06-25, updated):** dims 1 + 2 + 3 + 4 + 6 are all closed;
+dim 5 is mostly done. The only remaining scout item is the **still-optional
+render-critic** (a vision-scored pub-grade rubric closing the loop). With the
+publication preset + routing flip landed, a cold tier skill call is now the
+pub-grade call by default.
 Two corpus-grounded follow-ups surfaced by dim 3, worth picking up alongside dim
 4/5: (a) **orientation v2** — orient on H-bond/dashed edges too (fig 01-s1, 08-s1
 still pose the H-bond step canonically) and keep a shared substrate posed

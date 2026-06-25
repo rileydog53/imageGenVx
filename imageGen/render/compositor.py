@@ -66,7 +66,7 @@ from imageGen.render.export import svg_to_pdf, svg_to_png
 # Label-step dispatch (P0a.3). _label_requests_fn lives here now but is
 # re-exported so callers/tests that import it from compositor keep working.
 from imageGen.render.label_coordinator import LabelCoordinator, _label_requests_fn
-from imageGen.styles.loader import DEFAULT_PRESET, load_style
+from imageGen.styles.loader import DEFAULT_PRESET, TIER_DEFAULT_PRESET, load_style
 
 # Post-write SVG passes + figure-title chrome (R5 split). Imported here so they
 # stay importable from ``imageGen.render.compositor`` unchanged; render_figure
@@ -410,8 +410,16 @@ def render_figure(
 
 
 def _resolve_style(ir: Figure, style_name: str | None) -> dict[str, Any]:
-    """Return the style overrides dict, preferring kwarg > ir.style_preset > default."""
-    name = style_name or ir.style_preset or DEFAULT_PRESET
+    """Return the style overrides dict, preferring kwarg > ir.style_preset > default.
+
+    Dim-6 routing flip: when neither a kwarg nor ``ir.style_preset`` pins a
+    preset, a **tier** (chassis) figure defaults to ``TIER_DEFAULT_PRESET``
+    (publication) rather than the leaf ``DEFAULT_PRESET`` (cell_press) — so the
+    default skill call onto the chassis is the pub-grade call. An explicit
+    preset (either source) still wins for every figure.
+    """
+    fallback = TIER_DEFAULT_PRESET if ir.tiers else DEFAULT_PRESET
+    name = style_name or ir.style_preset or fallback
     return load_style(name)
 
 

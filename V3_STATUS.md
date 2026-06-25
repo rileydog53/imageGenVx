@@ -21,8 +21,9 @@ first, then dive into the detail docs linked below.
 
 **Current test count:** 1205 passing. The V3 scene **engine** is feature-complete
 (numbered steps 1–7). **But the work is NOT done** — see the pub-grade phase below.
-Pub-grade dims closed: 1 (sizing), 2 (labels), 3 (orientation/D6), 4 (layering·contrast);
-dim 5 mostly done; remaining dim 6 (publication preset) + optional render-critic.
+Pub-grade dims closed: 1 (sizing), 2 (labels), 3 (orientation/D6), 4 (layering·contrast),
+6 (publication preset + routing flip); dim 5 mostly done; only the optional
+render-critic remains.
 
 > **Pub-grade dim-2 (leader lines) — landed in full 2026-06-24 (both halves).**
 > (1) `place_labels` gained a leader-eligible *whitespace ring search*: a
@@ -50,6 +51,17 @@ dim 5 mostly done; remaining dim 6 (publication preset) + optional render-critic
 > struck-through). `_layout_scene` now reserves transition lanes (strips at `fcy`
 > in the cell side margins) as label occupancy, pushing such labels above/below
 > the row. Suite 1189 → 1190.
+
+> **Pub-grade dim 6 — pubgrade-defaults — CLOSED 2026-06-25.** Shipped the
+> first-class `publication` preset (`styles/publication.json`, inherits
+> `cell_press`) refining the content-channel keys that reach tier
+> molecules/blobs/text (deeper CPK heteroatoms, crisp bonds/FG labels, lighter
+> blob fill). **Routing flip:** `Figure.style_preset` schema default is now
+> `None` (was `"cell_press"`; approved IR-schema change), and `_resolve_style`
+> defaults a **tier** figure to `publication` (leaf/panel keep `cell_press`) —
+> so a cold skill call onto the chassis renders pub-grade with no hand-tuning.
+> Explicit preset (IR or `--style`) still wins. SKILL.md + CLI updated. +9 tests.
+> Suite 1211 → 1219.
 
 > **Pub-grade dim 4 — layering · contrast — CLOSED 2026-06-25.** Edge colour
 > vocabulary now semantically distinct: `hbond` → blue `#1A6FC9` (biochem
