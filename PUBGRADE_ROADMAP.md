@@ -55,7 +55,7 @@ corpus is the bottleneck and will reprioritise this list.
 | # | Dimension | State | What's wrong / what it needs |
 |---|---|---|---|
 | 1 | **sizing** | ✅ | Content-aware molecule sizing landed (keystone `131a918`): every structure renders at one consistent bond length, no hand-set `scale`. **Generality unproven until P.3** — validated on one hand-authored figure. |
-| 2 | **labels** | ~ | **Leader lines landed in full (2026-06-24, both halves).** (a) `place_labels` gained a leader-eligible *whitespace ring search* — a `LabelRequest.leader` label whose adjacent + nudge slots are all blocked parks in the nearest open whitespace instead of landing on its anchor; (b) `tier_label_leaders` then tethers it (and any drifted label) back with a hairline dashed leader. Slot + edge labels set `leader=True`. Fixes **D1** (residue drift) and **D3** (`breaking`/`new bond` now park off the shaft + tether) across the corpus; snug labels stay leader-free. **Residual:** a label with genuinely no whitespace in its band (fig 01 `arachidonic acid`, a chain spanning the band) still overlaps — that's band-height (dim 1/5), not leaders. **Still open:** D2 caption clipping; a leader that crosses unrelated caption text (fig 05) is a minor aesthetic nit. |
+| 2 | **labels** | ✅ | **Closed 2026-06-24** — D1/D2/D3/D4 all resolved. **Leader lines landed in full (both halves).** (a) `place_labels` gained a leader-eligible *whitespace ring search* — a `LabelRequest.leader` label whose adjacent + nudge slots are all blocked parks in the nearest open whitespace instead of landing on its anchor; (b) `tier_label_leaders` then tethers it (and any drifted label) back with a hairline dashed leader. Slot + edge labels set `leader=True`. Fixes **D1** (residue drift) and **D3** (`breaking`/`new bond` now park off the shaft + tether) across the corpus; snug labels stay leader-free. **Residual:** a label with genuinely no whitespace in its band (fig 01 `arachidonic acid`, a chain spanning the band) still overlaps — that's band-height (dim 1/5), not leaders. **Still open:** D2 caption clipping; a leader that crosses unrelated caption text (fig 05) is a minor aesthetic nit. |
 | 3 | **orientation** | ☐ | Molecules are posed as RDKit lays them out, not so the reaction *reads* left-to-right. A mechanism should flow with the nucleophile/electrophile oriented consistently across steps. |
 | 4 | **layering · contrast** | ☐ | Band fills, slot colours, and arrow strokes are not tuned for figure-ground contrast; overlapping ink can lose the eye. Polish pass. |
 | 5 | **density · arrows / containment** | ~ | Landed: transition-arrow clearance (D5); **content-aware per-tier cell width** (scenes no longer overflow into neighbours); **content centering** in the cell (chains no longer hang out one side); **inter-tier band gap** + **content-aware band heights** (bands tall enough for their labels); **4-wall label containment** (labels can't spill out of their band onto the page). Still open: arrows are fixed-geometry not ink-relative; blob/cluster sizing is uneven (dim 1). |
@@ -122,9 +122,11 @@ Grounded in the aspirin acceptance artifact and the two P.1 verification renders
   `_TIER_LEADER_MIN_GAP` (22px), so the association is visible; snug labels (e.g.
   His57 directly under its imidazole) get none. Confirmed across the corpus
   (figs 01/02/07/08). (dim 2)
-- **D2 — scene captions clip / drop lines.** Multi-line scene `label`s (`"\n"`)
-  lose their second line in tight bands ("Tetrahedral" without "intermediate").
-  *Fix:* reserve caption headroom from the measured label height. (dim 2)
+- **D2 — scene captions clip / drop lines.** ✅ RESOLVED 2026-06-24 (superseded
+  by D7). The cause was tight bands; the content-aware band-height work (D7)
+  reserves enough headroom that every caption line now renders. Verified: all 20
+  multi-line scene captions across the corpus render both lines (a token-presence
+  sweep of the rendered SVGs found 0 dropped lines). No dedicated fix needed. (dim 2)
 - **D3 — edge labels collide with arrows.** ✅ FIXED 2026-06-24. With both
   leader-line halves in place, an edge label (`H-bond` / `new bond` / `breaking`)
   that the nudge ladder can't clear now runs the `place_labels` whitespace ring
@@ -187,14 +189,19 @@ demands them. **Do not promise these in `SKILL.md` until the engine cashes them.
 ```
 P.1 ✅ sync SKILL.md to the chassis            (door opens onto the chassis)
 P.2 ✅ this doc                                 (the plan, written down)
-P.3 ☐ build the ~10-figure corpus via the skill (makes "by default" measurable)
+P.3 ✅ build the 10-figure corpus via the skill (makes "by default" measurable)
         │
-        └─► reassess dims 2–6 + the render-critic against what the corpus shows
+        ├─► dim 1 (sizing) ✅   dim 2 (labels) ✅ closed 2026-06-24
+        ├─► dim 5 (density/containment) ~ (D5/D7/D8 done; arrows + blob sizing open)
+        └─► remaining: dim 3 (orientation/D6) · dim 4 (layering·contrast) ·
+            dim 6 (publication preset + routing flip) · the render-critic
 ```
 
-After P.3, the corpus reprioritises dims 2–6 and tells us whether the
-render-critic is worth building as scoped. **Do not start the deferred dimensions
-or the critic before P.3.**
+**Corpus verdict (2026-06-24):** dims 1 + 2 are closed and dim 5 is mostly done.
+The next concrete, corpus-grounded defect is **D6 (orientation, dim 3)** — within a
+step the substrate can be posed so the attacked atom faces away from the attacking
+residue. dims 4 + 6 are polish/defaults and the render-critic is still optional;
+reassess after dim 3.
 
 ---
 
