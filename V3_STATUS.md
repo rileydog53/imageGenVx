@@ -21,9 +21,8 @@ first, then dive into the detail docs linked below.
 
 **Current test count:** 1205 passing. The V3 scene **engine** is feature-complete
 (numbered steps 1–7). **But the work is NOT done** — see the pub-grade phase below.
-Pub-grade dims closed: 1 (sizing), 2 (labels), 3 (orientation/D6); dim 5 mostly
-done; remaining dim 4 (layering·contrast) + dim 6 (publication preset) + optional
-render-critic.
+Pub-grade dims closed: 1 (sizing), 2 (labels), 3 (orientation/D6), 4 (layering·contrast);
+dim 5 mostly done; remaining dim 6 (publication preset) + optional render-critic.
 
 > **Pub-grade dim-2 (leader lines) — landed in full 2026-06-24 (both halves).**
 > (1) `place_labels` gained a leader-eligible *whitespace ring search*: a
@@ -51,6 +50,16 @@ render-critic.
 > struck-through). `_layout_scene` now reserves transition lanes (strips at `fcy`
 > in the cell side margins) as label occupancy, pushing such labels above/below
 > the row. Suite 1189 → 1190.
+
+> **Pub-grade dim 4 — layering · contrast — CLOSED 2026-06-25.** Edge colour
+> vocabulary now semantically distinct: `hbond` → blue `#1A6FC9` (biochem
+> H-bond convention; resolves conflict with inhibits red); `dashed` → neutral
+> gray `#888888` (partial/TS bonds); `curly` (electron-flow arrows) → dark
+> auburn `#8B2500` so they don't merge with black bond ink when arrows cross
+> structures. `hbond` also gets its own thinner `stroke_width=1.5` (delicate
+> dash). `inhibits` T-bar stays red — now the **only** red edge.
+> Per-type `stroke_width` in `_EDGE_DEFAULTS` is now honoured by `_edge_group`
+> (caller can still override). +6 tests. Suite 1205 → 1211.
 
 > **Pub-grade dim 3 — orientation (D6) — CLOSED 2026-06-25.** Molecules were posed
 > in RDKit's canonical pose with no aiming, so a substrate's attacked atom could

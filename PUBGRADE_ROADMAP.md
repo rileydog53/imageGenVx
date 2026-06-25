@@ -57,7 +57,7 @@ corpus is the bottleneck and will reprioritise this list.
 | 1 | **sizing** | ✅ | Content-aware molecule sizing landed (keystone `131a918`): every structure renders at one consistent bond length, no hand-set `scale`. **Generality unproven until P.3** — validated on one hand-authored figure. |
 | 2 | **labels** | ✅ | **Closed 2026-06-24** — D1/D2/D3/D4 all resolved. **Leader lines landed in full (both halves).** (a) `place_labels` gained a leader-eligible *whitespace ring search* — a `LabelRequest.leader` label whose adjacent + nudge slots are all blocked parks in the nearest open whitespace instead of landing on its anchor; (b) `tier_label_leaders` then tethers it (and any drifted label) back with a hairline dashed leader. Slot + edge labels set `leader=True`. Fixes **D1** (residue drift) and **D3** (`breaking`/`new bond` now park off the shaft + tether) across the corpus; snug labels stay leader-free. **Residual:** a label with genuinely no whitespace in its band (fig 01 `arachidonic acid`, a chain spanning the band) still overlaps — that's band-height (dim 1/5), not leaders. **Still open:** D2 caption clipping; a leader that crosses unrelated caption text (fig 05) is a minor aesthetic nit. |
 | 3 | **orientation** | ✅ | **Closed 2026-06-25 (D6).** A rigid orientation pass poses each reactant so its reactive atom faces its partner. `_orient_conformer` (`_mol_render.py`) rotates the shared conformer about its centroid (verified rigid) before sizing/draw, gated to the tier path (leaf path byte-identical). `_scene_orientations` (`tier_layout.py`) infers `(reactive_atom, direction)` from each `CURLY` SceneEdge + the `Attach` placing the two reactants; threaded into both the size predictor and the renderer so the posed box matches. Fixes 08/02/01/aspirin-acceptance (carbonyl now faces the attacking Ser). An 80° deadband leaves already-readable structures (corpus 05) in their canonical pose. **Deferred to v2:** H-bond/dashed edges as drivers (v1 = curly only), reflection tie-break, cross-step scaffold consistency (fig 01's s1-vs-s2). See `D6_ORIENTATION_SCOPE.md`. |
-| 4 | **layering · contrast** | ☐ | Band fills, slot colours, and arrow strokes are not tuned for figure-ground contrast; overlapping ink can lose the eye. Polish pass. |
+| 4 | **layering · contrast** | ✅ | **Closed 2026-06-25 (dim-4).** Edge colour vocabulary made semantically distinct: `hbond` → blue `#1A6FC9` (biochem convention; resolves inhibits-red conflict); `dashed` → neutral gray `#888888` (partial/TS bond); `curly` (electron-flow) → dark auburn `#8B2500` (distinct from black bond ink so arrows don't merge with bonds on overlap). `hbond` also carries its own thinner `stroke_width=1.5` (delicate dash convention). `inhibits` T-bar stays red — now the **only** red edge. +6 tests. Suite 1205 → 1211. |
 | 5 | **density · arrows / containment** | ~ | Landed: transition-arrow clearance (D5); **content-aware per-tier cell width** (scenes no longer overflow into neighbours); **content centering** in the cell (chains no longer hang out one side); **inter-tier band gap** + **content-aware band heights** (bands tall enough for their labels); **4-wall label containment** (labels can't spill out of their band onto the page). Still open: arrows are fixed-geometry not ink-relative; blob/cluster sizing is uneven (dim 1). |
 | 6 | **pubgrade-defaults** | ☐ | No first-class `publication` style preset, and `mechanism_cartoon` still defaults through the generic path. Needs a real preset + the routing flip so the *default* call is the pub-grade call. |
 
@@ -214,15 +214,14 @@ P.3 ✅ build the 10-figure corpus via the skill (makes "by default" measurable)
         ├─► dim 1 (sizing) ✅   dim 2 (labels) ✅ closed 2026-06-24
         ├─► dim 3 (orientation/D6) ✅ closed 2026-06-25
         ├─► dim 5 (density/containment) ~ (D5/D7/D8 done; arrows + blob sizing open)
-        └─► remaining: dim 4 (layering·contrast) ·
-            dim 6 (publication preset + routing flip) · the render-critic
+        └─► remaining: dim 6 (publication preset + routing flip) · the render-critic
+            [dim 4 (layering·contrast) ✅ closed 2026-06-25]
 ```
 
-**Corpus verdict (2026-06-25):** dims 1 + 2 + 3 are closed and dim 5 is mostly
-done. The remaining items are **dim 4 (layering·contrast)** and **dim 6
-(publication preset + routing flip)** — both polish/defaults — plus the
-still-optional render-critic. Recommended next: **dim 6** (make the *default*
-skill call the pub-grade call), or dim 4 (figure-ground contrast polish).
+**Corpus verdict (2026-06-25, updated):** dims 1 + 2 + 3 + 4 are all closed; dim 5
+is mostly done. The remaining items are **dim 6 (publication preset + routing flip)**
+and the still-optional render-critic. Recommended next: **dim 6** (make the *default*
+skill call the pub-grade call).
 Two corpus-grounded follow-ups surfaced by dim 3, worth picking up alongside dim
 4/5: (a) **orientation v2** — orient on H-bond/dashed edges too (fig 01-s1, 08-s1
 still pose the H-bond step canonically) and keep a shared substrate posed

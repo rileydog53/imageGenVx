@@ -170,11 +170,17 @@ def _preset_tier_params(style_dict: dict[str, Any] | None) -> dict[str, Any]:
             if key in style_dict}
 
 
-# Per-SceneEdgeType drawing defaults; ``edge.style`` overrides "stroke".
+# Per-SceneEdgeType drawing defaults; ``edge.style`` overrides "stroke" and
+# "stroke_width".  Dim-4 (layering/contrast): each semantic type carries its own
+# colour so that overlapping ink remains distinguishable:
+#   hbond  — biochem blue  (universal H-bond convention; distinct from inhibits red)
+#   dashed — neutral gray  (partial/TS bond; distinct from hbond and inhibits)
+#   curly  — dark auburn   (electron-flow arrows; distinct from black bond ink)
 _EDGE_DEFAULTS: dict[str, dict[str, Any]] = {
-    "hbond":      {"stroke": "#CC2222", "dash": "4,3", "curved": True,  "arrow": False},
-    "dashed":     {"stroke": "#CC2222", "dash": "4,3", "curved": False, "arrow": False},
-    "curly":      {"stroke": "#1A1A1A", "dash": None,  "curved": True,  "arrow": True, "head_w": 0.4},
+    "hbond":      {"stroke": "#1A6FC9", "stroke_width": 1.5,
+                   "dash": "4,3", "curved": True,  "arrow": False},
+    "dashed":     {"stroke": "#888888", "dash": "4,3", "curved": False, "arrow": False},
+    "curly":      {"stroke": "#8B2500", "dash": None,  "curved": True,  "arrow": True, "head_w": 0.4},
     "transition": {"stroke": "#1A1A1A", "dash": None,  "curved": False, "arrow": True},
     "departs":    {"stroke": "#33AA33", "dash": None,  "curved": False, "arrow": True},
     "binds":      {"stroke": "#1A1A1A", "dash": None,  "curved": False, "arrow": True},
@@ -327,7 +333,9 @@ def _edge_group(
     """Draw one edge p0->p1 per its type (dashed/curved line, arrow, or both)."""
     spec = _EDGE_DEFAULTS.get(edge_type.value, _EDGE_DEFAULTS["generic"])
     stroke = str((edge_style or {}).get("stroke", spec["stroke"]))
-    width = float((edge_style or {}).get("stroke_width", 2.0))
+    # Per-type default width from spec (e.g. hbond is thinner at 1.5); caller
+    # can still override via edge_style["stroke_width"].
+    width = float((edge_style or {}).get("stroke_width", spec.get("stroke_width", 2.0)))
     g = svgwrite.container.Group()
     if (edge_style or {}).get("partial"):
         # P7.3b: a transition-state partial bond — a thin, finely-dashed straight

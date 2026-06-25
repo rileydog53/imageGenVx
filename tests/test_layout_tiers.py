@@ -17,6 +17,7 @@ import re
 from imageGen.ir import Figure, Scene
 from imageGen.ir.schema import SceneEdgeType, StepSequence, Tier
 from imageGen.layout.tier_layout import (
+    _EDGE_DEFAULTS,
     _arrow_head,
     _edge_group,
     _transition_label_pos,
@@ -1129,7 +1130,7 @@ def test_cascade_preset_does_not_recolour_semantic_edges():
     entries = _layout_scene(_two_text_scene(), (0.0, 0.0, 300.0, 120.0), reg,
                             dict(TIER_DEFAULT_PARAMS), base_style=acs)
     edge = next(e for e in entries if e.ir_id.startswith("edge_"))
-    assert _drawn_stroke(edge) == _EDGE_DEFAULTS["dashed"]["stroke"]  # #CC2222
+    assert _drawn_stroke(edge) == _EDGE_DEFAULTS["dashed"]["stroke"]  # #888888
     assert _drawn_stroke(edge) != acs["stroke"]                       # not black
 
 
@@ -1172,3 +1173,59 @@ def test_cascade_preset_reaches_molecules():
 
     assert _mol_svg(load_style("acs")) != _mol_svg(None)          # journal reaches bonds
     assert _mol_svg(load_style("cell_press")) == _mol_svg(None)   # default unchanged
+
+
+# --- Dim 4: edge colour semantics (layering/contrast) -----------------------
+
+def _edge_stroke(edge_type, style=None):
+    """Stroke colour of the first path/line element in an _edge_group output."""
+    g = _edge_group((0.0, 0.0), (100.0, 0.0), edge_type, style)
+    el = next(e for e in g.elements if e.elementname in ("path", "line"))
+    return el["stroke"]
+
+
+def _edge_stroke_width(edge_type, style=None):
+    """Stroke-width of the first path/line element in an _edge_group output."""
+    g = _edge_group((0.0, 0.0), (100.0, 0.0), edge_type, style)
+    el = next(e for e in g.elements if e.elementname in ("path", "line"))
+    return float(el["stroke-width"])
+
+
+def test_dim4_hbond_defaults_to_biochem_blue():
+    # dim-4: H-bonds are blue (#1A6FC9), not red — universal H-bond convention and
+    # avoids semantic collision with inhibits (red T-bar).
+    assert _EDGE_DEFAULTS["hbond"]["stroke"] == "#1A6FC9"
+    assert _edge_stroke(SceneEdgeType.HBOND) == "#1A6FC9"
+
+
+def test_dim4_dashed_defaults_to_neutral_gray():
+    # dim-4: generic dashed interaction (partial/TS bond) is gray, not red.
+    assert _EDGE_DEFAULTS["dashed"]["stroke"] == "#888888"
+    assert _edge_stroke(SceneEdgeType.DASHED) == "#888888"
+
+
+def test_dim4_curly_defaults_to_auburn_not_bond_black():
+    # dim-4: electron-flow curly arrows are dark auburn (#8B2500), distinct from
+    # molecular bond ink (#1A1A1A) so they remain readable when crossing bonds.
+    assert _EDGE_DEFAULTS["curly"]["stroke"] == "#8B2500"
+    assert _edge_stroke(SceneEdgeType.CURLY) == "#8B2500"
+    assert _edge_stroke(SceneEdgeType.CURLY) != "#1A1A1A"
+
+
+def test_dim4_inhibits_still_red_no_regression():
+    # inhibits (T-bar) stays red (#CC2222) — the only semantic red after dim-4.
+    assert _EDGE_DEFAULTS["inhibits"]["stroke"] == "#CC2222"
+    assert _edge_stroke(SceneEdgeType.INHIBITS) == "#CC2222"
+
+
+def test_dim4_hbond_thinner_than_curly():
+    # hbond spec carries stroke_width=1.5 (delicate dash); curly uses the 2.0
+    # global default — H-bonds are conventionally thinner than covalent-bond arrows.
+    assert "stroke_width" in _EDGE_DEFAULTS["hbond"]
+    assert _edge_stroke_width(SceneEdgeType.HBOND) == 1.5
+    assert _edge_stroke_width(SceneEdgeType.CURLY) == 2.0
+
+
+def test_dim4_per_type_stroke_width_overridable_by_style():
+    # Edge-level style["stroke_width"] wins over the per-type spec default.
+    assert _edge_stroke_width(SceneEdgeType.HBOND, {"stroke_width": 3.0}) == 3.0
