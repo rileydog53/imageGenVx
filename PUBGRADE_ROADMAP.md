@@ -158,6 +158,17 @@ Grounded in the aspirin acceptance artifact and the two P.1 verification renders
   per-tier cell width, post-solve content centring, content-aware band heights
   (small-frac bands keep a natural-height floor), an inter-tier band gap, and
   4-wall per-cell label containment. Confirmed on figs 06/10/01.
+- **D9 — slot labels struck through by transition arrows.** ✅ FIXED 2026-06-24.
+  A cross-cell transition (`s@right -> s@left`) runs horizontally through the
+  scene's content vertical centre, but resolves at the *tier* level after each
+  scene already placed its labels — so a side-by-side slot's label placed
+  `right`/`left` at that height landed on the not-yet-drawn arrow and rendered
+  struck-through (fig 03 "hydroxide"). `_layout_scene` now reserves two
+  *transition lanes* (thin horizontal strips at `fcy` in the cell's side margins)
+  as label occupancy, so such labels go above/below the row instead. Reserved
+  unconditionally — a label in the mid-height gutter reads as detached regardless,
+  so it's safe for transition-free scenes too. Confirmed fig 03; figs 06/08 side
+  labels (off mid-height) unaffected. (dims 2, 5)
 - **D8 — steps don't separate / merge into one blob-chain.** ✅ FIXED 2026-06-15
   (same change): neighbouring scenes now sit in distinct, padded cells, so a row
   of steps reads as discrete steps instead of one continuous chain.

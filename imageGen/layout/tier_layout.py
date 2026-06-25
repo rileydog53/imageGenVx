@@ -949,14 +949,29 @@ def _layout_scene(
             (rx - big, ry - big, rx, ry + rh + big),             # left of cell
             (rx + rw, ry - big, rx + rw + big, ry + rh + big),   # right of cell
         ]
+        # Transition lanes: a cross-cell transition arrow (s@right -> s@left)
+        # enters/leaves this scene at its frame `left`/`right` anchors — the
+        # content vertical centre `fcy`, running through the cell's side margins.
+        # Those arrows resolve at the tier level AFTER this scene placed its
+        # labels, so a slot label placed `right`/`left` at mid-height lands on the
+        # (not-yet-drawn) shaft and renders struck-through (fig 03 "hydroxide").
+        # Reserve the two side-margin strips at `fcy` so labels go above/below
+        # instead — the gutter at mid-height is bad placement regardless (it reads
+        # as detached from the molecule), so reserving it unconditionally is safe.
+        lane_hw = float(params["tier_caption_font_size"])
+        transition_lanes = [
+            (rx, fcy - lane_hw, minx, fcy + lane_hw),          # left margin lane
+            (maxx, fcy - lane_hw, rx + rw, fcy + lane_hw),     # right margin lane
+        ]
         entries = place_labels(
             entries, requests,
             layout_params={"label_anchor_gap": float(params["tier_caption_gap"])},
             style_dict=label_style,
             # Seed occupancy with the slot ink boxes so a caption / residue label
             # never lands on top of the chemistry (molecule entries are closures,
-            # invisible to place_labels' own bbox extraction), plus the band walls.
-            extra_occupied=boxes + band_walls,
+            # invisible to place_labels' own bbox extraction), plus the band walls
+            # and the transition lanes.
+            extra_occupied=boxes + band_walls + transition_lanes,
         )
         # dim-2 leader lines: tether any slot / edge label that the placement
         # ladder pushed far from its anchor (D1 residue-label drift, D3 edge

@@ -41,6 +41,14 @@ first, then dive into the detail docs linked below.
 > Confirmed on corpus figs 04 (`substrate`) and 09 (`[O]`/`new S-S bond`), which
 > previously rendered bare arrows. Suite 1186 → 1189.
 
+> **Pub-grade D9 (labels struck through by transition arrows) — fixed 2026-06-24.**
+> A cross-cell transition runs through the scene's content vertical centre but
+> resolves at the tier level after each scene placed its labels, so a side-by-side
+> slot label could land on the not-yet-drawn arrow (fig 03 "hydroxide"
+> struck-through). `_layout_scene` now reserves transition lanes (strips at `fcy`
+> in the cell side margins) as label occupancy, pushing such labels above/below
+> the row. Suite 1189 → 1190.
+
 ---
 
 ## ← CURRENT FOCUS: the pub-grade phase (post-feature-complete)

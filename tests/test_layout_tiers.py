@@ -120,6 +120,36 @@ def test_transition_standoff_is_separate_and_larger_than_edge_standoff():
     assert edge_svg({}, bond) == edge_svg({"tier_transition_standoff": 60.0}, bond)
 
 
+def test_transition_lane_keeps_slot_labels_off_the_arrow():
+    # A cross-cell transition (s@right -> s@left) runs horizontally through the
+    # scene's content vertical centre. Before the lane reservation, a side-by-side
+    # slot's label placed `right`/`left` at that height landed on the (tier-level,
+    # later-drawn) arrow and rendered struck-through (corpus fig 03 "hydroxide").
+    # The reserved transition lanes push such labels above/below the row instead.
+    import json
+    from pathlib import Path
+
+    from imageGen.layout.label_placement import _label_primitive
+
+    fig = Figure.model_validate(
+        json.loads(Path("showcase/corpus/03_sn2_substitution.json").read_text()))
+    entries = layout_tiers(fig, layout_params={})
+    ys = {
+        e.args[0]: e.args[1][1]
+        for e in entries
+        if e.primitive is _label_primitive and e.ir_id
+        and e.ir_id.startswith("label_slot_s1_")
+    }
+    # The two side-by-side molecules' labels straddle the row centre by well more
+    # than the lane half-height — neither sits in the mid-row arrow lane.
+    lane_hw = 12.0  # == tier_caption_font_size default
+    mid = (ys["hydroxide"] + ys["methyl bromide"]) / 2.0
+    assert abs(ys["hydroxide"] - mid) > lane_hw
+    assert abs(ys["methyl bromide"] - mid) > lane_hw
+    # Specifically, the nuc label sits above the row and the sub label below it.
+    assert ys["hydroxide"] < mid < ys["methyl bromide"]
+
+
 def test_transition_label_pos_rides_above_horizontal_shaft():
     # D4: a horizontal arrow's label sits at the midpoint, offset straight up.
     pos = _transition_label_pos((0.0, 0.0), (100.0, 0.0), 10.0)
