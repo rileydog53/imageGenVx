@@ -19,6 +19,7 @@ from imageGen.ir.schema import SceneEdgeType, StepSequence, Tier
 from imageGen.layout.tier_layout import (
     _arrow_head,
     _edge_group,
+    _transition_label_pos,
     expand_step_sequence,
     layout_tiers,
     tier_rendered_scenes,
@@ -117,6 +118,36 @@ def test_transition_standoff_is_separate_and_larger_than_edge_standoff():
     bond = "edge_mol.acetyl_C_mol.ester_O"
     assert edge_svg({}, tedge) != edge_svg({"tier_transition_standoff": 60.0}, tedge)
     assert edge_svg({}, bond) == edge_svg({"tier_transition_standoff": 60.0}, bond)
+
+
+def test_transition_label_pos_rides_above_horizontal_shaft():
+    # D4: a horizontal arrow's label sits at the midpoint, offset straight up.
+    pos = _transition_label_pos((0.0, 0.0), (100.0, 0.0), 10.0)
+    assert pos == (50.0, -10.0)
+
+
+def test_transition_label_pos_vertical_falls_back_to_the_side():
+    # A near-vertical arrow has no "above" — the label offsets to the right.
+    x, y = _transition_label_pos((0.0, 0.0), (0.0, 100.0), 10.0)
+    assert (round(x, 6), round(y, 6)) == (10.0, 50.0)
+
+
+def test_labeled_transition_emits_a_label_entry_above_the_arrow():
+    # D4: a TierEdge.label was silently dropped (only the arrow drew). It must now
+    # lower to a `<tedge_id>_label` text entry, placed above the shaft midpoint.
+    fig = _aspirin_hydrolysis_figure()
+    fig.tiers[1].transitions[0].label = "hydrolysis"
+    entries = layout_tiers(fig, layout_params={"tier_canvas": (600, 300)})
+
+    tedge = "tedge_s_aspirin@right_s_salicylic@left"
+    labels = [e for e in entries if e.ir_id == f"{tedge}_label"]
+    assert len(labels) == 1, "exactly one transition-label entry should lower"
+    # Text is baked into the entry's closure; render it to confirm the label.
+    assert "hydrolysis" in labels[0].primitive(*labels[0].args, **labels[0].kwargs).tostring()
+    # Same figure without the label emits no label entry (purely additive).
+    plain = _aspirin_hydrolysis_figure()
+    plain_entries = layout_tiers(plain, layout_params={"tier_canvas": (600, 300)})
+    assert not [e for e in plain_entries if e.ir_id == f"{tedge}_label"]
 
 
 def _scene_row_figure(scene_dict: dict, height_frac: float = 0.8) -> Figure:

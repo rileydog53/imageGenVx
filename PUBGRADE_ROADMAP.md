@@ -132,9 +132,14 @@ Grounded in the aspirin acceptance artifact and the two P.1 verification renders
   `tier_label_leaders` tethers it back to the edge midpoint. Confirmed: the
   aspirin `breaking` label moved up off the arrow with a leader, and the overlap
   warning for it is gone. (dim 2)
-- **D4 — transition labels overlap the arrow shaft.** A `TierEdge` label
-  ("hydrolysis", "peptide substrate") sits across the arrow rather than above it.
-  *Fix:* place at the arrow midpoint with a fixed above-shaft offset. (dims 2, 5)
+- **D4 — transition labels overlap the arrow shaft.** ✅ FIXED 2026-06-24. The
+  real defect was worse than overlap: a `TierEdge.label` was **silently dropped** —
+  the transition loop only drew the arrow, never the label (figs 04 `substrate`,
+  09 `[O]`/`new S-S bond` rendered as bare arrows). Now the loop emits a
+  `<tedge_id>_label` text entry placed by `_transition_label_pos` at the shaft
+  midpoint, offset perpendicular onto the arrow's *upper* side (a near-vertical
+  arrow offsets right instead), so the label rides above the arrow. Confirmed on
+  figs 04/09. (dims 2, 5)
 - **D5 — arrowhead clearance.** ✅ FIXED 2026-06-15. Cross-cell transition
   arrows now use a dedicated `tier_transition_standoff` (20px, ~one bond length),
   separate from the tight `tier_edge_standoff` that intra-scene atom edges need —

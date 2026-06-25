@@ -34,6 +34,13 @@ first, then dive into the detail docs linked below.
 > overlaps (band-height, dim 1/5). Suite 1177 → 1186. See `PUBGRADE_ROADMAP.md`
 > dim 2.
 
+> **Pub-grade D4 (transition labels) — fixed 2026-06-24.** A `TierEdge.label` was
+> silently dropped (the transition loop drew only the arrow). It now lowers to a
+> `<tedge_id>_label` text entry placed above the shaft midpoint via
+> `_transition_label_pos` (perpendicular offset onto the arrow's upper side).
+> Confirmed on corpus figs 04 (`substrate`) and 09 (`[O]`/`new S-S bond`), which
+> previously rendered bare arrows. Suite 1186 → 1189.
+
 ---
 
 ## ← CURRENT FOCUS: the pub-grade phase (post-feature-complete)

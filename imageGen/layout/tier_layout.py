@@ -106,6 +106,9 @@ TIER_DEFAULT_PARAMS: dict[str, Any] = {
     # separate from tier_edge_standoff, which must stay tight so curly/H-bond
     # arrows still originate on their atoms.
     "tier_transition_standoff": 20.0,
+    # D4: clearance between a transition arrow shaft and its label baseline (added
+    # to half the caption font), so the label rides above the arrow not across it.
+    "tier_transition_label_gap": 6.0,
     "tier_title_font_size": 18,
     "tier_subtitle_font_size": 13,
     # Title->subtitle baseline separation as a multiple of the title font size.
@@ -975,6 +978,27 @@ def _layout_scene(
     return entries
 
 
+def _transition_label_pos(
+    p0: tuple[float, float], p1: tuple[float, float], offset: float,
+) -> tuple[float, float]:
+    """Baseline point for a transition label, ``offset`` px above the shaft midpoint.
+
+    The label sits perpendicular to the arrow on its *upper* side (the unit
+    normal with the more-negative ``y``), so a horizontal arrow gets its label
+    straight above the midpoint. A near-vertical arrow has no meaningful "above",
+    so it falls back to the right-hand normal (positive ``x``)."""
+    mx, my = (p0[0] + p1[0]) / 2.0, (p0[1] + p1[1]) / 2.0
+    dx, dy = p1[0] - p0[0], p1[1] - p0[1]
+    length = math.hypot(dx, dy)
+    if length == 0.0:
+        return (mx, my - offset)
+    # Two unit normals; pick the upper one, breaking a vertical tie toward +x.
+    nx, ny = -dy / length, dx / length
+    if ny > 0 or (abs(ny) < 1e-9 and nx < 0):
+        nx, ny = -nx, -ny
+    return (mx + nx * offset, my + ny * offset)
+
+
 def _text_group(text: str, pos: tuple[float, float], size: int, color: str,
                 family: str, anchor: str = "start", italic: bool = False,
                 weight: str = "normal") -> svgwrite.container.Group:
@@ -1548,6 +1572,21 @@ def layout_tiers(
                 entries.append(LayoutEntry(
                     (lambda a=p0, b=p1, t=te.type, s=te_style: _edge_group(a, b, t, s)),
                     (), {}, (0.0, 0.0), ir_id=te.ir_id))
+                # D4: a TierEdge label was silently dropped — only the arrow drew.
+                # Place it just above the shaft midpoint (perpendicular offset) so
+                # the transition reads "<label>" over its arrow rather than the
+                # text crossing the shaft. A near-vertical arrow offsets to the
+                # right instead (no "above" to speak of).
+                if te.label:
+                    lfs = int(params["tier_caption_font_size"])
+                    lpos = _transition_label_pos(
+                        p0, p1, float(params["tier_transition_label_gap"]) + lfs / 2.0)
+                    lcol = str(te_style.get("label_font_color", params["tier_text_color"]))
+                    lfam = str(te_style.get("label_font_family", params["tier_font_family"]))
+                    entries.append(LayoutEntry(
+                        (lambda t=te.label, c=lpos, fs=lfs, col=lcol, fam=lfam:
+                            _text_group(t, c, fs, col, fam, anchor="middle")),
+                        (), {}, (0.0, 0.0), ir_id=f"{te.ir_id}_label"))
             continue
 
         # SUMMARY_BAR / BAND: band background only in the slice (inner content
