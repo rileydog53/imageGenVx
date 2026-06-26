@@ -52,6 +52,19 @@ Pub-grade dims closed: 1 (sizing), 2 (labels), 3 (orientation/D6), 4 (layering·
 > in the cell side margins) as label occupancy, pushing such labels above/below
 > the row. Suite 1189 → 1190.
 
+> **Pub-grade dim 5 follow-up — edge-to-edge attach spacing — 2026-06-26.** The
+> dim-5 arrow-clamp residual (a connect arrow into a close blob buried itself)
+> traced to attach placement: a face attach (`top/bottom/left/right`) seated the
+> child's *centre* at `parent_edge + offset`, accounting for the parent's
+> half-extent but NOT the child's — so a wide child (a 160px blob) overran its
+> half-width back into the neighbour (bbox overlap), leaving the arrow no room to
+> clamp into. `_solve_slot_centers` now adds the **child's** half-extent in the
+> edge direction for face edges, making `offset` a true edge-to-edge gap (cavity/
+> center edges unchanged — they seat the child *inside*). Matches author intent
+> (offset = gap) and visibly improved spacing across the corpus (fig 10 clusters/
+> blob/arrows, fig 06 cascade). 4 position-pinning tests updated to the new
+> semantics; +2 new. Suite 1229 → 1231.
+
 > **Pub-grade dim 1 — glyph/blob sizing — CLOSED 2026-06-26.** GLYPH/BLOB slots
 > no longer fill the uniform 180×140 cell (which made an ATP `tablet` dwarf the
 > ethanol substrate in fig 07). `_glyph_natural_box` (`tier_layout.py`) sizes a

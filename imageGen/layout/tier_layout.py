@@ -8,7 +8,7 @@ Scope is deliberately a SLICE, not the finished chassis:
   - Tiers: a TITLE band (title + subtitle) and a SCENE_ROW of equal columns;
     SUMMARY_BAR / BAND render only their band background (no inner content yet).
   - Scenes: MOLECULE and TEXT slots, placed by the topological attach/offset
-    solver (roots centred, attach = parent-edge + offset, then co-located boxes
+    solver (roots centred, face attach = edge-to-edge gap, then co-located boxes
     de-overlapped — P5.1). Scene-local label collision is still pending (P5.2).
   - Edges: intra-scene ``SceneEdge`` (dashed / curved H-bond) and cross-cell
     ``TierEdge`` (transition arrow), resolved through the ``AnchorRegistry`` with
@@ -551,13 +551,17 @@ def _solve_slot_centers(
     slot_extents: dict[str, tuple[float, float]] | None = None,
 ) -> dict[str, tuple[float, float]]:
     """Topological attach/offset solver: root slots centred, attached slots
-    placed at the parent's edge + offset, then co-located boxes de-overlapped.
+    placed adjacent to the parent's edge (+ offset), then co-located boxes
+    de-overlapped.
 
     Attaches resolve in DEPENDENCY order (a parent is placed before its child),
     so author declaration order is irrelevant; a cyclic or unresolvable chain
-    raises rather than silently overlapping. The child slide uses the *parent's*
-    extent (``slot_extents[parent]`` when supplied, else the uniform
-    ``slot_size``), so a wide parent pushes its child clear of its real box.
+    raises rather than silently overlapping. For a **face edge** the placement is
+    edge-to-edge: it uses BOTH the parent's and the child's extent
+    (``slot_extents`` when supplied, else the uniform ``slot_size``), so ``offset``
+    is the gap between the two boxes and a wide parent OR child can't overrun the
+    other (the dim-5 arrow-clamp residual). Cavity / center edges drop the child
+    INSIDE the parent and use only the parent extent.
 
     After placement, ``_deoverlap_coincident`` separates any slots the solve
     landed on the same point (two children center-attached to one parent — the
@@ -608,8 +612,20 @@ def _solve_slot_centers(
             ex, ey = _SLOT_EDGE_OFFSETS[att.edge.value]
             pw, ph = extent(att.parent)
             ox, oy = att.offset
-            centers[att.child] = (parent_center[0] + ex * pw + ox,
-                                  parent_center[1] + ey * ph + oy)
+            # Face edges (top/bottom/left/right) seat the child OUTSIDE the parent,
+            # adjacent to that edge: add the CHILD's half-extent in the edge
+            # direction so ``offset`` is a true edge-to-edge gap, not edge-to-centre.
+            # Without this a wide child (a 160px blob) overruns its half-width back
+            # into the parent — the boxes overlap and the connecting arrow has no
+            # room, so its standoff clamps inside the shape (dim-5 residual). Cavity
+            # / center edges drop the child INSIDE the parent, so they keep the bare
+            # parent-extent placement (no child term).
+            cw, ch = extent(att.child)
+            face = att.edge.value in ("top", "bottom", "left", "right")
+            kx = ex * cw if face else 0.0
+            ky = ey * ch if face else 0.0
+            centers[att.child] = (parent_center[0] + ex * pw + kx + ox,
+                                  parent_center[1] + ey * ph + ky + oy)
             progressed = True
         if not progressed:
             raise ValueError(

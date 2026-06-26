@@ -145,14 +145,20 @@ def test_transition_lane_keeps_slot_labels_off_the_arrow():
         if e.primitive is _label_primitive and e.ir_id
         and e.ir_id.startswith("label_slot_s1_")
     }
-    # The two side-by-side molecules' labels straddle the row centre by well more
-    # than the lane half-height — neither sits in the mid-row arrow lane.
+    # The cross-cell transition arrow runs horizontally at the molecule-row centre.
+    # The invariant the lane reservation guarantees: neither side-by-side slot's
+    # label sits in that mid-row arrow lane. (With the edge-to-edge attach spacing
+    # there is room for both labels to land below the row with leaders, rather than
+    # one above / one below as the old cramped layout forced — both are off-arrow,
+    # which is all the lane reservation promises.)
+    arrow_y = next(
+        float(el["y1"])
+        for e in entries if e.ir_id == "tedge_s1@right_s2@left"
+        for el in e.primitive(*e.args, **e.kwargs).elements
+        if el.elementname == "line")
     lane_hw = 12.0  # == tier_caption_font_size default
-    mid = (ys["hydroxide"] + ys["methyl bromide"]) / 2.0
-    assert abs(ys["hydroxide"] - mid) > lane_hw
-    assert abs(ys["methyl bromide"] - mid) > lane_hw
-    # Specifically, the nuc label sits above the row and the sub label below it.
-    assert ys["hydroxide"] < mid < ys["methyl bromide"]
+    assert abs(ys["hydroxide"] - arrow_y) > lane_hw
+    assert abs(ys["methyl bromide"] - arrow_y) > lane_hw
 
 
 def test_transition_label_pos_rides_above_horizontal_shaft():
@@ -828,12 +834,51 @@ def test_attach_resolves_regardless_of_declaration_order():
         {"child": "b", "parent": "a", "edge": "right"},
     ])
     centers = _solve_slot_centers(scene, (0.0, 0.0, 300.0, 100.0), (50.0, 40.0))
-    # b/c each step right by half a slot width; the chain is then centred in the
-    # cell (its bbox midpoint sits on the cell centre x=150), so a/b/c shift left.
-    assert centers["b"][0] - centers["a"][0] == 25.0
-    assert centers["c"][0] - centers["b"][0] == 25.0
+    # b/c each step right by a full slot width (edge-to-edge: half the parent +
+    # half the child, both 50px → 50px gap between centres); the chain is then
+    # centred in the cell (its bbox midpoint sits on the cell centre x=150).
+    assert centers["b"][0] - centers["a"][0] == 50.0
+    assert centers["c"][0] - centers["b"][0] == 50.0
     assert (centers["a"][0] + centers["c"][0]) / 2.0 == 150.0  # block centred
     assert centers["a"][1] == centers["b"][1] == centers["c"][1] == 50.0
+
+
+def test_face_attach_is_edge_to_edge_a_wide_child_does_not_overrun():
+    # dim-5 residual fix: a face attach places the child OUTSIDE the parent edge by
+    # the child's OWN half-extent too, so `offset` is a true edge-to-edge gap. A
+    # wide child (a blob) therefore can't overrun its half-width back into the
+    # parent (which left the connecting arrow no room and clamped it inside the
+    # shape). Here the child is 4x the parent: its box must sit fully clear.
+    from imageGen.layout.tier_layout import _solve_slot_centers
+    scene = Scene.model_validate({
+        "id": "s",
+        "slots": [{"id": "a", "kind": "text"}, {"id": "b", "kind": "blob"}],
+        "attach": [{"child": "b", "parent": "a", "edge": "right", "offset": [20, 0]}],
+    })
+    extents = {"a": (40.0, 40.0), "b": (160.0, 120.0)}
+    centers = _solve_slot_centers(scene, (0.0, 0.0, 600.0, 200.0), (60.0, 40.0),
+                                  slot_extents=extents)
+    a_right = centers["a"][0] + extents["a"][0] / 2.0
+    b_left = centers["b"][0] - extents["b"][0] / 2.0
+    assert b_left == pytest.approx(a_right + 20.0)   # exact 20px edge-to-edge gap
+    assert b_left > a_right                           # child clears the parent box
+
+
+def test_cavity_attach_stays_inside_parent_not_edge_to_edge():
+    # The edge-to-edge child term applies to face edges only — a cavity child must
+    # still drop INSIDE the parent (a ligand in a pocket), so its centre is the
+    # parent's, NOT pushed out by its own half-extent.
+    from imageGen.layout.tier_layout import _solve_slot_centers
+    scene = Scene.model_validate({
+        "id": "s",
+        "slots": [{"id": "enz", "kind": "blob"}, {"id": "lig", "kind": "molecule",
+                                                  "style": {"smiles": "CCO"}}],
+        "attach": [{"child": "lig", "parent": "enz", "edge": "cavity_center"}],
+    })
+    extents = {"enz": (160.0, 120.0), "lig": (80.0, 50.0)}
+    centers = _solve_slot_centers(scene, (0.0, 0.0, 600.0, 200.0), (60.0, 40.0),
+                                  slot_extents=extents)
+    assert centers["lig"] == centers["enz"]          # inside, coincident (then de-overlapped)
 
 
 def test_attach_cycle_raises():
@@ -914,14 +959,15 @@ def test_slot_extents_widen_the_parent_slide():
         "attach": [{"child": "b", "parent": "a", "edge": "right"}],
     })
     rect = (0.0, 0.0, 300.0, 100.0)
-    # The invariant is the parent-slide DISTANCE (b − a): half the parent's
-    # extent. (Absolute coords then shift when the chain is centred in the cell.)
+    # The invariant is the slide DISTANCE (b − a): edge-to-edge, so half the
+    # parent's extent + half the child's. (Absolute coords then shift when the
+    # chain is centred in the cell.)
     uniform = _solve_slot_centers(scene, rect, (50.0, 40.0))
-    assert uniform["b"][0] - uniform["a"][0] == 25.0   # 0.5 * uniform 50
-    # wide parent extent: the slide uses the parent's real width
+    assert uniform["b"][0] - uniform["a"][0] == 50.0   # 0.5*50 + 0.5*50
+    # wide parent extent: the slide uses the parent's real width (+ child half)
     wide = _solve_slot_centers(scene, rect, (50.0, 40.0),
                                slot_extents={"a": (200.0, 40.0)})
-    assert wide["b"][0] - wide["a"][0] == 100.0        # 0.5 * 200
+    assert wide["b"][0] - wide["a"][0] == 125.0        # 0.5*200 + 0.5*50
 
 
 def test_scene_label_requests_covers_caption_slot_and_edge():
@@ -1030,8 +1076,11 @@ def test_text_parent_slide_uses_text_width():
     cx_c, _cy = reg.resolve("s.c.center")
     sw, _sh = params["tier_slot_size"]
     parent_w = _slot_bbox_size(scene.slots[0], (sw, _sh), params)[0]
-    assert cx_c == pytest.approx(px + 0.5 * parent_w)
-    assert cx_c < px + 0.5 * sw  # strictly less than the old molecule-width slide
+    child_w = _slot_bbox_size(scene.slots[1], (sw, _sh), params)[0]
+    # Edge-to-edge: child centre = parent edge + child half-width (both measured
+    # text widths, not the full molecule slot box).
+    assert cx_c == pytest.approx(px + 0.5 * parent_w + 0.5 * child_w)
+    assert cx_c < px + 0.5 * sw  # still well under the old molecule-width slide
 
 
 def test_content_sized_molecule_is_centred_on_the_cell():
@@ -1341,14 +1390,19 @@ def test_dim5_blob_arrow_stops_outside_silhouette_end_to_end():
         return ((float(ln["x1"]), float(ln["y1"])),
                 (float(ln["x2"]), float(ln["y2"])))
 
+    binds_id = scene.connect[0].ir_id
     trans_id = scene.connect[1].ir_id
     # transition: enz.center -> prod.center. Pre-fix this arrow originated at the
-    # blob CENTRE and so drew straight across the whole silhouette to the product;
-    # the ink-relative source standoff now starts it at/right of the blob's RIGHT
-    # edge. (The reverse binds arrow into the blob from the adjacent cluster is
-    # standoff-clamped by the short span — a spacing matter, not this fix.)
+    # blob CENTRE and drew straight across the whole silhouette to the product; the
+    # ink-relative source standoff now starts it at/right of the blob's RIGHT edge.
     trans_source_x = min(p[0] for p in _line_pts(trans_id))
     assert trans_source_x >= bx1 - 1.0
+    # binds: sub.center -> enz.center. With edge-to-edge attach spacing the cluster
+    # no longer overruns into the blob, so this arrow's target endpoint (into enz)
+    # now also clears the blob's LEFT edge instead of clamping inside it (the dim-5
+    # residual, fixed by the edge-to-edge attach).
+    binds_target_x = max(p[0] for p in _line_pts(binds_id))
+    assert binds_target_x <= bx0 + 1.0
 
 
 # --- Dim 1/5: content-aware glyph / blob sizing (proportion) -----------------
