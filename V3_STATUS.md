@@ -22,8 +22,8 @@ first, then dive into the detail docs linked below.
 **Current test count:** 1205 passing. The V3 scene **engine** is feature-complete
 (numbered steps 1–7). **But the work is NOT done** — see the pub-grade phase below.
 Pub-grade dims closed: 1 (sizing), 2 (labels), 3 (orientation/D6), 4 (layering·contrast),
-6 (publication preset + routing flip); dim 5 mostly done; only the optional
-render-critic remains.
+5 (density/arrows — ink-relative standoff), 6 (publication preset + routing flip).
+**All six scout dimensions closed**; only the optional render-critic remains.
 
 > **Pub-grade dim-2 (leader lines) — landed in full 2026-06-24 (both halves).**
 > (1) `place_labels` gained a leader-eligible *whitespace ring search*: a
@@ -51,6 +51,18 @@ render-critic remains.
 > struck-through). `_layout_scene` now reserves transition lanes (strips at `fcy`
 > in the cell side margins) as label occupancy, pushing such labels above/below
 > the row. Suite 1189 → 1190.
+
+> **Pub-grade dim 5 — density · arrows — CLOSED 2026-06-26.** Ink-relative arrow
+> standoff: a connect edge `<slot>.center -> <slot>.center` into a wide
+> `blob`/`glyph` buried its arrowhead in the silhouette (a fixed 8px pull-back
+> from a ~140px blob's centre still landed ~60px inside). `_ink_relative_standoff`
+> (`tier_layout.py`) now pulls a BLOB/GLYPH centre endpoint back to the slot's
+> drawn edge (ray-box half-extent along the edge direction) + base clearance, so
+> the arrow stops at the shape (fig 10's catalysis arrow no longer crosses the
+> enzyme). Atom/molecule/text endpoints keep the tight fixed standoff → curly and
+> H-bond arrows are byte-identical. +5 tests. Suite 1219 → 1224. Residual (dim 1):
+> blob/cluster *sizing* is still uneven (fig 07 ATP/ADP tablets dwarf the
+> substrate). **All six pub-grade scout dimensions are now closed.**
 
 > **Pub-grade dim 6 — pubgrade-defaults — CLOSED 2026-06-25.** Shipped the
 > first-class `publication` preset (`styles/publication.json`, inherits

@@ -20,6 +20,7 @@ from imageGen.layout.tier_layout import (
     _EDGE_DEFAULTS,
     _arrow_head,
     _edge_group,
+    _ink_relative_standoff,
     _transition_label_pos,
     expand_step_sequence,
     layout_tiers,
@@ -1229,3 +1230,116 @@ def test_dim4_hbond_thinner_than_curly():
 def test_dim4_per_type_stroke_width_overridable_by_style():
     # Edge-level style["stroke_width"] wins over the per-type spec default.
     assert _edge_stroke_width(SceneEdgeType.HBOND, {"stroke_width": 3.0}) == 3.0
+
+
+# --- Dim 5: ink-relative arrow standoff for blob/glyph centres --------------
+
+def _blob_slot(sid="enz"):
+    from imageGen.ir.schema import Slot, SlotKind
+    return Slot(id=sid, kind=SlotKind.BLOB, label="enzyme")
+
+
+def _glyph_slot(sid="sub"):
+    from imageGen.ir.schema import Slot, SlotKind
+    return Slot(id=sid, kind=SlotKind.GLYPH, label="substrate",
+                style={"glyph": "pg_cluster"})
+
+
+def _mol_slot(sid="mol"):
+    from imageGen.ir.schema import Slot, SlotKind
+    return Slot(id=sid, kind=SlotKind.MOLECULE, label="m",
+                style={"smiles": "CCO"})
+
+
+def test_dim5_blob_centre_standoff_is_ink_relative():
+    # A "<slot>.center" endpoint on a BLOB pulls back to the slot's drawn edge
+    # (half-extent along the edge direction) + base — so the arrow stops at the
+    # silhouette, not deep inside a ~140px shape.
+    slots = {"enz": _blob_slot()}
+    extents = {"enz": (140.0, 100.0)}
+    # horizontal edge: pull back = half-width (70) + base
+    so = _ink_relative_standoff(
+        "enz.center", (0.0, 0.0), (300.0, 0.0), slots, extents, base=8.0)
+    assert so == 70.0 + 8.0
+
+
+def test_dim5_glyph_centre_standoff_is_ink_relative():
+    slots = {"sub": _glyph_slot()}
+    extents = {"sub": (60.0, 60.0)}
+    so = _ink_relative_standoff(
+        "sub.center", (0.0, 0.0), (0.0, 200.0), slots, extents, base=8.0)
+    assert so == 30.0 + 8.0  # vertical edge → half-height (30) + base
+
+
+def test_dim5_atom_anchor_keeps_fixed_standoff():
+    # An atom anchor (mol.a1) — not a whole-slot centre — keeps the tight base,
+    # so curly / H-bond arrows that originate on atoms are untouched.
+    slots = {"mol": _mol_slot()}
+    extents = {"mol": (80.0, 60.0)}
+    so = _ink_relative_standoff(
+        "mol.a1", (0.0, 0.0), (300.0, 0.0), slots, extents, base=8.0)
+    assert so == 8.0
+
+
+def test_dim5_molecule_centre_keeps_fixed_standoff():
+    # Only BLOB/GLYPH centres are ink-relative; a molecule centre keeps base
+    # (molecules are small and their centre edges were already fine).
+    slots = {"mol": _mol_slot()}
+    extents = {"mol": (80.0, 60.0)}
+    so = _ink_relative_standoff(
+        "mol.center", (0.0, 0.0), (300.0, 0.0), slots, extents, base=8.0)
+    assert so == 8.0
+
+
+def test_dim5_blob_arrow_stops_outside_silhouette_end_to_end():
+    # End-to-end: fig-10-shaped scene (cluster -> blob -> cluster, centre-to-centre
+    # connect edges). The drawn arrow endpoint that targets the blob centre must
+    # land OUTSIDE the blob's drawn box (clearing the silhouette), not inside it —
+    # the dim-5 piercing defect a fixed 8px standoff produced.
+    from imageGen.layout.anchors import AnchorRegistry
+    from imageGen.layout.tier_layout import (
+        TIER_DEFAULT_PARAMS, _layout_scene, _slot_bbox)
+    scene = Scene.model_validate({
+        "id": "s",
+        "slots": [
+            {"id": "sub", "kind": "glyph", "label": "substrate",
+             "style": {"glyph": "pg_cluster", "scale": 0.5}},
+            {"id": "enz", "kind": "blob", "label": "enzyme"},
+            {"id": "prod", "kind": "glyph", "label": "product",
+             "style": {"glyph": "pg_cluster", "scale": 0.5}},
+        ],
+        "attach": [
+            {"child": "enz", "parent": "sub", "edge": "right", "offset": [64, 0]},
+            {"child": "prod", "parent": "enz", "edge": "right", "offset": [64, 0]},
+        ],
+        "connect": [
+            {"from_anchor": "sub.center", "to_anchor": "enz.center", "type": "binds"},
+            {"from_anchor": "enz.center", "to_anchor": "prod.center",
+             "type": "transition"},
+        ],
+    })
+    reg = AnchorRegistry()
+    entries = _layout_scene(scene, (0.0, 0.0, 700.0, 220.0), reg,
+                            dict(TIER_DEFAULT_PARAMS))
+    enz_c = reg.resolve("s.enz.center")
+    sw, sh = TIER_DEFAULT_PARAMS["tier_slot_size"]
+    bx0, _by0, bx1, _by1 = _slot_bbox(scene.slots[1], enz_c, (sw, sh),
+                                      TIER_DEFAULT_PARAMS)
+    assert (bx1 - bx0) > 100.0  # a genuinely wide blob (fixed 8px would pierce)
+
+    # Pull the drawn endpoints of the two connect edges out of their <line>s.
+    def _line_pts(ir_id):
+        e = next(x for x in entries if x.ir_id == ir_id)
+        g = e.primitive(*e.args, **e.kwargs)
+        ln = next(el for el in g.elements if el.elementname == "line")
+        return ((float(ln["x1"]), float(ln["y1"])),
+                (float(ln["x2"]), float(ln["y2"])))
+
+    trans_id = scene.connect[1].ir_id
+    # transition: enz.center -> prod.center. Pre-fix this arrow originated at the
+    # blob CENTRE and so drew straight across the whole silhouette to the product;
+    # the ink-relative source standoff now starts it at/right of the blob's RIGHT
+    # edge. (The reverse binds arrow into the blob from the adjacent cluster is
+    # standoff-clamped by the short span — a spacing matter, not this fix.)
+    trans_source_x = min(p[0] for p in _line_pts(trans_id))
+    assert trans_source_x >= bx1 - 1.0

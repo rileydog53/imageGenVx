@@ -974,11 +974,21 @@ def _layout_scene(
     # Intra-scene edges: refs are scene-local ("slot.anchor"); resolve_edge
     # applies (clamped) endpoint standoff so the line clears both atoms. The
     # midpoint of any labelled edge is captured for its scene-local label.
+    # dim-5: the standoff is ink-relative for a whole-slot BLOB/GLYPH centre
+    # endpoint (so the arrow stops at the silhouette, not inside it); atom /
+    # molecule / text endpoints keep the tight fixed standoff.
+    slots_by_id = {s.id: s for s in scene.slots}
     edge_anchors: dict[str, tuple[float, float]] = {}
     for edge in scene.connect:
+        p0_raw = registry.resolve(f"{scene.id}.{edge.from_anchor}")
+        p1_raw = registry.resolve(f"{scene.id}.{edge.to_anchor}")
+        fs = _ink_relative_standoff(
+            edge.from_anchor, p0_raw, p1_raw, slots_by_id, slot_extents, standoff)
+        ts = _ink_relative_standoff(
+            edge.to_anchor, p1_raw, p0_raw, slots_by_id, slot_extents, standoff)
         q0, q1 = registry.resolve_edge(
             f"{scene.id}.{edge.from_anchor}", f"{scene.id}.{edge.to_anchor}",
-            from_standoff=standoff, to_standoff=standoff)
+            from_standoff=fs, to_standoff=ts)
         # Structural cascade: tier ⊕ scene ⊕ edge (NO preset base).
         edge_style = merge_style(scene_struct, edge.style)
         entries.append(LayoutEntry(
@@ -1264,6 +1274,45 @@ def _slot_bbox_size(
     molecule so the solve uses the same extent the renderer will draw."""
     minx, miny, maxx, maxy = _slot_bbox(slot, (0.0, 0.0), slot_size, params, orient)
     return (maxx - minx, maxy - miny)
+
+
+def _ink_relative_standoff(
+    anchor: str, this_pt: tuple[float, float], other_pt: tuple[float, float],
+    slots_by_id: dict[str, Slot], slot_extents: dict[str, tuple[float, float]],
+    base: float,
+) -> float:
+    """Per-endpoint connect-edge standoff, made *ink-relative* for big shapes (dim 5).
+
+    A connect edge resolved ``<slot>.center -> <slot>.center`` between a molecule
+    and a wide ``blob`` / ``glyph`` buried its arrowhead deep inside the shape: a
+    fixed ``base`` (8px) pulled back from the *centre* of a ~140px blob still lands
+    ~60px inside the silhouette. When the endpoint is a whole-slot ``center``
+    anchor on a BLOB / GLYPH, this returns the slot's drawn half-extent along the
+    edge direction (ray-box intersection) plus ``base`` — so the line stops at the
+    shape's edge with a one-clearance gap, not in its middle. Every other endpoint
+    (atom anchors like ``mol.a1`` / ``mol.bond_a1_a2``, or molecule / residue / text
+    centres) keeps the tight fixed ``base``, so curly / H-bond arrows are untouched.
+    """
+    if "." not in anchor:
+        return base
+    slot_id, sub = anchor.split(".", 1)
+    slot = slots_by_id.get(slot_id)
+    if slot is None or sub != "center" or slot.kind not in (SlotKind.BLOB, SlotKind.GLYPH):
+        return base
+    w, h = slot_extents.get(slot_id, (0.0, 0.0))
+    dx, dy = other_pt[0] - this_pt[0], other_pt[1] - this_pt[1]
+    length = math.hypot(dx, dy)
+    if length == 0.0:
+        return base
+    ux, uy = abs(dx / length), abs(dy / length)
+    hw, hh = w / 2.0, h / 2.0
+    cand = []
+    if ux > 1e-9:
+        cand.append(hw / ux)
+    if uy > 1e-9:
+        cand.append(hh / uy)
+    edge_dist = min(cand) if cand else 0.0
+    return edge_dist + base
 
 
 def _scene_content_width(scene: Scene, params: dict[str, Any]) -> float:

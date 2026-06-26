@@ -58,7 +58,7 @@ corpus is the bottleneck and will reprioritise this list.
 | 2 | **labels** | ✅ | **Closed 2026-06-24** — D1/D2/D3/D4 all resolved. **Leader lines landed in full (both halves).** (a) `place_labels` gained a leader-eligible *whitespace ring search* — a `LabelRequest.leader` label whose adjacent + nudge slots are all blocked parks in the nearest open whitespace instead of landing on its anchor; (b) `tier_label_leaders` then tethers it (and any drifted label) back with a hairline dashed leader. Slot + edge labels set `leader=True`. Fixes **D1** (residue drift) and **D3** (`breaking`/`new bond` now park off the shaft + tether) across the corpus; snug labels stay leader-free. **Residual:** a label with genuinely no whitespace in its band (fig 01 `arachidonic acid`, a chain spanning the band) still overlaps — that's band-height (dim 1/5), not leaders. **Still open:** D2 caption clipping; a leader that crosses unrelated caption text (fig 05) is a minor aesthetic nit. |
 | 3 | **orientation** | ✅ | **Closed 2026-06-25 (D6).** A rigid orientation pass poses each reactant so its reactive atom faces its partner. `_orient_conformer` (`_mol_render.py`) rotates the shared conformer about its centroid (verified rigid) before sizing/draw, gated to the tier path (leaf path byte-identical). `_scene_orientations` (`tier_layout.py`) infers `(reactive_atom, direction)` from each `CURLY` SceneEdge + the `Attach` placing the two reactants; threaded into both the size predictor and the renderer so the posed box matches. Fixes 08/02/01/aspirin-acceptance (carbonyl now faces the attacking Ser). An 80° deadband leaves already-readable structures (corpus 05) in their canonical pose. **Deferred to v2:** H-bond/dashed edges as drivers (v1 = curly only), reflection tie-break, cross-step scaffold consistency (fig 01's s1-vs-s2). See `D6_ORIENTATION_SCOPE.md`. |
 | 4 | **layering · contrast** | ✅ | **Closed 2026-06-25 (dim-4).** Edge colour vocabulary made semantically distinct: `hbond` → blue `#1A6FC9` (biochem convention; resolves inhibits-red conflict); `dashed` → neutral gray `#888888` (partial/TS bond); `curly` (electron-flow) → dark auburn `#8B2500` (distinct from black bond ink so arrows don't merge with bonds on overlap). `hbond` also carries its own thinner `stroke_width=1.5` (delicate dash convention). `inhibits` T-bar stays red — now the **only** red edge. +6 tests. Suite 1205 → 1211. |
-| 5 | **density · arrows / containment** | ~ | Landed: transition-arrow clearance (D5); **content-aware per-tier cell width** (scenes no longer overflow into neighbours); **content centering** in the cell (chains no longer hang out one side); **inter-tier band gap** + **content-aware band heights** (bands tall enough for their labels); **4-wall label containment** (labels can't spill out of their band onto the page). Still open: arrows are fixed-geometry not ink-relative; blob/cluster sizing is uneven (dim 1). |
+| 5 | **density · arrows / containment** | ✅ | **Closed 2026-06-26.** Landed earlier: transition-arrow clearance (D5); content-aware per-tier cell width; content centering; inter-tier band gap + content-aware band heights; 4-wall label containment. **Now: ink-relative arrow standoff** — a connect edge resolved `<slot>.center -> <slot>.center` into a wide `blob`/`glyph` buried its arrowhead inside the silhouette (a fixed 8px pull-back from a ~140px blob's *centre* still landed ~60px in). `_ink_relative_standoff` now pulls a BLOB/GLYPH centre endpoint back to the slot's drawn edge (ray-box half-extent along the edge direction) + base clearance, so the arrow stops at the shape (fig 10's catalysis arrow no longer crosses the enzyme). Atom / molecule / text endpoints keep the tight fixed standoff → curly/H-bond arrows byte-identical. +5 tests. Suite 1219 → 1224. **Residual** (tracked under dim 1): blob/cluster *sizing* is uneven (e.g. fig 07 ATP/ADP tablet glyphs dwarf the substrate); a connect arrow into a blob whose adjacent shape is very close is standoff-clamped (a spacing matter, not geometry). |
 | 6 | **pubgrade-defaults** | ✅ | **Closed 2026-06-25.** Shipped a first-class `publication` preset (`styles/publication.json`, inherits `cell_press`) that refines the content-channel keys reaching tier molecules/blobs/text: deeper CPK heteroatoms (pale amber S `#F9A825` → `#B07A0A`, orange P deepened), crisp near-black bonds + FG labels, and a lighter-fill/darker-stroke protein blob so a cavity residue stays legible. **Routing flip:** the schema default for `Figure.style_preset` is now `None` (was the literal `"cell_press"`), and `_resolve_style` falls a **tier** figure back to `publication` (leaf/panel keep `cell_press`) — so a cold skill call onto the chassis is the pub-grade call. Explicit preset (IR or `--style`) still wins. +9 tests. Suite 1211 → 1219. |
 
 ---
@@ -213,17 +213,18 @@ P.3 ✅ build the 10-figure corpus via the skill (makes "by default" measurable)
         │
         ├─► dim 1 (sizing) ✅   dim 2 (labels) ✅ closed 2026-06-24
         ├─► dim 3 (orientation/D6) ✅ closed 2026-06-25
-        ├─► dim 5 (density/containment) ~ (D5/D7/D8 done; arrows + blob sizing open)
         └─► remaining: the (optional) render-critic
             [dim 4 (layering·contrast) ✅ closed 2026-06-25]
+            [dim 5 (density/containment) ✅ closed 2026-06-26 — ink-relative arrows]
             [dim 6 (publication preset + routing flip) ✅ closed 2026-06-25]
 ```
 
-**Corpus verdict (2026-06-25, updated):** dims 1 + 2 + 3 + 4 + 6 are all closed;
-dim 5 is mostly done. The only remaining scout item is the **still-optional
-render-critic** (a vision-scored pub-grade rubric closing the loop). With the
-publication preset + routing flip landed, a cold tier skill call is now the
-pub-grade call by default.
+**Corpus verdict (2026-06-26, updated):** all six scout dimensions
+(1 + 2 + 3 + 4 + 5 + 6) are now closed. The only remaining scout item is the
+**still-optional render-critic** (a vision-scored pub-grade rubric closing the
+loop). With the publication preset + routing flip landed, a cold tier skill call
+is the pub-grade call by default; with ink-relative arrows, connect edges stop at
+shape silhouettes instead of piercing them.
 Two corpus-grounded follow-ups surfaced by dim 3, worth picking up alongside dim
 4/5: (a) **orientation v2** — orient on H-bond/dashed edges too (fig 01-s1, 08-s1
 still pose the H-bond step canonically) and keep a shared substrate posed
