@@ -69,7 +69,7 @@ from imageGen.primitives.chemistry import (
     render_residue_anchored,
 )
 from imageGen.primitives._mol_render import _RESIDUE_SMILES
-from imageGen.primitives.primitive_specs import PRIMITIVE_REGISTRY
+from imageGen.primitives.primitive_specs import PRIMITIVE_REGISTRY, PRIMITIVE_TO_BBOX
 from imageGen.primitives.proteins import protein_blob
 from imageGen.styles.loader import merge_style
 
@@ -91,6 +91,16 @@ TIER_DEFAULT_PARAMS: dict[str, Any] = {
     # the top of the next don't collide (the cross-band overlap defect).
     "tier_band_gap": 18.0,
     "tier_slot_size": (180.0, 140.0),
+    # dim-1/5: BLOB / GLYPH slots no longer fill the uniform slot cell. A GLYPH
+    # draws at its primitive's *registered* natural bbox (PRIMITIVE_TO_BBOX) ×
+    # ``style['scale']`` — so a tablet / pg_cluster renders molecule-scale and a
+    # protein blob renders bigger, in proportion with the chemistry (which is
+    # content-sized to ``chem_target_bond_px``) instead of every glyph filling the
+    # same 180×140 box. A BLOB is a cavity *container* (it can hold a molecule in
+    # its pocket — succinate is ~120px wide), so it keeps a generous dedicated box
+    # rather than the small protein_blob glyph bbox; ``style['scale']`` still tunes
+    # it. Sized to comfortably hold a typical small-molecule substrate.
+    "tier_blob_size": (160.0, 124.0),
     # Content-aware chemistry sizing (pub-grade): every MOLECULE/RESIDUE renders
     # at this bond length, so the whole figure shares one chemistry scale instead
     # of each molecule auto-filling its slot box (which made bond length swing
@@ -811,12 +821,18 @@ def _layout_scene(
     for slot in scene.slots:
         center = centers.get(slot.id, (cx + cw / 2.0, cy + ch / 2.0))
         scoped = f"{scene.id}.{slot.id}"
-        # P7.4: a slot may render at a fraction of the cell (style['scale']) so a
+        # P7.4: a slot may render at a fraction of its box (style['scale']) so a
         # small molecule/residue sits *inside* a full-size blob cavity without
-        # dwarfing it. Defaults to 1.0 → unchanged. Placement (the solver) still
-        # uses the full slot box; only the drawn glyph shrinks.
+        # dwarfing it. Defaults to 1.0. dim-1/5: a BLOB / GLYPH draws within its
+        # primitive's natural box (``_glyph_natural_box``) — a tablet/cluster
+        # molecule-scale, a protein blob bigger — not the uniform slot cell, so the
+        # rendered size matches what the layout sizer (_slot_drawn_size) predicted.
         scale = float((slot.style or {}).get("scale", 1.0))
-        ssw, ssh = sw * scale, sh * scale
+        if slot.kind in (SlotKind.BLOB, SlotKind.GLYPH):
+            _bw, _bh = _glyph_natural_box(slot, params)
+            ssw, ssh = _bw * scale, _bh * scale
+        else:
+            ssw, ssh = sw * scale, sh * scale
         if slot.kind in (SlotKind.MOLECULE, SlotKind.RESIDUE):
             # MOLECULE and RESIDUE share the anchored-fragment path (MF-1: one
             # chemistry convention everywhere). A RESIDUE additionally resolves a
@@ -896,11 +912,13 @@ def _layout_scene(
                 {k: v for k, v in (slot.style or {}).items()
                  if k not in ("glyph", "scale")})
             grp = protein_blob("", center, (ssw, ssh), style_dict=blob_style or None)
+            # Cavity anchors track the blob's DRAWN height (ssh), not the slot cell,
+            # so an attach-into-cavity edge lands in the pocket at any blob size.
             registry.publish(scoped, {
                 "center": center,
                 "cavity_center": center,
-                "cavity_top": (center[0], center[1] - 0.25 * sh),
-                "cavity_bottom": (center[0], center[1] + 0.25 * sh),
+                "cavity_top": (center[0], center[1] - 0.25 * ssh),
+                "cavity_bottom": (center[0], center[1] + 0.25 * ssh),
             })
             entries.append(LayoutEntry(
                 (lambda g=grp: g), (), {}, (0.0, 0.0), ir_id=scoped))
@@ -1198,6 +1216,27 @@ def _slot_eff_smiles(slot: Slot) -> str | None:
     return style.get("smiles")
 
 
+def _glyph_natural_box(
+    slot: Slot, params: dict[str, Any],
+) -> tuple[float, float]:
+    """The unscaled natural ``(w, h)`` box a BLOB / GLYPH slot draws within (dim-1/5).
+
+    A GLYPH uses its primitive's *registered* bbox (``PRIMITIVE_TO_BBOX``), so a
+    tablet (40×40) / pg_cluster (50×50) renders molecule-scale while a protein-blob
+    glyph (96×80) renders bigger — in proportion with the chemistry instead of every
+    glyph filling the uniform slot cell. A BLOB is a cavity *container* (it can hold
+    a molecule in its pocket), so it uses the generous ``tier_blob_size`` rather than
+    the small protein_blob glyph bbox. ``style['scale']`` (applied by the caller) is
+    a multiplier on this box. An unregistered glyph name falls back to the slot box."""
+    if slot.kind == SlotKind.BLOB:
+        return tuple(params["tier_blob_size"])
+    gname = (slot.style or {}).get("glyph")
+    fn = PRIMITIVE_REGISTRY.get(gname)
+    if fn is not None and fn in PRIMITIVE_TO_BBOX:
+        return PRIMITIVE_TO_BBOX[fn]
+    return tuple(params["tier_slot_size"])
+
+
 def _slot_drawn_size(
     slot: Slot, slot_size: tuple[float, float], params: dict[str, Any],
     orient: tuple[str, str] | None = None,
@@ -1206,10 +1245,12 @@ def _slot_drawn_size(
 
     Pub-grade sizing: a MOLECULE/RESIDUE is sized to its *content* at the shared
     ``chem_target_bond_px`` bond length (so every structure in the figure renders
-    at one scale), a BLOB/GLYPH at the (scaled) slot box. ``style['scale']`` is an
-    optional multiplier on the bond length (chemistry) or the box (blob/glyph).
-    Falls back to the legacy slot-box size when ``chem_target_bond_px`` is unset or
-    the SMILES can't be parsed.
+    at one scale), a BLOB / GLYPH at its primitive's natural box
+    (``_glyph_natural_box``) — NOT the uniform slot cell (dim-1/5), so glyphs sit in
+    proportion with the molecules. ``style['scale']`` is an optional multiplier on
+    the bond length (chemistry) or the natural box (blob/glyph). Falls back to the
+    legacy slot-box size when ``chem_target_bond_px`` is unset or the SMILES can't
+    be parsed.
 
     D6: when *orient* ``(reactive_atom, direction)`` is given the predicted box is
     measured on the *oriented* pose (rotating a wide molecule upright makes it
@@ -1234,7 +1275,8 @@ def _slot_drawn_size(
                 pass
         return (sw * scale, sh * scale)
     if slot.kind in (SlotKind.BLOB, SlotKind.GLYPH):
-        return (sw * scale, sh * scale)
+        bw, bh = _glyph_natural_box(slot, params)
+        return (bw * scale, bh * scale)
     return (sw, sh)
 
 

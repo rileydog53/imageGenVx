@@ -116,9 +116,9 @@
           "id": "overview",
           "label": "Overall reaction",
           "slots": [
-            { "id": "pep", "kind": "glyph", "label": "peptide", "style": { "glyph": "protein_blob", "scale": 0.55, "blob_fill": "#9CB89C" } },
-            { "id": "enz", "kind": "glyph", "label": "chymotrypsin", "style": { "glyph": "protein_blob", "scale": 0.6, "blob_fill": "#7FA0C0" } },
-            { "id": "frag", "kind": "glyph", "label": "cleaved fragments", "style": { "glyph": "pg_cluster", "scale": 0.55, "pg_fill": "#4A7ABF" } }
+            { "id": "pep", "kind": "glyph", "label": "peptide", "style": { "glyph": "protein_blob", "blob_fill": "#9CB89C" } },
+            { "id": "enz", "kind": "glyph", "label": "chymotrypsin", "style": { "glyph": "protein_blob", "blob_fill": "#7FA0C0" } },
+            { "id": "frag", "kind": "glyph", "label": "cleaved fragments", "style": { "glyph": "pg_cluster", "pg_fill": "#4A7ABF" } }
           ],
           "attach": [
             { "child": "enz", "parent": "pep", "edge": "right", "offset": [70, 0] },

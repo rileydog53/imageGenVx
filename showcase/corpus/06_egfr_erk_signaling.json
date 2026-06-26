@@ -9,10 +9,10 @@
       "scenes": [
         { "id": "casc", "label": "Activation cascade",
           "slots": [
-            { "id": "egfr", "kind": "glyph", "label": "EGFR", "style": { "glyph": "protein_blob", "scale": 0.55, "blob_fill": "#7FA0C0" } },
-            { "id": "ras", "kind": "glyph", "label": "Ras", "style": { "glyph": "protein_blob", "scale": 0.5, "blob_fill": "#88B0A0" } },
-            { "id": "raf", "kind": "glyph", "label": "Raf", "style": { "glyph": "protein_blob", "scale": 0.5, "blob_fill": "#88B0A0" } },
-            { "id": "erk", "kind": "glyph", "label": "ERK", "style": { "glyph": "protein_blob", "scale": 0.55, "blob_fill": "#C0A07F" } } ],
+            { "id": "egfr", "kind": "glyph", "label": "EGFR", "style": { "glyph": "protein_blob", "blob_fill": "#7FA0C0" } },
+            { "id": "ras", "kind": "glyph", "label": "Ras", "style": { "glyph": "protein_blob", "blob_fill": "#88B0A0" } },
+            { "id": "raf", "kind": "glyph", "label": "Raf", "style": { "glyph": "protein_blob", "blob_fill": "#88B0A0" } },
+            { "id": "erk", "kind": "glyph", "label": "ERK", "style": { "glyph": "protein_blob", "blob_fill": "#C0A07F" } } ],
           "attach": [
             { "child": "ras", "parent": "egfr", "edge": "right", "offset": [64, 0] },
             { "child": "raf", "parent": "ras", "edge": "right", "offset": [64, 0] },
@@ -27,9 +27,9 @@
       "scenes": [
         { "id": "inhib", "label": "Targeted inhibition",
           "slots": [
-            { "id": "tki", "kind": "glyph", "label": "EGFR inhibitor", "style": { "glyph": "tablet", "scale": 0.55 } },
-            { "id": "egfr2", "kind": "glyph", "label": "EGFR", "style": { "glyph": "protein_blob", "scale": 0.55, "blob_fill": "#7FA0C0" } },
-            { "id": "erk2", "kind": "glyph", "label": "reduced ERK signal", "style": { "glyph": "protein_blob", "scale": 0.5, "blob_fill": "#BBBBBB" } } ],
+            { "id": "tki", "kind": "glyph", "label": "EGFR inhibitor", "style": { "glyph": "tablet" } },
+            { "id": "egfr2", "kind": "glyph", "label": "EGFR", "style": { "glyph": "protein_blob", "blob_fill": "#7FA0C0" } },
+            { "id": "erk2", "kind": "glyph", "label": "reduced ERK signal", "style": { "glyph": "protein_blob", "blob_fill": "#BBBBBB" } } ],
           "attach": [
             { "child": "egfr2", "parent": "tki", "edge": "right", "offset": [64, 0] },
             { "child": "erk2", "parent": "egfr2", "edge": "right", "offset": [80, 0] } ],

@@ -356,7 +356,6 @@
               "label": "COX-1",
               "style": {
                 "glyph": "protein_blob",
-                "scale": 0.6,
                 "blob_fill": "#8FA8C8"
               }
             },
@@ -366,7 +365,6 @@
               "label": "prostaglandins",
               "style": {
                 "glyph": "pg_cluster",
-                "scale": 0.6,
                 "pg_fill": "#4A7ABF"
               }
             }
@@ -413,8 +411,7 @@
               "kind": "glyph",
               "label": "aspirin",
               "style": {
-                "glyph": "tablet",
-                "scale": 0.6
+                "glyph": "tablet"
               }
             },
             {
@@ -423,7 +420,6 @@
               "label": "COX-1",
               "style": {
                 "glyph": "protein_blob",
-                "scale": 0.6,
                 "blob_fill": "#8FA8C8"
               }
             },
@@ -433,7 +429,6 @@
               "label": "reduced PG",
               "style": {
                 "glyph": "pg_cluster",
-                "scale": 0.6,
                 "reduced": true,
                 "pg_fill": "#8FA8C8"
               }

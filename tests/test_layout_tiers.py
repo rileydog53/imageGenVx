@@ -18,9 +18,12 @@ from imageGen.ir import Figure, Scene
 from imageGen.ir.schema import SceneEdgeType, StepSequence, Tier
 from imageGen.layout.tier_layout import (
     _EDGE_DEFAULTS,
+    TIER_DEFAULT_PARAMS,
     _arrow_head,
     _edge_group,
+    _glyph_natural_box,
     _ink_relative_standoff,
+    _slot_drawn_size,
     _transition_label_pos,
     expand_step_sequence,
     layout_tiers,
@@ -198,6 +201,9 @@ def test_multislot_scene_widens_the_canvas():
     # Pub-grade containment: a scene that spreads several slots horizontally must
     # get a wider cell than a single-slot scene, else it overflows into its
     # neighbour ("steps out of the box"). Canvas width is content-driven.
+    # NB offsets are sized so the 3-slot content clears the tier_canvas_min floor
+    # (a tablet glyph now draws at its natural 40px bbox, not the 180px slot box —
+    # dim-1/5 — so a 3-tablet row only exceeds the 400px min with a real spread).
     from imageGen.layout.tier_layout import tier_canvas
     one = _scene_row_figure({
         "id": "s", "slots": [{"id": "a", "kind": "glyph",
@@ -207,8 +213,8 @@ def test_multislot_scene_widens_the_canvas():
         "slots": [{"id": "a", "kind": "glyph", "style": {"glyph": "tablet"}},
                   {"id": "b", "kind": "glyph", "style": {"glyph": "tablet"}},
                   {"id": "c", "kind": "glyph", "style": {"glyph": "tablet"}}],
-        "attach": [{"child": "b", "parent": "a", "edge": "right", "offset": [70, 0]},
-                   {"child": "c", "parent": "b", "edge": "right", "offset": [70, 0]}]})
+        "attach": [{"child": "b", "parent": "a", "edge": "right", "offset": [200, 0]},
+                   {"child": "c", "parent": "b", "edge": "right", "offset": [200, 0]}]})
     assert tier_canvas(three)[0] > tier_canvas(one)[0]
 
 
@@ -1343,3 +1349,62 @@ def test_dim5_blob_arrow_stops_outside_silhouette_end_to_end():
     # standoff-clamped by the short span — a spacing matter, not this fix.)
     trans_source_x = min(p[0] for p in _line_pts(trans_id))
     assert trans_source_x >= bx1 - 1.0
+
+
+# --- Dim 1/5: content-aware glyph / blob sizing (proportion) -----------------
+
+def _glyph_slot_k(glyph, scale=None):
+    from imageGen.ir.schema import Slot, SlotKind
+    style = {"glyph": glyph}
+    if scale is not None:
+        style["scale"] = scale
+    return Slot(id="g", kind=SlotKind.GLYPH, label="x", style=style)
+
+
+def test_dim1_glyph_uses_primitive_natural_bbox_not_slot_box():
+    # A GLYPH draws at its primitive's registered bbox, NOT the uniform 180x140
+    # slot cell — so a tablet (40x40) / pg_cluster (50x50) renders molecule-scale
+    # while a protein_blob glyph (96x80) renders bigger, in proportion.
+    p = dict(TIER_DEFAULT_PARAMS)
+    assert _glyph_natural_box(_glyph_slot_k("tablet"), p) == (40.0, 40.0)
+    assert _glyph_natural_box(_glyph_slot_k("pg_cluster"), p) == (50.0, 50.0)
+    assert _glyph_natural_box(_glyph_slot_k("protein_blob"), p) == (96.0, 80.0)
+
+
+def test_dim1_tablet_glyph_is_far_smaller_than_the_slot_box():
+    # Regression for the fig-07 defect: an ATP tablet dwarfed the substrate because
+    # it filled the 180px box. Its drawn size is now its 40px natural bbox.
+    p = dict(TIER_DEFAULT_PARAMS)
+    sw, sh = p["tier_slot_size"]
+    w, h = _slot_drawn_size(_glyph_slot_k("tablet"), (sw, sh), p)
+    assert (w, h) == (40.0, 40.0)
+    assert w < sw / 2 and h < sh / 2          # nowhere near the cell
+
+
+def test_dim1_glyph_scale_multiplies_the_natural_box():
+    # style['scale'] is a multiplier on the natural bbox (still available for
+    # fine-tuning), not on the slot box.
+    p = dict(TIER_DEFAULT_PARAMS)
+    sw, sh = p["tier_slot_size"]
+    w, h = _slot_drawn_size(_glyph_slot_k("pg_cluster", scale=0.5), (sw, sh), p)
+    assert (w, h) == (25.0, 25.0)             # 50 * 0.5
+
+
+def test_dim1_blob_keeps_generous_container_box():
+    # A BLOB is a cavity container (it can hold a ~120px substrate in its pocket),
+    # so it uses tier_blob_size, NOT the small protein_blob glyph bbox.
+    from imageGen.ir.schema import Slot, SlotKind
+    p = dict(TIER_DEFAULT_PARAMS)
+    blob = Slot(id="b", kind=SlotKind.BLOB, label="enzyme")
+    box = _glyph_natural_box(blob, p)
+    assert box == tuple(p["tier_blob_size"])
+    # generous enough to contain a ~119px-wide succinate substrate
+    assert box[0] >= 140.0
+
+
+def test_dim1_unregistered_glyph_falls_back_to_slot_box():
+    # An unknown glyph name (not in the registry) falls back to the slot box so
+    # sizing never crashes on a bad spec (the render path raises the real error).
+    p = dict(TIER_DEFAULT_PARAMS)
+    assert _glyph_natural_box(_glyph_slot_k("does_not_exist"), p) == tuple(
+        p["tier_slot_size"])

@@ -52,6 +52,17 @@ Pub-grade dims closed: 1 (sizing), 2 (labels), 3 (orientation/D6), 4 (layering·
 > in the cell side margins) as label occupancy, pushing such labels above/below
 > the row. Suite 1189 → 1190.
 
+> **Pub-grade dim 1 — glyph/blob sizing — CLOSED 2026-06-26.** GLYPH/BLOB slots
+> no longer fill the uniform 180×140 cell (which made an ATP `tablet` dwarf the
+> ethanol substrate in fig 07). `_glyph_natural_box` (`tier_layout.py`) sizes a
+> GLYPH to its primitive's *registered* bbox (`PRIMITIVE_TO_BBOX`: tablet 40,
+> pg_cluster 50, protein_blob 96) and a BLOB to a dedicated generous container
+> (`tier_blob_size` = 160×124, still holds a ~120px substrate in its cavity), each
+> × `style['scale']`. The render path and the layout sizer share this one source,
+> and cavity anchors track the blob's drawn height. The corpus's per-glyph `scale`
+> compensation hacks (0.5–0.6, present on 15 glyph slots across 5 figs) were
+> removed — scale=1.0 natural is now proportionate. +5 tests. Suite 1224 → 1229.
+
 > **Pub-grade dim 5 — density · arrows — CLOSED 2026-06-26.** Ink-relative arrow
 > standoff: a connect edge `<slot>.center -> <slot>.center` into a wide
 > `blob`/`glyph` buried its arrowhead in the silhouette (a fixed 8px pull-back

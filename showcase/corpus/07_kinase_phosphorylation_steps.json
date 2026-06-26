@@ -16,7 +16,7 @@
             { "id": "sub", "kind": "molecule", "label": "substrate -OH",
               "style": { "smiles": "OCC", "anchor_names": {} } },
             { "id": "atp", "kind": "glyph", "label": "ATP",
-              "style": { "glyph": "tablet", "scale": 0.5 } } ],
+              "style": { "glyph": "tablet" } } ],
           "attach": [ { "child": "atp", "parent": "sub", "edge": "top", "offset": [0, -40] } ],
           "connect": []
         },
