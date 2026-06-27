@@ -11,17 +11,17 @@
         { "id": "s1", "badge": "1", "label": "Hydroxide approaches",
           "slots": [
             { "id": "sub", "kind": "molecule", "label": "methyl bromide",
-              "style": { "smiles": "[C:1][Br:2]", "anchor_names": { "1": "alphaC", "2": "br" } } },
+              "style": { "smiles": "[CH3:1][Br:2]", "anchor_names": { "1": "alphaC", "2": "br" } } },
             { "id": "nuc", "kind": "molecule", "label": "hydroxide",
-              "style": { "smiles": "[O-:1]", "anchor_names": { "1": "oxy" }, "chem_atom_O": "#1565C0", "label_font_color": "#1565C0" } } ],
+              "style": { "smiles": "[OH-:1]", "anchor_names": { "1": "oxy" }, "chem_atom_O": "#1565C0", "label_font_color": "#1565C0" } } ],
           "attach": [ { "child": "nuc", "parent": "sub", "edge": "left", "offset": [-46, 0] } ],
           "connect": [] },
         { "id": "s2", "badge": "2", "label": "Concerted attack\n& departure",
           "slots": [
             { "id": "sub", "kind": "molecule", "label": "methyl bromide",
-              "style": { "smiles": "[C:1][Br:2]", "anchor_names": { "1": "alphaC", "2": "br" } } },
+              "style": { "smiles": "[CH3:1][Br:2]", "anchor_names": { "1": "alphaC", "2": "br" } } },
             { "id": "nuc", "kind": "molecule", "label": "hydroxide",
-              "style": { "smiles": "[O-:1]", "anchor_names": { "1": "oxy" }, "chem_atom_O": "#1565C0", "label_font_color": "#1565C0" } } ],
+              "style": { "smiles": "[OH-:1]", "anchor_names": { "1": "oxy" }, "chem_atom_O": "#1565C0", "label_font_color": "#1565C0" } } ],
           "attach": [ { "child": "nuc", "parent": "sub", "edge": "left", "offset": [-46, 0] } ],
           "connect": [
             { "from_anchor": "nuc.lp_oxy", "to_anchor": "sub.alphaC", "type": "curly", "style": { "curl": "ccw", "bow": 20 } },
@@ -29,7 +29,7 @@
         { "id": "s3", "badge": "3", "label": "Products",
           "slots": [
             { "id": "prod", "kind": "molecule", "label": "methanol",
-              "style": { "smiles": "[C:1][O:2]", "anchor_names": { "1": "c", "2": "o" } } },
+              "style": { "smiles": "[CH3:1][OH:2]", "anchor_names": { "1": "c", "2": "o" } } },
             { "id": "lg", "kind": "molecule", "label": "bromide",
               "style": { "smiles": "[Br-]", "label_font_color": "#8A6D1B" } } ],
           "attach": [ { "child": "lg", "parent": "prod", "edge": "right", "offset": [44, 0] } ],

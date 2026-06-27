@@ -28,7 +28,7 @@ defect list, per-dim "landed" prose) was pruned to git history 2026-06-26.
 | # | Dimension | Live residual / deferred-to-v2 |
 |---|---|---|
 | 1 | **sizing** | — (content-aware molecule + per-primitive glyph/blob natural box landed). |
-| 2 | **labels** | **Residual:** a label with genuinely no whitespace in its band (a chain spanning the band) still overlaps — that's band-height (dim 1/5), not leaders. **Still open:** a leader that crosses unrelated caption text (corpus fig 05; **corpus-confirmed by the betalactamase figure — see `HANDOFF.md` §B1**). |
+| 2 | **labels** | **Residual:** a label with genuinely no whitespace in its band (a chain spanning the band) still overlaps — that's band-height (dim 1/5), not leaders. **Leader-crosses-caption: FIXED (2026-06-27)** — leader-eligible placement now rejects a slot whose tether would slice through occupancy (incl. the caption), re-picking a tether-clear slot (`label_placement._first_fit` `tether_from`; `_leader_ring` fallback). Pinned by `test_label_placement_fallback.py`. The only residual is when a cell is too cramped for *any* tether-clear slot → band-height. |
 | 3 | **orientation** | **Deferred to v2:** H-bond/dashed edges as drivers (v1 = curly only); reflection tie-break; cross-step scaffold consistency. See `D6_ORIENTATION_SCOPE.md`. |
 | 4 | **layering · contrast** | — (`hbond`→blue, `dashed`→gray, `curly`→auburn, `inhibits`→the only red T-bar). |
 | 5 | **density · arrows / containment** | **Follow-up:** collision-aware orientation (a re-posed taller molecule can overrun its caption — fig 05) would let dim-3's 80° deadband tighten. |
@@ -73,11 +73,18 @@ demands them. **Do not promise these in `SKILL.md` until the engine cashes them.
   only).
 - **G5 — named residues are a fixed set** (`ser`/`his`/`tyr`/`cys`/`lys` +
   `ser530`/`his513` aliases). Others need a raw SMILES with a mapped reactive atom.
-- **G6 — formal charge / protonation state has no render path (proposed, from the
-  betalactamase critique).** Oxyanion `⊖` / ammonium `⊕` cannot be drawn on an
-  atom; the corpus works around it with an ambiguous "·" that reads as a radical.
-  Relates to the `U+207B` superscript-minus tofu gap (`LIMITATIONS.md`, V3-S2).
-  Scoped in `HANDOFF.md` §C1.
+- **G6 — formal charge / protonation state — RESOLVED via SMILES (2026-06-27).**
+  Charge *on an atom* already renders correctly: write `[O-]` / `[NH3+]` in the
+  SMILES and RDKit draws a proper ⊖ / ⊕ as vector glyphs (no tofu — the
+  `U+207B` gap is only in the cairo *label-text* layer, not RDKit's depiction).
+  No schema change was needed. The corpus "·" was a *mis-encoding* — a
+  valence-deficient `[O:2]` (radical), not a charge; `_smiles_to_mol` now **warns**
+  on any radical heteroatom (MF-1), and the residue table (`ser/lys/tyr/cys`) was
+  fixed to carry explicit H so it renders `-OH`/`-NH₂`/`-SH` not a dot. The only
+  residual gap is a charge inside a *label string* (`Nu⁻`), still tofu-bound —
+  keep label text ASCII. Betalactamase + chymotrypsin + aspirin corpus figures
+  migrated off the radical idiom; SN2 (03) + imine (05) still flag (intentional
+  ion fragments, mis-encoded) → follow-up.
 
 ---
 

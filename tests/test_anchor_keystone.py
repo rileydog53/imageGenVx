@@ -112,7 +112,7 @@ def test_unknown_anchor_name_raises():
 def test_open_valence_publishes_attachment_anchor_and_suppresses_star():
     # A dummy '*' atom renders as a dangling bond (no '*' glyph) and its position
     # is published as the attachment anchor; the bond to it still draws.
-    ag = render_molecule_anchored("*C[O:1]", size=MOL_SIZE, open_valence=True)
+    ag = render_molecule_anchored("*C[OH:1]", size=MOL_SIZE, open_valence=True)
     assert "attach" in ag.anchors and "a1" in ag.anchors
     xml = ag.group.tostring()
     import re as _re
@@ -124,7 +124,7 @@ def test_open_valence_publishes_attachment_anchor_and_suppresses_star():
 def test_open_valence_off_by_default_keeps_star_atom():
     # Without open_valence the dummy is a normal atom (no attach anchor) — the
     # default path is unchanged for every existing caller.
-    ag = render_molecule_anchored("*C[O:1]", size=MOL_SIZE)
+    ag = render_molecule_anchored("*C[OH:1]", size=MOL_SIZE)
     assert "attach" not in ag.anchors
 
 
@@ -138,7 +138,7 @@ def test_residue_renders_real_fragment_with_named_atoms():
 
 
 def test_residue_accepts_raw_smiles_and_custom_attach_name():
-    ag = render_residue_anchored("*C[O:1]", attach_anchor="backbone")
+    ag = render_residue_anchored("*C[OH:1]", attach_anchor="backbone")
     assert "backbone" in ag.anchors and "attach" not in ag.anchors
 
 

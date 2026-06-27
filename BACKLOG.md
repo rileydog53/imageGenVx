@@ -19,7 +19,11 @@ figures soon; low = polish / advanced use.
 
 ## Open issues
 
-_No open defects._
+| Priority | Issue | Source |
+|---|---|---|
+| Low | **SN2 (03) + imine (05) corpus figures use mis-encoded ion fragments** — bare `[C:1]` / `[O:2]` / `[Br:2]` parse as radicals (now flagged by the MF-1 lint in `_smiles_to_mol`). Re-author with proper charge/H (`[Br-]`, `[OH-]`, `[CH3:1]`, …). | 2026-06-27 radical-lint sweep |
+| Low | **β-lactamase mech band dead-space (B3)** — 4 narrow scenes leave vertical gaps; residue labels park to the side (clean post-B1) but the band isn't tightly packed. Overlaps band-height / auto-fit. | `HANDOFF.md` B3 |
+| Low | **β-lactamase summary glyphs (D1)** — `tablet`/`protein_blob`/`pg_cluster` misread without their labels. | `HANDOFF.md` D1 |
 
 The V3 engine backlog (deferred nits, orientation v2, render-critic, the
 engine-can't-express gaps) is tracked in `V3_STATUS.md` → "Still open" and

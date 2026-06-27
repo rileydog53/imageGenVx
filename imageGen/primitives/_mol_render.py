@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import math
 import re
+import warnings
 import xml.etree.ElementTree as ET
 from typing import Literal
 
@@ -200,10 +201,30 @@ def _hex_to_rgb01(hex_color: str) -> tuple[float, float, float]:
 
 
 def _smiles_to_mol(smiles: str) -> Chem.Mol:
-    """Parse SMILES; raise ValueError with the offending input on failure."""
+    """Parse SMILES; raise ValueError with the offending input on failure.
+
+    Also lints for unintended radicals (MF-1): a heteroatom written without its
+    H or charge — e.g. an oxyanion typed ``[O:2]`` instead of ``[O-:2]`` — parses
+    as a valence-deficient atom that RDKit draws as a misleading lone dot (reads
+    as a radical, not a charge). Warn with the actionable fix rather than silently
+    rendering the wrong convention; the figure still renders.
+    """
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         raise ValueError(f"Invalid SMILES: {smiles!r}")
+    radicals = sorted({
+        a.GetSymbol() for a in mol.GetAtoms() if a.GetNumRadicalElectrons()
+    })
+    if radicals:
+        warnings.warn(
+            f"SMILES {smiles!r} has radical electrons on {', '.join(radicals)} — "
+            "RDKit draws these as a lone dot that reads as a radical, not a "
+            "charge. If you meant a charged species, use formal-charge notation "
+            "(e.g. [O-], [NH3+]); for a neutral group give the atom its H "
+            "(e.g. [OH], [SH]). See MF-1.",
+            UserWarning,
+            stacklevel=2,
+        )
     return mol
 
 
@@ -728,13 +749,17 @@ def render_molecule_anchored(
 # catalytic/reactive atom mapped ':1' (so it resolves to the ``a1`` anchor).
 # Extend by adding an entry; the RESIDUE slot path picks it up automatically.
 _RESIDUE_SMILES: dict[str, str] = {
-    "ser":    "*C[O:1]",            # serine: nucleophilic hydroxyl O
-    "ser530": "*C[O:1]",            # COX-1 catalytic serine (aspirin's target)
-    "his":    "*Cc1c[nH]c[n:1]1",   # histidine: basic imidazole N
+    # Reactive heteroatoms carry their explicit H count so they render as the
+    # real protonation state (-OH / -NH2 / -SH), not a valence-deficient atom
+    # that RDKit draws as a radical dot. The atom-map ':1' (the a1 / lp_a1
+    # anchor) is preserved, so arrow-pushing edges are unaffected.
+    "ser":    "*C[OH:1]",           # serine: nucleophilic hydroxyl O
+    "ser530": "*C[OH:1]",           # COX-1 catalytic serine (aspirin's target)
+    "his":    "*Cc1c[nH]c[n:1]1",   # histidine: basic imidazole N (no H — basic)
     "his513": "*Cc1c[nH]c[n:1]1",   # COX-1 active-site histidine
-    "tyr":    "*Cc1ccc([O:1])cc1",  # tyrosine: phenol O
-    "cys":    "*C[S:1]",            # cysteine: thiol S
-    "lys":    "*CCCC[N:1]",         # lysine: epsilon-amino N
+    "tyr":    "*Cc1ccc([OH:1])cc1", # tyrosine: phenol O
+    "cys":    "*C[SH:1]",           # cysteine: thiol S
+    "lys":    "*CCCC[NH2:1]",       # lysine: epsilon-amino N
 }
 
 

@@ -376,6 +376,38 @@ from a real lone-pair/bond anchor), `departs` (leaving group), `transition`,
 (`cw`/`ccw`), `bow` (curvature), `arc` (`s`/`n`/…); a `dashed` half-bond takes
 `style.partial: true`.
 
+### Mechanism chemical correctness (read before authoring a mechanism)
+
+The verifiers catch *broken* figures, not *wrong chemistry*. A mechanism can pass
+all three checks while contradicting itself. Before you render, make the spec
+honest:
+
+1. **The structure must match every caption claim.** If a caption says "ring
+   opened", the SMILES must actually break that bond (fewer ring atoms); if it
+   says "tetrahedral intermediate", the reactive carbon must be sp³ (4 single
+   bonds). Don't label a closed-ring gem-diol an "acyl-enzyme".
+2. **Charge belongs on the atom, via SMILES — never a bare dot.** Write an
+   oxyanion `[O-]`, an ammonium `[NH3+]`; RDKit renders these as proper ⊖ / ⊕
+   glyphs. A valence-deficient atom like `[O:2]` (no H, no charge) is a *radical*
+   and draws as a lone dot that reads as an unpaired electron, not a charge — the
+   render path **warns** when it sees one (MF-1). For a neutral group give the
+   atom its H (`[OH]`, `[SH]`). (Charge in a *label string* like `Nu⁻` still tofus
+   — superscript-minus U+207B isn't in the font; keep label text ASCII, e.g.
+   `Lys73-H+`.)
+3. **A covalent intermediate is a real bond — embed the residue.** There is no
+   solid-bond `SceneEdge` type, so a `dashed` leader between two slots is only a
+   *cartoon* of a bond. For an acyl-enzyme / covalent adduct, fold the residue
+   fragment into the molecule SMILES so the new bond is real (e.g.
+   `CC1(C)S[C@H]([C@@H](N)[C:1](=[O:2])OCC)N[C@H]1C(=O)O` — the `OCC` is the
+   Ser-O ester, C=O restored, ring opened). The named `ser/lys/tyr/cys` residues
+   now render their true protonation (`-OH`/`-NH₂`/`-SH`).
+4. **Every asserted electron movement gets an arrow.** A caption that says "Lys73
+   deprotonates Ser70" needs a `curly` proton-transfer arrow (e.g.
+   `lys.lp_a1 → ser.a1`), not just a static H-bond.
+5. **Input/output must close.** If the summary claims a product, that product must
+   actually appear (as a scene species) — or soften the summary. Don't assert
+   turnover the scenes never depict.
+
 ### TierEdge (`transitions`) — cross-scene arrows
 
 `{ "from_ref": "s1@right", "to_ref": "s2@left", "type": "transition",

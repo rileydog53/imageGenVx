@@ -236,3 +236,51 @@ def test_non_leader_request_still_overlaps_in_same_scenario():
         req, occupied, _GAP, _MARGIN, _FONT
     )
     assert overlap is True
+
+
+# ---------------------------------------------------------------------------
+# Tether clearance: a leader label is not parked where its hairline would slice
+# through other ink — the dim-2 'leader crosses the caption text' residual.
+# ---------------------------------------------------------------------------
+
+# Tall anchor (a residue chain) + a caption-like box centred straight below it:
+# the snug "below" slot clears *past* the caption, but a vertical tether from the
+# anchor to it would run through the caption.
+_TETHER_ANCHOR = (100.0, 100.0)
+_TETHER_ANCHOR_SIZE = (10.0, 80.0)
+_CAPTION_BOX = (60.0, 120.0, 140.0, 140.0)  # centred under the anchor
+
+
+def test_leader_label_skips_tether_crossing_slot():
+    """A leader label rejects the below-the-caption slot (clear box, crossing
+    tether) and takes the next priority whose tether stays off the caption."""
+    from imageGen.layout.label_placement import _segment_intersects_bbox
+
+    req = LabelRequest(text="AAAA", anchor=_TETHER_ANCHOR,
+                       anchor_size=_TETHER_ANCHOR_SIZE,
+                       priority=("below", "right", "above", "left"), leader=True)
+    center, _bbox, _font, overlap = _place_with_fallback(
+        req, [_CAPTION_BOX], _GAP, _MARGIN, _FONT
+    )
+    assert overlap is False
+    # The straight tether back to the anchor clears the caption box.
+    assert not _segment_intersects_bbox(_TETHER_ANCHOR, center, _CAPTION_BOX)
+    # It went to the side, not straight down past the caption.
+    assert center[1] < _CAPTION_BOX[1], "label should not sit below the caption"
+
+
+def test_non_leader_label_keeps_tether_crossing_slot():
+    """Same geometry without `leader`: the snug 'below' slot wins even though its
+    tether crosses the caption — the tether gate is leader-only, v1 ladder intact."""
+    from imageGen.layout.label_placement import _segment_intersects_bbox
+
+    req = LabelRequest(text="AAAA", anchor=_TETHER_ANCHOR,
+                       anchor_size=_TETHER_ANCHOR_SIZE,
+                       priority=("below", "right", "above", "left"))
+    center, _bbox, _font, overlap = _place_with_fallback(
+        req, [_CAPTION_BOX], _GAP, _MARGIN, _FONT
+    )
+    assert overlap is False
+    # Lands straight below, past the caption — its tether crosses (the old defect).
+    assert center[1] > _CAPTION_BOX[3]
+    assert _segment_intersects_bbox(_TETHER_ANCHOR, center, _CAPTION_BOX)

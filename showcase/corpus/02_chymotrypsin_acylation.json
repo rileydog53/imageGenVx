@@ -82,7 +82,7 @@
               "kind": "molecule",
               "label": "oxyanion intermediate",
               "style": {
-                "smiles": "CC(=O)NC[C:1]([O:2])(NC)O",
+                "smiles": "CC(=O)NC[C:1]([O-:2])(NC)O",
                 "anchor_names": { "1": "tetC", "2": "oxyanionO" },
                 "chem_atom_O": "#C0392B"
               }
