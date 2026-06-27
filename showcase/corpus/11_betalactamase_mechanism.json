@@ -1,0 +1,162 @@
+{
+  "archetype": "mechanism_cartoon",
+  "tiers": [
+    {
+      "id": "title",
+      "role": "title",
+      "height_frac": 0.12,
+      "label": "β-Lactamase Inactivates Penicillin",
+      "subtitle": "Ser70 attacks the β-lactam carbonyl, the ring opens to a covalent acyl-enzyme, and water releases inactive penicilloate"
+    },
+    {
+      "id": "mech",
+      "role": "scene_row",
+      "height_frac": 0.62,
+      "style": { "band_fill": "#F1F4F0" },
+      "rails": [ { "name": "mid", "axis": "y", "at": 0.5 } ],
+      "scenes": [
+        {
+          "id": "s1",
+          "badge": "1",
+          "label": "Penicillin bound;\nSer70 attacks, Lys73 deprotonates it",
+          "slots": [
+            {
+              "id": "sub",
+              "kind": "molecule",
+              "label": "penicillin core",
+              "style": {
+                "smiles": "CC1(C)S[C@@H]2[C@H](N)[C:1](=[O:2])N2[C@H]1C(=O)O",
+                "anchor_names": { "1": "carbonylC", "2": "carbonylO" }
+              }
+            },
+            { "id": "ser", "kind": "residue", "label": "Ser70",
+              "style": { "residue": "ser", "label_font_color": "#2E7D32" } },
+            { "id": "lys", "kind": "residue", "label": "Lys73",
+              "style": { "residue": "lys", "label_font_color": "#1565C0" } }
+          ],
+          "attach": [
+            { "child": "ser", "parent": "sub", "edge": "top", "offset": [0, -30] },
+            { "child": "lys", "parent": "sub", "edge": "bottom", "offset": [0, 26] }
+          ],
+          "connect": [
+            { "from_anchor": "ser.lp_a1", "to_anchor": "sub.carbonylC",
+              "type": "curly", "style": { "curl": "cw", "bow": 22 } },
+            { "from_anchor": "sub.bond_carbonylC_carbonylO", "to_anchor": "sub.carbonylO",
+              "type": "curly", "style": { "arc": "s", "bow": 12 } },
+            { "from_anchor": "lys.lp_a1", "to_anchor": "ser.a1",
+              "type": "curly", "style": { "curl": "ccw", "bow": 18 } }
+          ]
+        },
+        {
+          "id": "s2",
+          "badge": "2",
+          "label": "Tetrahedral intermediate (oxyanion);\nβ-lactam C–N bond breaks",
+          "slots": [
+            {
+              "id": "ti",
+              "kind": "molecule",
+              "label": "tetrahedral intermediate",
+              "style": {
+                "smiles": "CC1(C)S[C@@H]2[C@H](N)[C:1]([O-:2])(OCC)[N:3]2[C@H]1C(=O)O",
+                "anchor_names": { "1": "tetC", "2": "oxyanionO", "3": "ringN" }
+              }
+            },
+            { "id": "lys", "kind": "residue", "label": "Lys73-H+",
+              "style": { "residue": "lys", "label_font_color": "#1565C0" } }
+          ],
+          "attach": [
+            { "child": "lys", "parent": "ti", "edge": "bottom", "offset": [0, 26] }
+          ],
+          "connect": [
+            { "from_anchor": "ti.oxyanionO", "to_anchor": "ti.tetC",
+              "type": "curly", "style": { "curl": "ccw", "bow": 16 } },
+            { "from_anchor": "ti.bond_tetC_ringN", "to_anchor": "ti.ringN",
+              "type": "departs", "style": { "bow": 14 } }
+          ]
+        },
+        {
+          "id": "s3",
+          "badge": "3",
+          "label": "Ring-opened acyl-enzyme;\nwater attacks the ester",
+          "slots": [
+            {
+              "id": "acyl",
+              "kind": "molecule",
+              "label": "acyl-enzyme (Ser70 ester)",
+              "style": {
+                "smiles": "CC1(C)S[C@H]([C@@H](N)[C:1](=[O:2])OCC)N[C@H]1C(=O)O",
+                "anchor_names": { "1": "acylC", "2": "acylO" }
+              }
+            },
+            { "id": "wat", "kind": "molecule", "label": "water",
+              "style": { "smiles": "[OH2:1]", "anchor_names": { "1": "waterO" } } },
+            { "id": "lys", "kind": "residue", "label": "Lys73-H+",
+              "style": { "residue": "lys", "label_font_color": "#1565C0" } }
+          ],
+          "attach": [
+            { "child": "wat", "parent": "acyl", "edge": "top", "offset": [0, -30] },
+            { "child": "lys", "parent": "acyl", "edge": "bottom", "offset": [0, 26] }
+          ],
+          "connect": [
+            { "from_anchor": "wat.lp_waterO", "to_anchor": "acyl.acylC",
+              "type": "curly", "style": { "curl": "cw", "bow": 22 } }
+          ]
+        },
+        {
+          "id": "s4",
+          "badge": "4",
+          "label": "Inactive penicilloate released;\nSer70 free, enzyme regenerated",
+          "slots": [
+            {
+              "id": "prod",
+              "kind": "molecule",
+              "label": "penicilloate (inactive)",
+              "style": {
+                "smiles": "CC1(C)S[C@H]([C@@H](N)C(=O)O)N[C@H]1C(=O)O"
+              }
+            },
+            { "id": "ser", "kind": "residue", "label": "Ser70 (free)",
+              "style": { "residue": "ser", "label_font_color": "#2E7D32" } },
+            { "id": "lys", "kind": "residue", "label": "Lys73",
+              "style": { "residue": "lys", "label_font_color": "#1565C0" } }
+          ],
+          "attach": [
+            { "child": "ser", "parent": "prod", "edge": "top", "offset": [0, -30] },
+            { "child": "lys", "parent": "prod", "edge": "bottom", "offset": [0, 26] }
+          ],
+          "connect": []
+        }
+      ],
+      "transitions": [
+        { "from_ref": "s1@right", "to_ref": "s2@left", "type": "transition", "on_rail": "mid" },
+        { "from_ref": "s2@right", "to_ref": "s3@left", "type": "transition", "on_rail": "mid" },
+        { "from_ref": "s3@right", "to_ref": "s4@left", "type": "transition", "on_rail": "mid" }
+      ]
+    },
+    {
+      "id": "sum",
+      "role": "scene_row",
+      "height_frac": 0.26,
+      "style": { "band_fill": "#EAF1EA" },
+      "scenes": [
+        {
+          "id": "overview",
+          "label": "Net outcome: the antibiotic is destroyed",
+          "slots": [
+            { "id": "drug", "kind": "glyph", "label": "active penicillin", "style": { "glyph": "tablet" } },
+            { "id": "enz", "kind": "glyph", "label": "β-lactamase", "style": { "glyph": "protein_blob", "blob_fill": "#7FA0C0" } },
+            { "id": "prod", "kind": "glyph", "label": "inactive penicilloate", "style": { "glyph": "pg_cluster", "pg_fill": "#9AA0A6" } }
+          ],
+          "attach": [
+            { "child": "enz", "parent": "drug", "edge": "right", "offset": [60, 0] },
+            { "child": "prod", "parent": "enz", "edge": "right", "offset": [60, 0] }
+          ],
+          "connect": [
+            { "from_anchor": "drug.center", "to_anchor": "enz.center", "type": "binds" },
+            { "from_anchor": "enz.center", "to_anchor": "prod.center", "type": "transition", "label": "hydrolysis" }
+          ]
+        }
+      ]
+    }
+  ]
+}
