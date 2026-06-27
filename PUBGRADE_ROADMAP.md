@@ -83,8 +83,8 @@ demands them. **Do not promise these in `SKILL.md` until the engine cashes them.
   fixed to carry explicit H so it renders `-OH`/`-NH₂`/`-SH` not a dot. The only
   residual gap is a charge inside a *label string* (`Nu⁻`), still tofu-bound —
   keep label text ASCII. Betalactamase + chymotrypsin + aspirin corpus figures
-  migrated off the radical idiom; SN2 (03) + imine (05) still flag (intentional
-  ion fragments, mis-encoded) → follow-up.
+  migrated off the radical idiom (01/02/03/05 + acceptance); the suite is
+  radical-warning-free and β-lactamase is pinned as corpus member 11.
 
 ---
 

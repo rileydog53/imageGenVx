@@ -21,7 +21,8 @@ gaps; this doc is the active to-do.
   - Engine: `_smiles_to_mol` now **warns** on any radical heteroatom (MF-1 lint) —
     catches the `[O:n]`-as-oxyanion class at parse time.
   - Corpus migrated off the radical idiom: 01 aspirin + acceptance (`[O:5]`→`[OH:5]`),
-    02 chymotrypsin (`[O:2]`→`[O-:2]`). **SN2 (03) + imine (05) still flag → follow-up.**
+    02 chymotrypsin (`[O:2]`→`[O-:2]`), 03 SN2 + 05 imine (bracket atoms re-given
+    H/charge). Suite is radical-warning-free. β-lactamase pinned as corpus member 11.
 - **B1 (leader crosses caption) — FIXED generally.** Leader-eligible placement now
   rejects a slot whose tether would slice occupancy and re-picks a tether-clear
   slot (`label_placement._first_fit` `tether_from` + `_leader_ring` fallback).
