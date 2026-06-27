@@ -7,8 +7,13 @@ are closed.
 > **Tomorrow's work + the active plan live in [`HANDOFF.md`](HANDOFF.md). Read
 > that first.**
 
-**Suite:** 1231 passing (2026-06-26). This file is the lean status header; the
+**Suite:** 1233 passing (2026-06-27). This file is the lean status header; the
 per-commit landed records were pruned 2026-06-26 (they live in git history).
+
+> **2026-06-27:** β-lactamase mechanism rebuilt (4 real species-scenes) + three
+> general engine fixes — residue protonation (no radical dot), MF-1 radical lint,
+> and tether-aware leader placement (B1 caption-crossing fixed). G6 charge
+> resolved via SMILES (no schema change). See `HANDOFF.md` → *Landed 2026-06-27*.
 
 ---
 

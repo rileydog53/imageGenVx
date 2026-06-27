@@ -19,7 +19,10 @@ figures soon; low = polish / advanced use.
 
 ## Open issues
 
-_No open defects._
+| Priority | Issue | Source |
+|---|---|---|
+| Low | **β-lactamase mech band dead-space (B3)** — 4 narrow scenes leave vertical gaps; residue labels park to the side (clean post-B1) but the band isn't tightly packed. The real fix is band-height / auto-fit (not a per-figure `height_frac` hack). | `HANDOFF.md` B3 |
+| Low | **β-lactamase summary glyphs (D1)** — `tablet`/`protein_blob`/`pg_cluster` misread without their labels (labels disambiguate today). | `HANDOFF.md` D1 |
 
 The V3 engine backlog (deferred nits, orientation v2, render-critic, the
 engine-can't-express gaps) is tracked in `V3_STATUS.md` → "Still open" and

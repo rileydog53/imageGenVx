@@ -32,7 +32,7 @@
               "id": "asp",
               "kind": "molecule",
               "style": {
-                "smiles": "C[C:1](=[O:2])[O:3]c1ccccc1C(=O)[O:5]",
+                "smiles": "C[C:1](=[O:2])[O:3]c1ccccc1C(=O)[OH:5]",
                 "anchor_names": {
                   "1": "carbonylC",
                   "2": "carbonylO",
@@ -101,7 +101,7 @@
               "id": "asp",
               "kind": "molecule",
               "style": {
-                "smiles": "C[C:1](=[O:2])[O:3]c1ccccc1C(=O)[O:5]",
+                "smiles": "C[C:1](=[O:2])[O:3]c1ccccc1C(=O)[OH:5]",
                 "anchor_names": {
                   "1": "carbonylC",
                   "2": "carbonylO",
@@ -182,7 +182,7 @@
               "id": "asp",
               "kind": "molecule",
               "style": {
-                "smiles": "C[C:1](=[O:2])[O:3]c1ccccc1C(=O)[O:5]",
+                "smiles": "C[C:1](=[O:2])[O:3]c1ccccc1C(=O)[OH:5]",
                 "anchor_names": {
                   "1": "carbonylC",
                   "2": "carbonylO",

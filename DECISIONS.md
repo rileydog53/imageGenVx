@@ -351,3 +351,32 @@ style_dict (unlike embedded icons), and keep real `_PRIMITIVE_SHAPE` tags
 skips — necessary because `_walk` resolves only `translate`, not the `scale`
 icons are placed with, so otherwise a loose asset (the centrifuge) was measured
 at full intrinsic size and the auto-expand-to-content frame blew the canvas up.
+
+---
+
+## 2026-06-27 — mechanism charge/correctness + tether-aware leaders (β-lactamase)
+
+**Formal charge needs no schema field (G6 closed by SMILES).** RDKit draws
+`[O-]`/`[NH3+]` as proper ⊖/⊕ *vector glyphs*, so charge on an atom already
+renders; the `U+207B` tofu gap (`LIMITATIONS.md` V3-S2) is only in the cairo
+*label-text* layer. The corpus "·" was never a charge — it was a
+valence-deficient `[O:2]` (a **radical**) used to dodge a tofu that never applied
+here. Fixes: (1) `_RESIDUE_SMILES` now carries explicit H (`*C[OH:1]` etc.) so
+`ser/lys/tyr/cys` render `-OH`/`-NH₂`/`-SH`, not a dot — the heavy-atom positions
+(hence `a1`/`lp_a1` anchors) are unchanged; (2) `_smiles_to_mol` emits a
+`UserWarning` on any radical heteroatom (MF-1 lint), making the mis-encoding
+visible at parse time. We did **not** add a solid-bond `SceneEdge` type — a real
+covalent intermediate is authored by *embedding* the residue fragment into the
+molecule SMILES (the AChE-s3 idiom), which is exact and needs no engine change.
+
+**Tether-aware leader placement (dim-2 caption-crossing, B1).** A leader-eligible
+label is now placed only where its straight tether to the anchor also clears
+occupancy, not merely where its box clears — `_first_fit` takes `tether_from`
+(active only when `LabelRequest.leader`), and `_leader_ring` prefers a
+tether-clear slot with the nearest-clear slot as a non-regressing fallback. This
+is why a residue label that used to ladder straight down *past* a centred caption
+(tall anchor → "below" candidate clears the caption box while the vertical tether
+slices it) now lands beside the residue instead. Snug priority rungs are gated
+too (the tall-anchor case slips through them); non-leader labels pass
+`tether=None` and keep the exact v1 ladder. Boxes containing the anchor are
+exempt (every tether starts inside its own ink).

@@ -1,10 +1,38 @@
 # HANDOFF — next session plan (β-lactamase mechanism figure)
 
-**Authored 2026-06-26. No code or spec changes have been made yet — this is
-propose-first.** It consolidates a manual render-critic pass on the β-lactamase
-figure plus the still-open V3 engine backlog. Read `V3_STATUS.md` for status and
+**Authored 2026-06-26. Largely LANDED 2026-06-27 — see the landed log below.**
+It consolidates a manual render-critic pass on the β-lactamase figure plus the
+still-open V3 engine backlog. Read `V3_STATUS.md` for status and
 `PUBGRADE_ROADMAP.md` for the standing corrections and the engine-can't-express
 gaps; this doc is the active to-do.
+
+## Landed 2026-06-27 (suite 1233 green)
+
+- **A1–A4 (correctness) — DONE.** `betalactamase.json` rebuilt to **4 real
+  species-scenes**: Michaelis → tetrahedral intermediate (proper `[O-]` oxyanion)
+  → ring-opened acyl-enzyme (**Ser embedded as a real ester**, C=O restored, C–N
+  broken) → inactive penicilloate. Penicilloate now actually appears (I/O closes,
+  A3); proton-transfer curly drawn (A4); the dashed "new ester bond" cartoon is
+  gone (B4 dissolved). Captions match structures.
+- **C1 / G6 — RESOLVED, no schema change.** Charge renders via SMILES
+  (`[O-]`/`[NH3+]` → proper ⊖/⊕ from RDKit; tofu only hits the *label-text* layer).
+  - Engine: `_RESIDUE_SMILES` fixed to carry explicit H → residues render
+    `-OH`/`-NH₂`/`-SH`, not a radical dot.
+  - Engine: `_smiles_to_mol` now **warns** on any radical heteroatom (MF-1 lint) —
+    catches the `[O:n]`-as-oxyanion class at parse time.
+  - Corpus migrated off the radical idiom: 01 aspirin + acceptance (`[O:5]`→`[OH:5]`),
+    02 chymotrypsin (`[O:2]`→`[O-:2]`), 03 SN2 + 05 imine (bracket atoms re-given
+    H/charge). Suite is radical-warning-free. β-lactamase pinned as corpus member 11.
+- **B1 (leader crosses caption) — FIXED generally.** Leader-eligible placement now
+  rejects a slot whose tether would slice occupancy and re-picks a tether-clear
+  slot (`label_placement._first_fit` `tether_from` + `_leader_ring` fallback).
+  Pinned by `test_label_placement_fallback.py`. 0 caption crossings in all 4 scenes.
+- **SKILL.md** gained a *Mechanism chemical correctness* checklist (structure↔caption,
+  charge-via-SMILES, embed-residue-for-real-bond, arrow-every-claim, I/O closes).
+
+**Still open (lower priority):** B3 band dead-space + B2 s1 arrow density (→
+band-height/auto-fit + orientation-v2 backlog); D1 summary glyphs; A-minor
+cosmetics; cross-step scaffold orientation; SN2/imine radical-fragment cleanup.
 
 ## Artifacts under review
 

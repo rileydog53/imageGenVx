@@ -237,6 +237,37 @@ def _overlaps(a: Bbox, b: Bbox, margin: float) -> bool:
     )
 
 
+def _segment_intersects_bbox(
+    p0: tuple[float, float], p1: tuple[float, float], box: Bbox, margin: float = 0.0
+) -> bool:
+    """True if the segment p0->p1 crosses the axis-aligned `box` (Liang-Barsky).
+
+    Used to keep a *leader-eligible* label off a whitespace slot whose hairline
+    tether back to the anchor would slice through other ink (most visibly a scene
+    caption — the dim-2 'leader crosses caption text' residual). The box is
+    expanded by `margin` so a tether grazing an edge still counts as a crossing.
+    """
+    x0, y0, x1, y1 = box[0] - margin, box[1] - margin, box[2] + margin, box[3] + margin
+    px, py = p0
+    dx, dy = p1[0] - px, p1[1] - py
+    t0, t1 = 0.0, 1.0
+    for p, q in ((-dx, px - x0), (dx, x1 - px), (-dy, py - y0), (dy, y1 - py)):
+        if p == 0.0:
+            if q < 0.0:
+                return False  # parallel to this slab and outside it
+        else:
+            r = q / p
+            if p < 0.0:
+                if r > t1:
+                    return False
+                t0 = max(t0, r)
+            else:
+                if r < t0:
+                    return False
+                t1 = min(t1, r)
+    return t0 <= t1
+
+
 # Derived from PRIMITIVE_REGISTRY so any primitive added to the registry
 # (including L6 overrides) automatically participates in collision detection.
 _ENTITY_PRIMITIVES: frozenset = frozenset(PRIMITIVE_REGISTRY.values())
@@ -405,6 +436,7 @@ def _first_fit(
     gap: float,
     margin: float,
     canvas: tuple[float, float] | None = None,
+    tether_from: tuple[float, float] | None = None,
 ) -> tuple[tuple[float, float], Bbox] | None:
     """Return (center, bbox) of the first priority slot that clears `occupied`.
 
@@ -412,7 +444,19 @@ def _first_fit(
     When `canvas` is provided, candidates whose bbox falls outside
     ``[0, canvas_w] × [0, canvas_h]`` are skipped before the overlap check
     so labels are never rendered clipped at the SVG viewport edge (L18).
+
+    When `tether_from` is given (a leader-eligible label that will be drawn
+    tethered back to that point), a candidate whose straight tether would slice
+    through other ink is also skipped — so a snug-but-tether-crossing rung does
+    not win over the cleaner whitespace the leader ring would otherwise find
+    (the dim-2 'leader crosses the caption' residual). Boxes containing
+    `tether_from` are exempt, since every tether starts inside its own anchor.
     """
+    tether_obstacles = (
+        [b for b in occupied
+         if not (b[0] <= tether_from[0] <= b[2] and b[1] <= tether_from[1] <= b[3])]
+        if tether_from is not None else []
+    )
     for name in request.priority:
         center = _candidate_center(name, anchor, request.anchor_size, label_size, gap)
         candidate_bbox = _bbox_from_center(center, label_size)
@@ -421,6 +465,11 @@ def _first_fit(
             x0, y0, x1, y1 = candidate_bbox
             if x0 < 0 or x1 > cw or y0 < 0 or y1 > ch:
                 continue
+        if tether_from is not None and any(
+            _segment_intersects_bbox(tether_from, center, b, margin)
+            for b in tether_obstacles
+        ):
+            continue
         if not any(_overlaps(candidate_bbox, b, margin) for b in occupied):
             return center, candidate_bbox
     return None
@@ -441,9 +490,20 @@ def _leader_ring(
     candidate that clears `occupied` (and stays in `canvas`, when bounded) is
     returned — i.e. approximately the nearest open whitespace. None when even the
     widest ring is fully blocked (the caller then falls back to overlap).
+
+    Among the clear slots, one whose straight tether back to the anchor stays off
+    other ink is preferred over a nearer slot whose tether would cross it — the
+    dim-2 'leader slices the caption' residual, where the nearest whitespace sits
+    straight past a centred caption so the vertical leader runs through it. The
+    anchor's own ink boxes (those containing the anchor point) are exempt, since
+    every tether necessarily starts inside them. The nearest clear slot is still
+    returned as a fallback when no tether-clear slot exists, so this only ever
+    re-picks among already-valid slots — never regresses to an overlap.
     """
     ax, ay = request.anchor
     lw, lh = label_size
+    obstacles = [b for b in occupied if not (b[0] <= ax <= b[2] and b[1] <= ay <= b[3])]
+    fallback: tuple[tuple[float, float], Bbox] | None = None
     for radius in _LEADER_RING_RADII:
         for dx, dy in _LEADER_RING_DIRS:
             center = (ax + radius * dx, ay + radius * dy)
@@ -453,9 +513,14 @@ def _leader_ring(
                 x0, y0, x1, y1 = bbox
                 if x0 < 0 or x1 > cw or y0 < 0 or y1 > ch:
                     continue
-            if not any(_overlaps(bbox, b, margin) for b in occupied):
+            if any(_overlaps(bbox, b, margin) for b in occupied):
+                continue
+            if fallback is None:
+                fallback = (center, bbox)
+            if not any(_segment_intersects_bbox(request.anchor, center, b, margin)
+                       for b in obstacles):
                 return center, bbox
-    return None
+    return fallback
 
 
 def _place_with_fallback(
@@ -478,20 +543,31 @@ def _place_with_fallback(
     `overlap=True`; the caller decides whether to emit it (lenient) or treat
     it as a failure (strict).
     """
+    # A leader-eligible label is tethered back to its anchor, so every rung must
+    # reject a slot whose tether would slice through other ink — even a snug
+    # priority slot, since a tall anchor (e.g. a residue chain) can push its
+    # "below" candidate clear *past* a centred caption while the tether still
+    # crosses it (the dim-2 caption slice). Non-leader labels pass tether=None and
+    # keep the exact v1 behaviour. The leader ring is the relaxing fallback, so a
+    # label is never lost — only re-picked among otherwise-valid slots.
+    tether = request.anchor if request.leader else None
     full = _estimate_text_bbox(request.text, font_size)
-    hit = _first_fit(request, full, request.anchor, occupied, gap, margin, canvas)
+    hit = _first_fit(request, full, request.anchor, occupied, gap, margin, canvas,
+                     tether_from=tether)
     if hit is not None:
         return (*hit, font_size, False)
 
     small_font = font_size * _FONT_SHRINK_FACTOR
     small = _estimate_text_bbox(request.text, small_font)
-    hit = _first_fit(request, small, request.anchor, occupied, gap, margin, canvas)
+    hit = _first_fit(request, small, request.anchor, occupied, gap, margin, canvas,
+                     tether_from=tether)
     if hit is not None:
         return (*hit, small_font, False)
 
     ax, ay = request.anchor
     for dx, dy in _ANCHOR_NUDGES:
-        hit = _first_fit(request, small, (ax + dx, ay + dy), occupied, gap, margin, canvas)
+        hit = _first_fit(request, small, (ax + dx, ay + dy), occupied, gap, margin,
+                         canvas, tether_from=tether)
         if hit is not None:
             return (*hit, small_font, False)
 
@@ -499,7 +575,8 @@ def _place_with_fallback(
     # wide nodes — all nearby priority slots may already be inside the node
     # label bbox, so push the label further out perpendicular to the shaft.
     for dx, dy in _LARGE_NUDGES:
-        hit = _first_fit(request, small, (ax + dx, ay + dy), occupied, gap, margin, canvas)
+        hit = _first_fit(request, small, (ax + dx, ay + dy), occupied, gap, margin,
+                         canvas, tether_from=tether)
         if hit is not None:
             return (*hit, small_font, False)
 
