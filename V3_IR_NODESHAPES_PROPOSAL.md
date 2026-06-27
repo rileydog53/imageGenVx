@@ -1,6 +1,12 @@
-# V3 IR Node-Shapes Proposal (Step 1 — for sign-off)
+# V3 IR Node-Shapes Proposal (Step 1)
 
-Status: **proposal, awaiting sign-off. No `schema.py` edits made.**
+> **Status (2026-06-26): SHIPPED.** The node shapes below were signed off and
+> built — Steps 1–7 are feature-complete (`V3_STATUS.md`); the schema is
+> authoritative in `imageGen/ir/schema.py` (cited from `ir/_enums.py`). This doc
+> is **retained as the node-shape design + sign-off reference** (§0 keystone, §1
+> node tables, §2 settled decisions, §4 sign-off log); its build-order narrative
+> describes completed work. Active plan: `HANDOFF.md`.
+
 Grounded in a full read of the real schema + layout/render path + authoring path,
 then adversarially verified by three reviewers (schema-safety, render-feasibility,
 target-coverage). This doc folds their fixes in.

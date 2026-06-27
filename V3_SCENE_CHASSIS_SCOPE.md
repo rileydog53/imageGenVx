@@ -1,5 +1,10 @@
 # V3 Scene Chassis — Scoping Doc
 
+> **Status (2026-06-26): SHIPPED.** The 3-layer chassis this doc scopes is built
+> (Steps 1–7 feature-complete; `V3_STATUS.md`). Retained as the founding design
+> rationale — its §2 decisions still stand (per `V3_EXECUTION_PLAN.md` §6). The
+> sequencing it proposed is superseded by completed work. Active plan: `HANDOFF.md`.
+
 Status: **scope only, no code.** Kicks off the v3 line. Decisions taken with the
 user 2026-06-08:
 
