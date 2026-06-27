@@ -21,7 +21,7 @@ figures soon; low = polish / advanced use.
 
 | Priority | Issue | Source |
 |---|---|---|
-| Low | **β-lactamase mech band dead-space (B3)** — 4 narrow scenes leave vertical gaps; residue labels park to the side (clean post-B1) but the band isn't tightly packed. The real fix is band-height / auto-fit (not a per-figure `height_frac` hack). | `HANDOFF.md` B3 |
+| Low | **Tier band vertical fit / dead-space (B3 → auto-fit).** Scoped 2026-06-27. `_tier_natural_height` returns a *role-based* estimate (SCENE_ROW = one slot 140 + extra 50 = 190) that ignores actual content: it **underestimates** a vertically-stacked scene (residue+molecule+residue ≈ 280) and **overestimates** a glyph-only summary row (3 small glyphs ≈ 80). The frac formula in `tier_canvas` (`inner = max(natural·Σf/f)`) sizes the figure so the largest natural/frac band clears — so the summary's overestimate currently *compensates* for the mech-stack underestimate and the figure happens to balance (β-lactamase mech band lands ~88% filled). A one-sided fix (shrink the summary natural) makes the title band binding and crowds the mech stack; the real fix is **content-accurate naturals both ways** (measure each scene's stacked attach height + each glyph row's true box) — the deferred auto-fit / aspect-cap work, not a quick change. Don't hack per-figure `height_frac`. | `HANDOFF.md` B3 |
 | Low | **β-lactamase summary glyphs (D1)** — `tablet`/`protein_blob`/`pg_cluster` misread without their labels (labels disambiguate today). | `HANDOFF.md` D1 |
 
 The V3 engine backlog (deferred nits, orientation v2, render-critic, the
