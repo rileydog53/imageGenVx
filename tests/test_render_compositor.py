@@ -393,15 +393,25 @@ def test_linear_multistep_reaction_requires_smiles_map(tmp_path):
 
 def test_linear_multistep_reaction_uses_reaction_path(tmp_path):
     """R6: the chain renders as a molecule sequence (reaction_0 group present),
-    NOT per-entity pathway boxes."""
+    NOT per-entity pathway boxes. Each chain molecule is tagged with its entity
+    id (#6) — but *nested inside* reaction_0, not as a top-level pathway box."""
+    import xml.etree.ElementTree as ET
+
     ir = _multistep_reaction(2)
     smiles = {e.id: "C" * (i + 1) for i, e in enumerate(ir.entities)}
     out = render_figure(ir, tmp_path / "fig.svg", smiles_map=smiles)
     tagged = _svg_elements_with_attr(out, "data-ir-id")
     assert "reaction_0" in tagged, "reaction_0 absent — did not route to layout_reaction"
-    # Per-entity ids are NOT tagged: the chain is a single composite group.
+    # #6: each molecule is now tagged for per-molecule verification...
     for e in ir.entities:
-        assert e.id not in tagged, f"entity {e.id!r} tagged — routed to pathway, not reaction"
+        assert e.id in tagged, f"entity {e.id!r} not tagged — per-molecule id missing"
+    # ...and each molecule id sits *under* the composite reaction_0 group (the
+    # reaction path), never as a top-level box (which is the pathway path).
+    root = ET.fromstring(out.read_text())
+    rxn = next(el for el in root.iter() if el.get("id") == "reaction_0")
+    nested = {el.get("id") for el in rxn.iter()}
+    for e in ir.entities:
+        assert e.id in nested, f"entity {e.id!r} not nested under reaction_0"
 
 
 def _convergent_multistep_reaction() -> Figure:

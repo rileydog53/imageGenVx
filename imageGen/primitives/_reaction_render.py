@@ -163,6 +163,8 @@ def render_reaction(
     reversible: bool = False,
     stack: bool = False,
     stacked_row_gap: float = 24.0,
+    reactant_ids: list[str] | None = None,
+    product_ids: list[str] | None = None,
 ) -> svgwrite.container.Group:
     """Render a full reaction scheme: reactants + arrow (+ conditions) + products.
 
@@ -214,16 +216,30 @@ def render_reaction(
 
     group = svgwrite.container.Group()
 
-    def _place_block_at(smiles_list: list[str], cursor: float, y_top: float) -> float:
+    def _place_block_at(
+        smiles_list: list[str], cursor: float, y_top: float,
+        ids: list[str] | None = None,
+    ) -> float:
         """Place molecules in a horizontal block starting at (cursor, y_top).
 
-        Returns the cursor x-position after the last molecule.
+        Returns the cursor x-position after the last molecule. When ``ids`` is
+        given (aligned to ``smiles_list``), each molecule's group is tagged with
+        its entity id (#6) so a composite reaction is verifiable per-molecule
+        rather than only at the single ``reaction_0`` anchor — a structural tag
+        that adds no pixels, so goldens are unchanged.
         """
         y_mid = y_top + mol_h / 2.0
         for i, smi in enumerate(smiles_list):
             mol = _smiles_to_mol(smi)
-            group.add(_inline_molecule(mol, (mol_w, mol_h), "skeletal", style,
-                                       translate=(cursor, y_top)))
+            mg = _inline_molecule(mol, (mol_w, mol_h), "skeletal", style,
+                                  translate=(cursor, y_top))
+            if ids is not None and i < len(ids):
+                # debug off so svgwrite's validator accepts the data-* attribute
+                # (a valid SVG/HTML5 attr; same path the compositor's _tag_group uses).
+                mg._parameter.debug = False
+                mg.attribs["id"] = ids[i]
+                mg.attribs["data-ir-id"] = ids[i]
+            group.add(mg)
             cursor += mol_w
             if i < len(smiles_list) - 1:
                 cursor += gap
@@ -250,19 +266,19 @@ def render_reaction(
         # ---- Original horizontal layout ----
         mol_top = top_pad
         midline_y = mol_top + mol_h / 2.0
-        cursor = _place_block_at(reactants_smiles, 0.0, mol_top) + gap
+        cursor = _place_block_at(reactants_smiles, 0.0, mol_top, reactant_ids) + gap
         arrow_start = (cursor, midline_y)
         arrow_end = (cursor + arrow_len, midline_y)
         for elem in arrow_fn(arrow_start, arrow_end, style):
             group.add(elem)
         _render_conditions_at(cursor + arrow_len / 2.0, mol_top)
         cursor += arrow_len + gap
-        _place_block_at(products_smiles, cursor, mol_top)
+        _place_block_at(products_smiles, cursor, mol_top, product_ids)
     else:
         # ---- Stacked layout: reactants row 1, arrow + products row 2 ----
         # Row 1: reactants (top padding applies here if conditions are above row 1)
         mol_top_1 = top_pad
-        _place_block_at(reactants_smiles, 0.0, mol_top_1)
+        _place_block_at(reactants_smiles, 0.0, mol_top_1, reactant_ids)
         # Row 2: arrow at left, products to the right
         mol_top_2 = mol_top_1 + mol_h + stacked_row_gap
         midline_y_2 = mol_top_2 + mol_h / 2.0
@@ -271,7 +287,7 @@ def render_reaction(
         for elem in arrow_fn(arrow_start_2, arrow_end_2, style):
             group.add(elem)
         _render_conditions_at(arrow_len / 2.0, mol_top_2)
-        _place_block_at(products_smiles, arrow_len + gap, mol_top_2)
+        _place_block_at(products_smiles, arrow_len + gap, mol_top_2, product_ids)
 
     return group
 
@@ -282,6 +298,7 @@ def render_multistep_reaction(
     style_dict: dict | None = None,
     molecule_size: tuple[int, int] = (140, 100),
     step_reversible: list[bool] | None = None,
+    mol_ids: list[str] | None = None,
 ) -> svgwrite.container.Group:
     """Render a linear multi-step reaction: m0 → m1 → … → mn.
 
@@ -356,8 +373,13 @@ def render_multistep_reaction(
     cursor = 0.0
     for i, smi in enumerate(molecules_smiles):
         mol = _smiles_to_mol(smi)
-        group.add(_inline_molecule(mol, (mol_w, mol_h), "skeletal", style,
-                                   translate=(cursor, mol_top)))
+        mg = _inline_molecule(mol, (mol_w, mol_h), "skeletal", style,
+                              translate=(cursor, mol_top))
+        if mol_ids is not None and i < len(mol_ids):
+            mg._parameter.debug = False
+            mg.attribs["id"] = mol_ids[i]
+            mg.attribs["data-ir-id"] = mol_ids[i]
+        group.add(mg)
         cursor += mol_w
         if i < n_steps:
             cursor += gap

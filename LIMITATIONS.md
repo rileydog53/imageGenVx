@@ -93,12 +93,21 @@ This is a font-bundling problem, not a rendering bug. In practice, draw reaction
 arrows with the arrow **primitives** (not as text), and prefer ASCII or a known
 covered glyph in label strings.
 
-## Reaction schemes are composite
+## Reaction schemes — per-molecule ids (composite, but verifiable)
 
-A `REACTION_SCHEME` renders as one composite `reaction_0` SVG group with no
-per-element ids. The `convention_check` verifier therefore skips per-entity
-shape checks for reactions, and `semantic_check` verifies the single
-composite anchor rather than each molecule.
+A `REACTION_SCHEME` still renders under one composite `reaction_0` group, but
+each molecule's sub-group is now **tagged with its entity id** (set inside
+`render_reaction` / `render_multistep_reaction`), so `semantic_check` verifies
+that *every* molecule of a top-level reaction is rendered — not just the single
+`reaction_0` anchor. The tag adds no pixels, so golden images are unchanged.
+
+Residual: `convention_check` still does no per-molecule *shape* check — a
+skeletal molecule is a composite structure with no single conventional glyph
+(the same reason `MOLECULE`/`RESIDUE` slots are shape-exempt in the tier engine),
+so there is nothing to shape-check. And the per-molecule ids are not panel-scoped,
+so for a reaction nested inside a panel the per-molecule audit is skipped (the
+composite `reaction_0` anchor is still checked); only top-level reactions get the
+per-molecule check.
 
 ## Aspect-cap wrap seam (cross-row transition arrows) — routed
 

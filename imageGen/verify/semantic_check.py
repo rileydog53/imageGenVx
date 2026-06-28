@@ -11,10 +11,12 @@ Scope:
   so their synthetic ``Relation.ir_id`` is used). Panel chrome ids are
   layout artifacts and are ignored.
 
-  REACTION_SCHEME figures render the whole reaction as one composite
-  group (molecules are drawn from SMILES as a unit, not per-entity), so
-  the only semantic anchor is the ``reaction_0`` group — that is what
-  gets verified for a reaction (sub-)figure.
+  REACTION_SCHEME figures render under one composite ``reaction_0`` group,
+  but each molecule's sub-group is tagged with its entity id (#6), so a
+  top-level reaction is verified per-molecule (every reactant/product is
+  present) in addition to the ``reaction_0`` anchor. The per-molecule ids
+  are not panel-scoped, so a reaction nested in a panel keeps the
+  composite-only contract (``reaction_0`` alone).
 
   A panel's presence is verified implicitly — its content's elements
   carry the panel-chain prefix, so a mis-scoped or missing panel
@@ -81,6 +83,19 @@ def _expected_ids(
         expected.append(
             (scoped_id(REACTION_GROUP_IR_ID, panel_chain), "reaction", REACTION_GROUP_IR_ID)
         )
+        # #6: each reaction molecule's group is now tagged with its entity id, so
+        # a composite reaction is verifiable per-molecule, not only at the single
+        # reaction_0 anchor. The per-molecule tags are set inside the primitive
+        # and are NOT panel-scoped, so only require them at the top level (mirrors
+        # the annotation gating below); a reaction nested in a panel keeps the
+        # composite-only contract. Only entities that appear in a relation are
+        # rendered (orphans are not), matching reaction_layout._classify_entities.
+        if not panel_chain:
+            rel_entities = {r.source for r in figure.relations} | {
+                r.target for r in figure.relations}
+            for entity in figure.entities:
+                if entity.id in rel_entities:
+                    expected.append((entity.id, "entity", entity.id))
     else:
         for entity in figure.entities:
             expected.append((scoped_id(entity.id, panel_chain), "entity", entity.id))

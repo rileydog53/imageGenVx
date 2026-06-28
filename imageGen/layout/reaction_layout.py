@@ -465,6 +465,8 @@ def _layout_multistep_reaction(
     kwargs: dict[str, Any] = {
         "step_conditions": step_conditions,
         "molecule_size": adapted_size,
+        # #6: tag each chain molecule with its entity id for per-molecule verify.
+        "mol_ids": list(chain),
     }
     if any(step_reversible):
         kwargs["step_reversible"] = step_reversible
@@ -590,6 +592,10 @@ def layout_reaction(
     kwargs: dict[str, Any] = {
         "conditions": conditions,
         "molecule_size": adapted_size,
+        # #6: tag each molecule with its entity id so the composite reaction is
+        # verifiable per-molecule (semantic_check), not only at reaction_0.
+        "reactant_ids": reactant_ids,
+        "product_ids": product_ids,
     }
     if reversible:
         kwargs["reversible"] = True

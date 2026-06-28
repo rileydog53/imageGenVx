@@ -98,6 +98,30 @@ def test_missing_reaction_anchor_raises(tmp_path):
     assert excinfo.value.kind == "reaction"
 
 
+def test_reaction_molecule_present_passes(tmp_path):
+    # #6: each reaction molecule is tagged with its entity id, so semantic_check
+    # now verifies every molecule of a top-level reaction is rendered (not only
+    # the composite reaction_0 anchor).
+    svg = tmp_path / "fig.svg"
+    ir = _render(OXIDATION, svg, smiles_map=OXIDATION_SMILES)
+    present = svg.read_text()
+    for e in ir.entities:
+        assert f'id="{e.id}"' in present, f"molecule {e.id!r} not tagged"
+    semantic_check(ir, svg)  # no exception
+
+
+def test_missing_reaction_molecule_raises(tmp_path):
+    # #6: dropping a single molecule's id now fails the check — previously a
+    # reaction was audited only at reaction_0 and a missing molecule slipped by.
+    svg = tmp_path / "fig.svg"
+    ir = _render(OXIDATION, svg, smiles_map=OXIDATION_SMILES)
+    _break_id(svg, "aldehyde", "aldehyde_GONE")
+    with pytest.raises(SemanticCheckError) as excinfo:
+        semantic_check(ir, svg)
+    assert excinfo.value.ir_id == "aldehyde"
+    assert excinfo.value.kind == "entity"
+
+
 def test_panel_scope_mismatch_raises(tmp_path):
     """A mis-prefixed panel child must surface as the *expected* scoped id."""
     svg = tmp_path / "fig.svg"
