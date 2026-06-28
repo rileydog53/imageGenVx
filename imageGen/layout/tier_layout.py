@@ -207,15 +207,29 @@ _EDGE_DEFAULTS: dict[str, dict[str, Any]] = {
 def _tier_natural_height(tier: Tier, params: dict[str, Any]) -> float:
     """A tier's intrinsic height for content-aware sizing, by role.
 
-    A TITLE band needs only typography headroom; a SCENE_ROW needs a slot plus
-    caption/badge headroom; SUMMARY_BAR / BAND are thin strips. Used both to
-    size the canvas (``tier_canvas``) and to weight the band split when no
-    ``height_frac`` is declared (``_tier_rects``)."""
+    A TITLE band needs only typography headroom; SUMMARY_BAR / BAND are thin
+    strips. A SCENE_ROW is **content-accurate** (B3 auto-fit): its height is its
+    tallest scene's *measured* stacked attach-chain extent
+    (:func:`_scene_content_height`) plus that scene's caption block
+    (:func:`_scene_caption_block`) plus a badge/label headroom pad
+    (``tier_scene_row_extra``) — NOT the old flat ``slot_h + extra`` estimate,
+    which under-sized a vertically-stacked mechanism scene and over-sized a
+    glyph-only summary row (the two errors used to cancel and leave the figure
+    mis-balanced). Content + caption are sized as a unit because ``_layout_scene``
+    reserves the caption block when it centres content, so the band packs without
+    the symmetric-centring waste. Used both to size the canvas (``tier_canvas``)
+    and to weight the band split when no ``height_frac`` is declared
+    (``_tier_rects``)."""
     _sw, sh = params["tier_slot_size"]
     if tier.role == TierRole.TITLE:
         return float(params["tier_title_band_height"])
     if tier.role == TierRole.SCENE_ROW:
-        return float(sh) + float(params["tier_scene_row_extra"])
+        extra = float(params["tier_scene_row_extra"])
+        scenes = tier_rendered_scenes(tier)
+        if not scenes:
+            return float(sh) + extra
+        return max(_scene_content_height(sc, params) + _scene_caption_block(sc, params)
+                   for sc in scenes) + extra
     return float(params["tier_bar_band_height"])
 
 
@@ -223,14 +237,17 @@ def _tier_rects(
     tiers: list[Tier], canvas: tuple[float, float], margin: float,
     params: dict[str, Any],
 ) -> list[tuple[Tier, tuple[float, float, float, float]]]:
-    """Stack tiers vertically, distributing the content height by weight.
+    """Stack tiers vertically, distributing the content height (B3 balanced reflow).
 
-    Weights are each tier's ``height_frac`` when *every* tier declares one
-    (author intent), else each tier's role-based natural height (so a title
-    band stays compact and a scene row gets room without manual fractions).
-    Either way the weights are normalised to fill the inner height, so a pinned
-    canvas is honoured exactly and an auto-sized canvas (whose inner height is
-    the natural sum) is filled without remainder."""
+    When every tier declares a positive ``height_frac`` and there is room for
+    every band's content-accurate natural height, each band is floored at its
+    natural and the *surplus* above the natural sum is handed out by frac (soft
+    fracs — so a content-sized canvas packs to naturals and only genuine extra
+    room follows author intent). When the available height can't cover the
+    naturals (a cramped / pinned-small canvas) the fracs are honoured as pure
+    proportions instead (pre-B3 behaviour). With no complete set of fracs, bands
+    are weighted by their natural heights. Either way the bands + gaps exactly
+    fill the inner height."""
     w, h = canvas
     inner_w = w - 2 * margin
     inner_h = h - 2 * margin
@@ -238,13 +255,29 @@ def _tier_rects(
     # Reserve the inter-band gaps before distributing the rest by weight, so the
     # bands + gaps exactly fill the inner height (pinned or auto-sized).
     avail_h = max(0.0, inner_h - gap * max(0, len(tiers) - 1))
+    naturals = [_tier_natural_height(t, params) for t in tiers]
     fracs = [t.height_frac for t in tiers]
-    if tiers and all(f is not None for f in fracs):
-        weights = [float(f) for f in fracs]
+    all_fracs = bool(tiers) and all(f is not None and f > 0 for f in fracs)
+    total_nat = sum(naturals)
+    if all_fracs and avail_h >= total_nat:
+        # B3 balanced reflow: every band floored at its (content-accurate) natural;
+        # the surplus above the natural sum is distributed by frac. A content-sized
+        # canvas has ~zero surplus, so bands pack to their naturals (B3 closed); a
+        # min-floored or pinned-tall canvas hands the extra room out by author frac.
+        sf = sum(float(f) for f in fracs)
+        surplus = avail_h - total_nat
+        heights = [n + surplus * float(f) / sf for n, f in zip(naturals, fracs)]
+    elif all_fracs:
+        # avail < natural sum (a deliberately cramped / pinned-small canvas): the
+        # floors can't all be met, so fall back to honouring fracs as pure
+        # proportions — the pre-B3 behaviour, so pinned-canvas callers/tests are
+        # unchanged.
+        sf = sum(float(f) for f in fracs)
+        heights = [avail_h * float(f) / sf for f in fracs]
     else:
-        weights = [_tier_natural_height(t, params) for t in tiers]
-    total = sum(weights) or 1.0
-    heights = [avail_h * (wt / total) for wt in weights]
+        # No (complete) author fracs: weight by role/content natural height.
+        total = total_nat or 1.0
+        heights = [avail_h * (n / total) for n in naturals]
     rects: list[tuple[Tier, tuple[float, float, float, float]]] = []
     y = margin
     for tier, th in zip(tiers, heights):
@@ -285,16 +318,17 @@ def tier_canvas(
     )
     naturals = [_tier_natural_height(t, params) for t in figure.tiers]
     gap_total = float(params["tier_band_gap"]) * max(0, len(figure.tiers) - 1)
-    fracs = [t.height_frac for t in figure.tiers]
-    if figure.tiers and all(f is not None and f > 0 for f in fracs):
-        # Honour the author's fracs as PROPORTIONS, but size the inner height so
-        # every band's frac-share still clears its natural height (content + label
-        # room) — otherwise a small-frac band (e.g. a 0.25 summary) is too short to
-        # hold its labels and they spill across the band edge.
-        sf = sum(float(f) for f in fracs)
-        inner = max(n * sf / float(f) for n, f in zip(naturals, fracs))
-    else:
-        inner = sum(naturals)
+    # B3 balanced reflow — soft fracs: the content-sized figure packs to the sum of
+    # the (now content-accurate) per-tier naturals. ``height_frac`` is no longer a
+    # hard PROPORTION that the canvas inflates to satisfy (the old
+    # ``inner = max(natural·Σf / f)`` let one frac-starved band — e.g. a summary
+    # carrying a tall molecule at a small frac — balloon the whole figure and
+    # reopen dead space). Naturals are hard floors; ``_tier_rects`` hands any
+    # surplus above the natural sum (from the min-canvas floor or a pinned canvas)
+    # back out by frac. With accurate naturals this closes B3 in both directions —
+    # the under-sized mech stack and the over-sized glyph summary — without
+    # per-figure frac edits.
+    inner = sum(naturals)
     height = 2 * margin + inner + gap_total
     min_w, min_h = params["tier_canvas_min"]
     return (max(width, float(min_w)), max(height, float(min_h)))
@@ -832,7 +866,18 @@ def _layout_scene(
     orient_map = _scene_orientations(scene)
     slot_extents = {s.id: _slot_bbox_size(s, (sw, sh), params, orient_map.get(s.id))
                     for s in scene.slots}
-    centers = _solve_slot_centers(scene, rect, (sw, sh), slot_extents=slot_extents)
+    # B3 caption-reservation: the caption stacks BELOW the content, so centring the
+    # content on the band midline wastes the top half (a caption of height K needs
+    # ~2K of band to clear). Reserve the caption block at the bottom of the cell
+    # before the solver centres content — content + caption then centre as one
+    # unit, so the band packs to its measured natural height instead of floating
+    # the content (and its drifted slot labels) a quarter-band high. The full
+    # ``rect`` is still used everywhere else (band-clamp walls, fallbacks), so the
+    # caption keeps its reserved room below; guarded so a caption taller than the
+    # cell can't invert the solve rect.
+    caption_block = _scene_caption_block(scene, params)
+    solve_rect = (cx, cy, cw, max(1.0, ch - caption_block))
+    centers = _solve_slot_centers(scene, solve_rect, (sw, sh), slot_extents=slot_extents)
     boxes: list[tuple[float, float, float, float]] = []
     for slot in scene.slots:
         center = centers.get(slot.id, (cx + cw / 2.0, cy + ch / 2.0))
@@ -1400,6 +1445,55 @@ def _scene_content_width(scene: Scene, params: dict[str, Any]) -> float:
     if not boxes:
         return 0.0
     return max(b[2] for b in boxes) - min(b[0] for b in boxes)
+
+
+def _scene_content_height(scene: Scene, params: dict[str, Any]) -> float:
+    """The intrinsic drawn height of a scene's content (max−min y of its solved
+    slot boxes) — the vertical mirror of :func:`_scene_content_width` (B3 auto-fit).
+
+    Reuses the *same* scene solver (orient → extent → topological attach solve →
+    per-slot bbox), so the measured height is the molecule's true stacked
+    attach-chain extent (e.g. residue-top + molecule + residue-bottom ≈ 320px),
+    not the flat role-based estimate ``_tier_natural_height`` used to return. A
+    vertically-stacked mechanism scene measures tall, a glyph-only summary row
+    measures short — so the canvas/band sizer can size each band to its content
+    instead of one error compensating for another. The neutral rect's height does
+    not constrain the span (the solver places relative to the centre and may
+    extend past the rect); it is offset-driven for a single-root scene."""
+    slots = scene.slots
+    if not slots:
+        return 0.0
+    sw, sh = params["tier_slot_size"]
+    orient_map = _scene_orientations(scene)
+    slot_extents = {s.id: _slot_bbox_size(s, (sw, sh), params, orient_map.get(s.id))
+                    for s in slots}
+    neutral = (0.0, 0.0, float(sw) * max(1, len(slots)), float(sh))
+    try:
+        centers = _solve_slot_centers(scene, neutral, (sw, sh),
+                                      slot_extents=slot_extents)
+    except Exception:
+        return float(sh)
+    boxes = [_slot_bbox(s, centers[s.id], (sw, sh), params, orient_map.get(s.id))
+             for s in slots if s.id in centers]
+    if not boxes:
+        return 0.0
+    return max(b[3] for b in boxes) - min(b[1] for b in boxes)
+
+
+def _scene_caption_block(scene: Scene, params: dict[str, Any]) -> float:
+    """Vertical room a scene's multi-line caption needs below its content (B3).
+
+    ``scene.label`` lays out one line per ``\\n`` stacked below the content extent
+    (``scene_label_requests``), each ``tier_caption_line_step`` ems tall, with
+    ``tier_caption_gap`` between the content and the first line. Zero when the
+    scene has no caption. Used by both the natural-height estimate and the
+    caption-reservation centring in ``_layout_scene`` so the two agree."""
+    if not scene.label:
+        return 0.0
+    n_lines = len(scene.label.split("\n"))
+    fs = float(params["tier_caption_font_size"])
+    step = fs * float(params["tier_caption_line_step"])
+    return float(params["tier_caption_gap"]) + n_lines * step
 
 
 def _tier_cell_width(tier: Tier, params: dict[str, Any]) -> float:
