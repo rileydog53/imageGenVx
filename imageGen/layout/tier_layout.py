@@ -488,6 +488,51 @@ def _scene_orientations(scene: Scene) -> dict[str, tuple[str, str]]:
     return out
 
 
+def _resolve_tier_orientations(
+    scenes: list[Scene],
+) -> dict[str, dict[str, tuple[str, str]]]:
+    """Per-scene ``{slot_id: (atom, direction)}`` maps, reconciled across a tier so
+    a molecule that recurs in several scenes shares one pose (orientation-v2 A).
+
+    D6-v1 infers orientation per scene independently (:func:`_scene_orientations`),
+    so the *same* substrate can be posed differently from one scene to the next —
+    e.g. aspirin's ``asp`` is canonical in s1/s3 but rotated in s2 to aim its
+    carbonyl at Ser530, so it visibly flips panel-to-panel. This pass groups
+    MOLECULE/RESIDUE slots by their effective SMILES and, when a group has exactly
+    one distinct inferred orientation, propagates it to every otherwise
+    unconstrained recurrence — the unconstrained scenes had no partner to aim at,
+    so adopting the constrained pose is free and makes the row read consistently.
+
+    A genuine conflict (two scenes demand *different* poses of the same structure)
+    is left per-scene — v1 partner-facing wins, and cross-step consistency for a
+    *transforming* scaffold (different SMILES each scene) is the separate v2-B job.
+    Deterministic: the same scene list yields the same maps, so the size-predictor
+    path and the render path stay in lock-step (the box must match the drawn pose).
+    """
+    per_scene = {sc.id: dict(_scene_orientations(sc)) for sc in scenes}
+    groups: dict[str, list[tuple[str, str]]] = {}
+    for sc in scenes:
+        for slot in sc.slots:
+            if slot.kind not in (SlotKind.MOLECULE, SlotKind.RESIDUE):
+                continue
+            smi = _slot_eff_smiles(slot)
+            if smi:
+                groups.setdefault(smi, []).append((sc.id, slot.id))
+    for members in groups.values():
+        if len({sid for sid, _ in members}) < 2:
+            continue  # not a recurring structure — nothing to reconcile
+        distinct = {per_scene[sid].get(slid) for sid, slid in members}
+        distinct.discard(None)
+        if len(distinct) == 1:
+            shared = next(iter(distinct))
+            for sid, slid in members:
+                # fill only the unconstrained recurrences; a slot that already
+                # carries an orientation keeps it (it equals ``shared`` here).
+                per_scene[sid].setdefault(slid, shared)
+        # len(distinct) > 1 → genuine per-scene facing conflict: leave as-is.
+    return per_scene
+
+
 # Gap left between two slot boxes that the attach solve landed on the same
 # point and that ``_deoverlap_coincident`` then pushes apart.
 _DEOVERLAP_MARGIN = 8.0
@@ -791,6 +836,7 @@ def _layout_scene(
     *,
     base_style: dict[str, Any] | None = None,
     tier_style: dict[str, Any] | None = None,
+    orient_map: dict[str, tuple[str, str]] | None = None,
 ) -> list[LayoutEntry]:
     """Render a scene's slots into ``rect``, publish anchors, emit connect edges.
 
@@ -829,7 +875,11 @@ def _layout_scene(
     # D6: infer per-slot orientation (reactive atom -> facing direction) from the
     # scene's curly edges + attaches BEFORE sizing, so the predicted box matches
     # the box the *posed* molecule will draw (the solve depends on it).
-    orient_map = _scene_orientations(scene)
+    # orientation-v2 A: prefer the tier-reconciled per-scene map (a recurring
+    # molecule keeps one pose across the row); fall back to per-scene inference on
+    # the direct-call path so a standalone scene is byte-identical to v1.
+    if orient_map is None:
+        orient_map = _scene_orientations(scene)
     slot_extents = {s.id: _slot_bbox_size(s, (sw, sh), params, orient_map.get(s.id))
                     for s in scene.slots}
     centers = _solve_slot_centers(scene, rect, (sw, sh), slot_extents=slot_extents)
@@ -1373,7 +1423,10 @@ def _ink_relative_standoff(
     return edge_dist + base
 
 
-def _scene_content_width(scene: Scene, params: dict[str, Any]) -> float:
+def _scene_content_width(
+    scene: Scene, params: dict[str, Any],
+    orient_map: dict[str, tuple[str, str]] | None = None,
+) -> float:
     """The intrinsic drawn width of a scene's content (max−min x of its solved
     slot boxes). Pub-grade containment: cells were sized for a *single* slot, so
     a scene that spreads several slots horizontally (e.g. ``enz`` right of
@@ -1381,12 +1434,17 @@ def _scene_content_width(scene: Scene, params: dict[str, Any]) -> float:
     scene. Sizing the column to the widest scene's content keeps each step inside
     its own cell. For a single-root scene the span is offset-driven and so
     independent of the rect; multi-root scenes spread across the neutral rect, so
-    they report a sensible (generous) width rather than a circular one."""
+    they report a sensible (generous) width rather than a circular one.
+
+    ``orient_map`` is the tier-reconciled pose map (orientation-v2 A); when given,
+    the predicted width uses the same pose the renderer will draw (a propagated
+    rotation changes a molecule's width), so the cell sizing and the draw agree."""
     slots = scene.slots
     if not slots:
         return 0.0
     sw, sh = params["tier_slot_size"]
-    orient_map = _scene_orientations(scene)
+    if orient_map is None:
+        orient_map = _scene_orientations(scene)
     slot_extents = {s.id: _slot_bbox_size(s, (sw, sh), params, orient_map.get(s.id))
                     for s in slots}
     neutral = (0.0, 0.0, float(sw) * max(1, len(slots)), float(sh))
@@ -1406,8 +1464,10 @@ def _tier_cell_width(tier: Tier, params: dict[str, Any]) -> float:
     """The cell width a SCENE_ROW tier needs: its widest scene's drawn content
     (floored at one slot) plus horizontal cell padding each side."""
     sw, _sh = params["tier_slot_size"]
+    scenes = tier_rendered_scenes(tier)
+    tier_orients = _resolve_tier_orientations(scenes)
     content = max(
-        (_scene_content_width(sc, params) for sc in tier_rendered_scenes(tier)),
+        (_scene_content_width(sc, params, tier_orients.get(sc.id)) for sc in scenes),
         default=0.0,
     )
     return max(float(sw), content) + 2 * float(params["tier_cell_pad_x"])
@@ -1693,6 +1753,11 @@ def layout_tiers(
             # under tier.style; the structural channel (edges) takes tier.style
             # alone (no preset, so bare preset stroke can't recolour edges).
             content_base = merge_style(style_dict, tier.style)
+            # orientation-v2 A: reconcile poses across the whole rendered scene
+            # set (row + overlays) ONCE, so a molecule recurring across panels
+            # keeps one pose and the same map drives both the cell sizing
+            # (_tier_cell_width) and the per-scene render below.
+            tier_orients = _resolve_tier_orientations(tier_rendered_scenes(tier))
             # Overlays (gutter/free scenes) share the band: when present, the
             # main row takes the top (1 - frac) and the overlays a bottom gutter
             # strip. Carving only when overlays exist keeps every overlay-free
@@ -1716,7 +1781,8 @@ def layout_tiers(
                 with registry.layer():
                     scene_entries = _layout_scene(
                         scene, cell, registry, params,
-                        base_style=content_base, tier_style=tier.style)
+                        base_style=content_base, tier_style=tier.style,
+                        orient_map=tier_orients.get(scene.id))
                 entries.extend(scene_entries)
 
             # Overlay scenes in the gutter strip — same layout path + cascade,
@@ -1724,8 +1790,8 @@ def layout_tiers(
             # registry for transition resolution below.
             if gutter_rect is not None:
                 ocell_w = max(
-                    (_scene_content_width(sc, params) + 2 * float(
-                        params["tier_cell_pad_x"]) for sc in tier.overlays),
+                    (_scene_content_width(sc, params, tier_orients.get(sc.id))
+                     + 2 * float(params["tier_cell_pad_x"]) for sc in tier.overlays),
                     default=float(params["tier_slot_size"][0]))
                 ocols = _row_cell_rects(
                     gutter_rect, len(tier.overlays), gutter, ocell_w)
@@ -1733,7 +1799,8 @@ def layout_tiers(
                     with registry.layer():
                         overlay_entries = _layout_scene(
                             scene, cell, registry, params,
-                            base_style=content_base, tier_style=tier.style)
+                            base_style=content_base, tier_style=tier.style,
+                            orient_map=tier_orients.get(scene.id))
                     entries.extend(overlay_entries)
 
             # Rails: resolve a fraction of the tier extent to an absolute scalar.
