@@ -140,6 +140,22 @@ TIER_DEFAULT_PARAMS: dict[str, Any] = {
     "tier_title_band_height": 64.0,
     "tier_bar_band_height": 60.0,
     "tier_canvas_min": (400.0, 200.0),
+    # Archetype aspect-ratio cap (run10 #3). A wide many-column SCENE_ROW makes
+    # the canvas (content-driven width / packed height) ever wider+shorter; with
+    # no cap a 5-6 column mechanism blows out to an extreme landscape strip, and
+    # B3's height-packing shrank the divisor. ``tier_aspect_max`` is the hard
+    # width:height ceiling: when the content-sized figure exceeds it the engine
+    # WRAPS the widest over-wide scene row onto multiple rows (reflow N columns
+    # into ceil(N/k) per row) — not by stretching content — which shrinks width
+    # and grows height at once. ``tier_wrap_min_cols`` floors how narrow a wrapped
+    # row may get (2 → never collapse a chain to a 1-wide vertical strip). If
+    # wrapping can't reach the cap (a single intrinsically-wide scene, an all
+    # 1-column figure) the canvas height is raised to the cap as a residual lever.
+    # Set ``tier_aspect_max`` to None/0 to disable (pre-cap behaviour). Sized at
+    # the top of the cited 3:1-4:1 publication band, so the pinned corpus — whose
+    # widest is ~3.7:1 — is untouched; the cap is a guard for wider rows.
+    "tier_aspect_max": 4.0,
+    "tier_wrap_min_cols": 2,
     # Scene chrome.
     "tier_badge_radius": 11.0,
     "tier_badge_fill": "#444444",
@@ -209,7 +225,9 @@ _EDGE_DEFAULTS: dict[str, dict[str, Any]] = {
 # Geometry helpers
 # ---------------------------------------------------------------------------
 
-def _tier_natural_height(tier: Tier, params: dict[str, Any]) -> float:
+def _tier_natural_height(
+    tier: Tier, params: dict[str, Any], wrap: int = 1
+) -> float:
     """A tier's intrinsic height for content-aware sizing, by role.
 
     A TITLE band needs only typography headroom; SUMMARY_BAR / BAND are thin
@@ -238,17 +256,23 @@ def _tier_natural_height(tier: Tier, params: dict[str, Any]) -> float:
         # molecule's shared pose or a scaffold-aligned core changes its box).
         tier_orients = _resolve_tier_orientations(scenes)
         tier_align = _resolve_tier_scaffold(scenes, tier_orients)
-        return max(
+        per_row = max(
             _scene_content_height(sc, params, tier_orients.get(sc.id),
                                   tier_align.get(sc.id))
             + _scene_caption_block(sc, params)
-            for sc in scenes) + extra
+            for sc in scenes)
+        # Aspect-cap wrap: a row reflowed onto k rows stacks k content rows plus
+        # the inter-row gaps. ``extra`` is band-level headroom (badge/label pad),
+        # added once — matching the single-row path when wrap == 1.
+        _cols, nrows = _wrap_grid(len(scenes), wrap)
+        row_gap = float(params["tier_band_gap"])
+        return nrows * per_row + (nrows - 1) * row_gap + extra
     return float(params["tier_bar_band_height"])
 
 
 def _tier_rects(
     tiers: list[Tier], canvas: tuple[float, float], margin: float,
-    params: dict[str, Any],
+    params: dict[str, Any], wrap: dict[str, int] | None = None,
 ) -> list[tuple[Tier, tuple[float, float, float, float]]]:
     """Stack tiers vertically, distributing the content height (B3 balanced reflow).
 
@@ -268,7 +292,8 @@ def _tier_rects(
     # Reserve the inter-band gaps before distributing the rest by weight, so the
     # bands + gaps exactly fill the inner height (pinned or auto-sized).
     avail_h = max(0.0, inner_h - gap * max(0, len(tiers) - 1))
-    naturals = [_tier_natural_height(t, params) for t in tiers]
+    wrap = wrap or {}
+    naturals = [_tier_natural_height(t, params, wrap.get(t.id, 1)) for t in tiers]
     fracs = [t.height_frac for t in tiers]
     all_fracs = bool(tiers) and all(f is not None and f > 0 for f in fracs)
     total_nat = sum(naturals)
@@ -324,12 +349,17 @@ def tier_canvas(
     # scene no longer overflows its cell into the neighbour ("steps out of the
     # box / merged steps") AND a wide summary band doesn't blow the mechanism row
     # out to a sparse, long-arrow layout. The canvas is the widest tier's block.
+    # Aspect-cap wrap (run10 #3): resolve each scene row's wrap-row count ONCE,
+    # then size width/height from those wrapped grids so a too-wide figure is
+    # reflowed onto more rows rather than ballooning into a landscape strip.
+    wrap = _tier_wrap_map(figure, params)
     width = 2 * margin + max(
-        (_tier_block_width(t, params, gutter)
+        (_tier_block_width(t, params, gutter, wrap.get(t.id, 1))
          for t in figure.tiers if t.role == TierRole.SCENE_ROW),
         default=0.0,
     )
-    naturals = [_tier_natural_height(t, params) for t in figure.tiers]
+    naturals = [_tier_natural_height(t, params, wrap.get(t.id, 1))
+                for t in figure.tiers]
     gap_total = float(params["tier_band_gap"]) * max(0, len(figure.tiers) - 1)
     # B3 balanced reflow — soft fracs: the content-sized figure packs to the sum of
     # the (now content-accurate) per-tier naturals. ``height_frac`` is no longer a
@@ -344,7 +374,17 @@ def tier_canvas(
     inner = sum(naturals)
     height = 2 * margin + inner + gap_total
     min_w, min_h = params["tier_canvas_min"]
-    return (max(width, float(min_w)), max(height, float(min_h)))
+    width = max(width, float(min_w))
+    height = max(height, float(min_h))
+    # Residual lever: when wrapping alone can't pull the aspect under the cap (a
+    # single intrinsically-wide scene, or an all 1-column figure that has no row
+    # to reflow), raise the height to the cap so the ceiling is a hard guarantee.
+    # Wrapping is preferred (it uses the height productively); this only fires for
+    # the cases wrap can't reach, trading a taller band for a bounded aspect.
+    cap = params.get("tier_aspect_max")
+    if cap and cap > 0 and width / height > cap:
+        height = width / cap
+    return (width, height)
 
 
 def _column_rects(
@@ -1752,13 +1792,88 @@ def _tier_cell_width(tier: Tier, params: dict[str, Any]) -> float:
     return max(float(sw), content) + 2 * float(params["tier_cell_pad_x"])
 
 
-def _tier_block_width(tier: Tier, params: dict[str, Any], gutter: float) -> float:
+def _wrap_grid(n: int, k: int) -> tuple[int, int]:
+    """The grid shape ``(cols_per_row, n_rows)`` for ``n`` scenes wrapped onto
+    ``k`` rows. ``cols = ceil(n/k)`` then ``n_rows = ceil(n/cols)`` (so a wrap
+    level that the scene count can't fill collapses to the rows it actually
+    uses). Single source of grid truth so the width sizer, the height sizer, and
+    the placement code all agree on the same shape."""
+    if n <= 0:
+        return (0, 0)
+    k = max(1, min(k, n))
+    cols = math.ceil(n / k)
+    return (cols, math.ceil(n / cols))
+
+
+def _tier_block_width(
+    tier: Tier, params: dict[str, Any], gutter: float, wrap: int = 1
+) -> float:
     """The total horizontal extent a SCENE_ROW tier's columns occupy
-    (``n * cell_w + (n-1) * gutter``) — the per-tier driver of canvas width."""
+    (``cols * cell_w + (cols-1) * gutter``) — the per-tier driver of canvas
+    width. ``wrap`` (the aspect-cap row count) reduces the per-row column count
+    to ``ceil(n/wrap)`` so a reflowed row is narrower."""
     n = _tier_scene_count(tier)
     if n <= 0:
         return 0.0
-    return n * _tier_cell_width(tier, params) + (n - 1) * gutter
+    cols, _ = _wrap_grid(n, wrap)
+    return cols * _tier_cell_width(tier, params) + (cols - 1) * gutter
+
+
+def _tier_wrap_map(figure: Figure, params: dict[str, Any]) -> dict[str, int]:
+    """Per-SCENE_ROW wrap-row count ``{tier_id: k}`` keeping the figure aspect
+    under ``tier_aspect_max`` (run10 #3). Every row starts at ``k = 1`` (no wrap,
+    pre-cap behaviour); while the content-sized figure is wider than the cap, the
+    widest scene row that can still wrap (its per-row column count stays at or
+    above ``tier_wrap_min_cols``) is bumped to the next wrap level that actually
+    drops a column. Computed ONCE and shared by :func:`tier_canvas`,
+    :func:`_tier_rects`, and :func:`layout_tiers` so width sizing, height sizing,
+    and placement never disagree on the grid shape (mirrors how the orientation /
+    scaffold maps are resolved once per tier set)."""
+    margin = float(params["tier_margin"])
+    gutter = float(params["tier_gutter"])
+    gap = float(params["tier_band_gap"])
+    cap = params.get("tier_aspect_max")
+    min_cols = int(params.get("tier_wrap_min_cols", 2))
+    rows = [t for t in figure.tiers if t.role == TierRole.SCENE_ROW]
+    wrap = {t.id: 1 for t in rows}
+    if not cap or cap <= 0 or not rows:
+        return wrap
+    min_w, min_h = params["tier_canvas_min"]
+
+    def aspect() -> float:
+        width = 2 * margin + max(
+            (_tier_block_width(t, params, gutter, wrap[t.id]) for t in rows),
+            default=0.0)
+        gap_total = gap * max(0, len(figure.tiers) - 1)
+        height = 2 * margin + sum(
+            _tier_natural_height(t, params, wrap.get(t.id, 1))
+            for t in figure.tiers) + gap_total
+        return max(width, float(min_w)) / max(height, float(min_h))
+
+    # Bounded: each iteration drops at least one column off some row, and a row
+    # can shed at most n-1 columns, so the loop terminates well within this cap.
+    for _ in range(sum(_tier_scene_count(t) for t in rows) + 1):
+        if aspect() <= cap:
+            break
+        candidates: list[tuple[Tier, int]] = []
+        for t in rows:
+            n = _tier_scene_count(t)
+            cols, _nr = _wrap_grid(n, wrap[t.id])
+            if cols <= min_cols:
+                continue  # already at the narrow floor — wrapping further is a strip
+            nk = wrap[t.id] + 1
+            while nk <= n and _wrap_grid(n, nk)[0] == cols:
+                nk += 1  # skip wrap levels that don't actually drop a column
+            if nk > n:
+                continue
+            candidates.append((t, nk))
+        if not candidates:
+            break  # no row can wrap further — residual height-raise handles it
+        t, nk = max(
+            candidates,
+            key=lambda c: _tier_block_width(c[0], params, gutter, wrap[c[0].id]))
+        wrap[t.id] = nk
+    return wrap
 
 
 def _row_cell_rects(
@@ -1781,6 +1896,29 @@ def _row_cell_rects(
     block = n * cw + (n - 1) * gutter
     x0 = x + max(0.0, (w - block) / 2.0)
     return [(x0 + i * (cw + gutter), y, cw, h) for i in range(n)]
+
+
+def _wrapped_cell_rects(
+    rect: tuple[float, float, float, float], n: int, wrap: int,
+    gutter: float, row_gap: float, cell_w: float,
+) -> list[tuple[float, float, float, float]]:
+    """Lay ``n`` scenes into a ``ceil(n/wrap) x nrows`` grid inside ``rect``,
+    row-major (the aspect-cap reflow). Each row is split by ``_row_cell_rects``
+    (so a short final row stays centred), and the rows are stacked with
+    ``row_gap`` between them. ``wrap == 1`` yields exactly the single-row
+    ``_row_cell_rects`` layout, so the un-wrapped path is byte-identical."""
+    x, y, w, h = rect
+    if n <= 0:
+        return []
+    cols, nrows = _wrap_grid(n, wrap)
+    row_h = (h - row_gap * (nrows - 1)) / nrows if nrows else h
+    out: list[tuple[float, float, float, float]] = []
+    for r in range(nrows):
+        start = r * cols
+        cnt = min(cols, n - start)
+        row_rect = (x, y + r * (row_h + row_gap), w, row_h)
+        out.extend(_row_cell_rects(row_rect, cnt, gutter, cell_w))
+    return out
 
 
 def _ref_to_key(ref: str) -> str:
@@ -1981,7 +2119,11 @@ def layout_tiers(
     registry = AnchorRegistry()
     entries: list[LayoutEntry] = []
 
-    for tier, rect in _tier_rects(figure.tiers, canvas, margin, params):
+    # Aspect-cap wrap map — same resolution tier_canvas used, so the band heights
+    # (_tier_rects) and the per-row grid below match the self-sized canvas.
+    wrap_map = _tier_wrap_map(figure, params)
+
+    for tier, rect in _tier_rects(figure.tiers, canvas, margin, params, wrap_map):
         tx, ty, tw, th = rect
 
         # Band chrome: background / border / top divider (all style-driven).
@@ -2055,7 +2197,9 @@ def layout_tiers(
             else:
                 main_rect, gutter_rect = rect, None
             cell_w = _tier_cell_width(tier, params)
-            cols = _row_cell_rects(main_rect, len(row_scenes), gutter, cell_w)
+            cols = _wrapped_cell_rects(
+                main_rect, len(row_scenes), wrap_map.get(tier.id, 1),
+                gutter, float(params["tier_band_gap"]), cell_w)
             for scene, cell in zip(row_scenes, cols):
                 # P5.1: solve + publish each scene inside a registry layer so a
                 # mid-scene failure rolls back its partial anchor publishes

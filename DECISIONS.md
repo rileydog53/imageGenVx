@@ -380,3 +380,34 @@ slices it) now lands beside the residue instead. Snug priority rungs are gated
 too (the tall-anchor case slips through them); non-leader labels pass
 `tether=None` and keep the exact v1 ladder. Boxes containing the anchor are
 exempt (every tether starts inside its own ink).
+
+## 2026-06-28 — archetype aspect-ratio cap via row wrap (run10 #3)
+
+**The figure aspect is capped by reflowing, not stretching.** Canvas width was
+content-driven (`_tier_block_width` = cols·cell_w + gutters) with no width-vs-height
+ceiling, so a many-column `SCENE_ROW` grew unbounded into a landscape strip (B3's
+height-packing shrank the divisor further). `tier_aspect_max` (4.0) is now a hard
+ceiling: when the content-sized figure exceeds it, the widest over-wide scene row
+is **wrapped** onto `ceil(N/k)` columns × k rows — shrinking width and growing
+height at once, the productive use of the page that band-height-raise alone is not.
+
+**One wrap map, resolved once, shared by all three sizers.** `_tier_wrap_map`
+bumps the widest still-wrappable row (cols stay ≥ `tier_wrap_min_cols`, no 1-wide
+strips) until aspect ≤ cap, and `_wrap_grid(n,k)` is the single source of grid
+truth consumed by `_tier_block_width` (width), `_tier_natural_height` (height), and
+`_wrapped_cell_rects` (placement) — the same "compute-once, share" pattern as the
+orientation/scaffold maps, so the self-sized canvas and the baked coords never
+disagree. Transition arrows need no change: they resolve from the `AnchorRegistry`
+and follow scenes to their wrapped cells.
+
+**Cap value chosen so the corpus is byte-identical.** 4.0 sits at the top of the
+cited 3:1–4:1 publication band; the pinned corpus's widest is ~3.7:1, so every
+member stays at wrap=1 and its bytes don't move (the cap is a guard for wider rows
+than the corpus carries, proven on synthetic figures in
+`tests/test_tier_aspect_cap.py`, not by disrupting a regression-guard member).
+
+**Residual height-raise pins the cap when nothing can wrap.** A single
+intrinsically-wide scene or an all-1-column figure has no row to reflow; for that
+residual the canvas height is raised to the cap so the ceiling is a hard guarantee,
+trading a taller band for a bounded aspect. Known cost: a transition chained across
+the wrap seam draws as a diagonal (`LIMITATIONS.md`).

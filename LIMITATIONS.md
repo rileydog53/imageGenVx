@@ -65,3 +65,15 @@ A `REACTION_SCHEME` renders as one composite `reaction_0` SVG group with no
 per-element ids. The `convention_check` verifier therefore skips per-entity
 shape checks for reactions, and `semantic_check` verifies the single
 composite anchor rather than each molecule.
+
+## Aspect-cap wrap seam (cross-row transition arrows)
+
+The archetype aspect-ratio cap (`tier_aspect_max`, default 4.0) reflows an
+over-wide `SCENE_ROW` onto multiple rows. Cross-cell transition arrows resolve
+from the `AnchorRegistry`, so they follow scenes to their wrapped positions —
+but a transition chained **across the wrap seam** (e.g. the step 3 → step 4 arrow
+when a 6-step row wraps 3+3) draws as a single long diagonal rather than snaking.
+Within-row arrows are unaffected. The cap is a guard for pathologically wide
+rows; for an authored multi-row mechanism, prefer not to chain a transition over
+the seam (or wrap deliberately in the JSON). Boustrophedon / orthogonal seam
+routing is a future item.
