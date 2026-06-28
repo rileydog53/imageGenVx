@@ -5,21 +5,41 @@ but it is deliberately scoped. The limitations below are known and accepted
 for v1 — they are tracked for v2 in [BACKLOG.md](BACKLOG.md). If a figure
 comes out wrong because of one of these, log it in [FEEDBACK.md](FEEDBACK.md).
 
-## Label placement degrades gracefully on dense figures (v2)
+## Label placement — ladder + leader lines (greedy, not force-directed)
 
-Automatic label placement is greedy, but no longer fails loud by default. A
-label that can't find a clear slot runs a **relax-and-retry ladder**: shrink
-the font one step → nudge the anchor a few px → as a last resort, place it
-anyway with `data-overlap="true"` (which `legibility_check` tolerates) and
-emit a `UserWarning`. Dense fixtures (`graphical_abstract_mrna_vaccine`,
-`mechanism_cartoon`, `western_blot_schematic`) now render with labels on.
+*(v1.0 said leader lines were "a v2+ stretch" — that is stale; they landed.)*
+Label placement is a multi-rung pipeline, not a naive greedy pass:
 
-Pass `strict_labels=True` (CLI: `--strict-labels`) to restore the v1
-fail-loud `LabelPlacementError` contract. Force-directed placement and
-leader lines remain a v2+ stretch (BACKLOG L2, L14).
+- **In-box fit ladder** — an entity label first fits to its box: as-is → wrap to
+  two lines → shrink toward the 6px legibility floor → external leader
+  (`primitives/_text.py:fit_label`). Long names wrap/shrink in place rather than
+  spilling.
+- **Relax-and-retry** for externally-placed labels — try priority slots → shrink
+  one step → small anchor nudges → larger corridor nudges
+  (`label_placement.py`).
+- **Whitespace-ring + leader lines** — a label that still can't clear a slot is
+  parked in nearby whitespace and **tethered back to its anchor with a leader
+  line**, in *both* engines (`pathway_extlabel_leaders` / relation-label leaders;
+  the tier engine's `tier_label_leaders`), with shaft-avoidance and receptor
+  footprint awareness.
+- **Graceful degradation** — only if all of the above fail does the label land
+  with `data-overlap="true"` (tolerated by `legibility_check`) plus a
+  `UserWarning`. `strict_labels=True` (CLI `--strict-labels`) restores the
+  v1 fail-loud `LabelPlacementError`.
 
-*Workaround for a cluttered result:* render `--no-labels`, reduce entity
-count, or split across panels.
+Covered by ~66 tests across `test_layout_label_placement`,
+`test_label_placement_fallback`, `test_extlabel_leaders`,
+`test_relation_label_leaders`, `test_tier_label_leaders`,
+`test_label_shaft_avoidance`, `test_receptor_label_footprint`.
+
+**Residual.** Placement is **greedy** (rung-by-rung), not a *global*
+force-directed optimum — in a pathologically dense figure two labels may still
+contend for the same whitespace, and a label whose band has **no** whitespace
+anywhere still lands flagged (the band-height limit). A global force-directed
+solver is deliberately not pursued: the ladder + leaders cover the real cases at
+far lower risk than re-tuning 66 placement tests around a new optimiser.
+*Workaround for a cluttered result:* `--no-labels`, fewer entities, or split
+across panels.
 
 ## Large figures: dynamic canvas + wrapping (v2)
 
