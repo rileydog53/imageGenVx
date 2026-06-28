@@ -459,37 +459,46 @@ def _scene_orientations(scene: Scene) -> dict[str, tuple[str, str]]:
     """Per-slot ``(reactive_atom_token, direction)`` so each reactant is posed to
     face its partner — the D6 orientation inference (see ``D6_ORIENTATION_SCOPE.md``).
 
-    v1 driver: a ``CURLY`` nucleophilic-attack ``SceneEdge`` names the two
-    reacting atoms (``from`` = nucleophile, ``to`` = electrophile); the ``Attach``
-    that places the two reacting slots gives the spatial relationship (the child
-    sits at the parent's ``edge``). The parent's reactive atom is aimed toward
-    that edge and the child's toward the opposite edge, so the attacked atom and
-    the attacking atom point at each other and the step reads directionally.
-    Returns only slots it can resolve; everything else keeps RDKit's canonical
-    pose. Conservative by design — H-bond/dashed edges, ``center``/``cavity_*``
-    attaches, and indirectly-related slots are left alone in v1."""
+    Drivers (orientation-v2 D6.4): a ``CURLY`` nucleophilic-attack ``SceneEdge``
+    names the two reacting atoms (``from`` = nucleophile, ``to`` = electrophile);
+    the ``Attach`` that places the two reacting slots gives the spatial
+    relationship (the child sits at the parent's ``edge``). The parent's reactive
+    atom is aimed toward that edge and the child's toward the opposite edge, so the
+    attacked atom and the attacking atom point at each other and the step reads
+    directionally. When a step has **no** curly arrow but an ``HBOND`` / ``DASHED``
+    edge does name the interacting atoms (the binding / recognition step — fig
+    01-s1, 08-s1), those drive the same way as a fallback, so the H-bond donor and
+    acceptor aim at each other instead of posing canonically. Curly wins where both
+    are present (processed first; ``setdefault`` keeps it). Returns only slots it
+    can resolve; everything else keeps RDKit's canonical pose. Conservative by
+    design — ``center``/``cavity_*`` attaches and indirectly-related slots are
+    left alone."""
     out: dict[str, tuple[str, str]] = {}
-    for edge in scene.connect:
-        if edge.type != SceneEdgeType.CURLY:
-            continue
-        from_slot, _, from_atom = edge.from_anchor.partition(".")
-        to_slot, _, to_atom = edge.to_anchor.partition(".")
-        if not from_atom or not to_atom or from_slot == to_slot:
-            continue
-        att = next(
-            (a for a in scene.attach
-             if a.parent is not None
-             and {a.parent, a.child} == {from_slot, to_slot}),
-            None,
-        )
-        if att is None or att.edge.value not in _EDGE_TO_DIRECTION:
-            continue  # no direct attach, or center/cavity edge -> no facing
-        atom_of = {from_slot: from_atom, to_slot: to_atom}
-        out.setdefault(
-            att.parent, (atom_of[att.parent], _EDGE_TO_DIRECTION[att.edge.value]))
-        out.setdefault(
-            att.child,
-            (atom_of[att.child], _EDGE_TO_DIRECTION[_OPPOSITE_EDGE[att.edge.value]]))
+    # Priority order: a reaction's curly arrow drives first; H-bond/dashed edges
+    # only fill slots a curly didn't already constrain.
+    for driver in (SceneEdgeType.CURLY, SceneEdgeType.HBOND, SceneEdgeType.DASHED):
+        for edge in scene.connect:
+            if edge.type != driver:
+                continue
+            from_slot, _, from_atom = edge.from_anchor.partition(".")
+            to_slot, _, to_atom = edge.to_anchor.partition(".")
+            if not from_atom or not to_atom or from_slot == to_slot:
+                continue
+            att = next(
+                (a for a in scene.attach
+                 if a.parent is not None
+                 and {a.parent, a.child} == {from_slot, to_slot}),
+                None,
+            )
+            if att is None or att.edge.value not in _EDGE_TO_DIRECTION:
+                continue  # no direct attach, or center/cavity edge -> no facing
+            atom_of = {from_slot: from_atom, to_slot: to_atom}
+            out.setdefault(
+                att.parent, (atom_of[att.parent], _EDGE_TO_DIRECTION[att.edge.value]))
+            out.setdefault(
+                att.child,
+                (atom_of[att.child],
+                 _EDGE_TO_DIRECTION[_OPPOSITE_EDGE[att.edge.value]]))
     return out
 
 
