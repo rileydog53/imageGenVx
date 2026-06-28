@@ -7,7 +7,7 @@ are closed.
 > **Tomorrow's work + the active plan live in [`HANDOFF.md`](HANDOFF.md). Read
 > that first.**
 
-**Suite:** 1233 passing (2026-06-27). This file is the lean status header; the
+**Suite:** 1235 passing (2026-06-27). This file is the lean status header; the
 per-commit landed records were pruned 2026-06-26 (they live in git history).
 
 > **2026-06-27:** β-lactamase mechanism rebuilt (4 real species-scenes) + three
@@ -59,8 +59,10 @@ chemical-correctness + figure polish on the β-lactamase figure. **Full plan in
   Rationale: `D6_ORIENTATION_SCOPE.md`.
 - Leader residual: a label with no whitespace anywhere in its band still overlaps
   (band-height limit, dims 1/5).
-- Auto-fit / balanced reflow (Phase-2) + archetype aspect-ratio capping
-  (run10 critique #3) — tier-level concerns.
+- Archetype aspect-ratio capping (run10 critique #3) — tier-level concern.
+  (Auto-fit / balanced reflow — B3 band dead-space — landed 2026-06-27: SCENE_ROW
+  naturals measure real content via the scene solver; `height_frac` is now soft —
+  naturals are floors, surplus splits by frac. See git history.)
 - Render-critic (optional) — a vision-scored pub-grade rubric; corpus-first.
 - Engine-can't-express gaps G1–G5 (+ proposed G6 charge rendering) →
   `PUBGRADE_ROADMAP.md`.

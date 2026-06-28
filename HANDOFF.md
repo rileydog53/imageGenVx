@@ -30,9 +30,17 @@ gaps; this doc is the active to-do.
 - **SKILL.md** gained a *Mechanism chemical correctness* checklist (structure↔caption,
   charge-via-SMILES, embed-residue-for-real-bond, arrow-every-claim, I/O closes).
 
-**Still open (lower priority):** B3 band dead-space + B2 s1 arrow density (→
-band-height/auto-fit + orientation-v2 backlog); D1 summary glyphs; A-minor
-cosmetics; cross-step scaffold orientation; SN2/imine radical-fragment cleanup.
+**B3 band dead-space — LANDED 2026-06-27.** SCENE_ROW naturals now measure each
+scene's real stacked attach-chain height (`_scene_content_height`, the vertical
+mirror of `_scene_content_width`) + its caption block; `_layout_scene` reserves
+the caption so content+caption centre as a unit; and `height_frac` is now *soft*
+(naturals are hard floors, surplus distributes by frac — balanced reflow), so a
+frac-starved band no longer balloons the figure. β-lactamase canvas 807→711 px
+(mech band fill 71→78%), aspirin 836→756 (62→76%); corpus overlap warnings 4→0.
+
+**Still open (lower priority):** B2 s1 arrow density (→ orientation-v2 backlog);
+D1 summary glyphs; A-minor cosmetics; cross-step scaffold orientation; SN2/imine
+radical-fragment cleanup; archetype aspect-ratio capping.
 
 ## Artifacts under review
 
