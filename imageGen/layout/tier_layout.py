@@ -68,7 +68,12 @@ from imageGen.primitives.chemistry import (
     render_molecule_anchored,
     render_residue_anchored,
 )
-from imageGen.primitives._mol_render import _RESIDUE_SMILES
+from imageGen.primitives._mol_render import (
+    _RESIDUE_SMILES,
+    _align_to_reference,
+    _orient_conformer,
+    _smiles_to_mol,
+)
 from imageGen.primitives.primitive_specs import PRIMITIVE_REGISTRY, PRIMITIVE_TO_BBOX
 from imageGen.primitives.proteins import protein_blob
 from imageGen.styles.loader import merge_style
@@ -228,8 +233,16 @@ def _tier_natural_height(tier: Tier, params: dict[str, Any]) -> float:
         scenes = tier_rendered_scenes(tier)
         if not scenes:
             return float(sh) + extra
-        return max(_scene_content_height(sc, params) + _scene_caption_block(sc, params)
-                   for sc in scenes) + extra
+        # orientation-v2: measure each scene's height on its reconciled / aligned
+        # pose, so the band-height sizing matches the rendered figure (a recurring
+        # molecule's shared pose or a scaffold-aligned core changes its box).
+        tier_orients = _resolve_tier_orientations(scenes)
+        tier_align = _resolve_tier_scaffold(scenes, tier_orients)
+        return max(
+            _scene_content_height(sc, params, tier_orients.get(sc.id),
+                                  tier_align.get(sc.id))
+            + _scene_caption_block(sc, params)
+            for sc in scenes) + extra
     return float(params["tier_bar_band_height"])
 
 
@@ -484,41 +497,226 @@ _OPPOSITE_EDGE = {"top": "bottom", "bottom": "top", "left": "right", "right": "l
 _ORIENT_DEADBAND_DEG = 80.0
 
 
-def _scene_orientations(scene: Scene) -> dict[str, tuple[str, str]]:
+_ORIENT_DRIVERS = (SceneEdgeType.CURLY, SceneEdgeType.HBOND, SceneEdgeType.DASHED)
+
+
+def _scene_orientations(
+    scene: Scene, drivers: tuple[SceneEdgeType, ...] = _ORIENT_DRIVERS,
+) -> dict[str, tuple[str, str]]:
     """Per-slot ``(reactive_atom_token, direction)`` so each reactant is posed to
     face its partner — the D6 orientation inference (see ``D6_ORIENTATION_SCOPE.md``).
 
-    v1 driver: a ``CURLY`` nucleophilic-attack ``SceneEdge`` names the two
-    reacting atoms (``from`` = nucleophile, ``to`` = electrophile); the ``Attach``
-    that places the two reacting slots gives the spatial relationship (the child
-    sits at the parent's ``edge``). The parent's reactive atom is aimed toward
-    that edge and the child's toward the opposite edge, so the attacked atom and
-    the attacking atom point at each other and the step reads directionally.
-    Returns only slots it can resolve; everything else keeps RDKit's canonical
-    pose. Conservative by design — H-bond/dashed edges, ``center``/``cavity_*``
-    attaches, and indirectly-related slots are left alone in v1."""
+    Drivers (orientation-v2 D6.4): a ``CURLY`` nucleophilic-attack ``SceneEdge``
+    names the two reacting atoms (``from`` = nucleophile, ``to`` = electrophile);
+    the ``Attach`` that places the two reacting slots gives the spatial
+    relationship (the child sits at the parent's ``edge``). The parent's reactive
+    atom is aimed toward that edge and the child's toward the opposite edge, so the
+    attacked atom and the attacking atom point at each other and the step reads
+    directionally. When a step has **no** curly arrow but an ``HBOND`` / ``DASHED``
+    edge does name the interacting atoms (the binding / recognition step — fig
+    01-s1, 08-s1), those drive the same way as a fallback, so the H-bond donor and
+    acceptor aim at each other instead of posing canonically. Curly wins where both
+    are present (processed first; ``setdefault`` keeps it). Returns only slots it
+    can resolve; everything else keeps RDKit's canonical pose. Conservative by
+    design — ``center``/``cavity_*`` attaches and indirectly-related slots are
+    left alone."""
     out: dict[str, tuple[str, str]] = {}
-    for edge in scene.connect:
-        if edge.type != SceneEdgeType.CURLY:
+    # Priority order: a reaction's curly arrow drives first; H-bond/dashed edges
+    # only fill slots a curly didn't already constrain. ``drivers`` restricts the
+    # set (the cross-scene reconciliation passes ``(CURLY,)`` to find the primary,
+    # consistency-preferred pose before falling back to H-bond-derived ones).
+    for driver in drivers:
+        for edge in scene.connect:
+            if edge.type != driver:
+                continue
+            from_slot, _, from_atom = edge.from_anchor.partition(".")
+            to_slot, _, to_atom = edge.to_anchor.partition(".")
+            if not from_atom or not to_atom or from_slot == to_slot:
+                continue
+            att = next(
+                (a for a in scene.attach
+                 if a.parent is not None
+                 and {a.parent, a.child} == {from_slot, to_slot}),
+                None,
+            )
+            if att is None or att.edge.value not in _EDGE_TO_DIRECTION:
+                continue  # no direct attach, or center/cavity edge -> no facing
+            atom_of = {from_slot: from_atom, to_slot: to_atom}
+            out.setdefault(
+                att.parent, (atom_of[att.parent], _EDGE_TO_DIRECTION[att.edge.value]))
+            out.setdefault(
+                att.child,
+                (atom_of[att.child],
+                 _EDGE_TO_DIRECTION[_OPPOSITE_EDGE[att.edge.value]]))
+    return out
+
+
+def _resolve_tier_orientations(
+    scenes: list[Scene],
+) -> dict[str, dict[str, tuple[str, str]]]:
+    """Per-scene ``{slot_id: (atom, direction)}`` maps, reconciled across a tier so
+    a molecule that recurs in several scenes shares one pose (orientation-v2 A).
+
+    D6-v1 infers orientation per scene independently (:func:`_scene_orientations`),
+    so the *same* substrate can be posed differently from one scene to the next —
+    e.g. aspirin's ``asp`` is canonical in s1/s3 but rotated in s2 to aim its
+    carbonyl at Ser530, so it visibly flips panel-to-panel. This pass groups
+    MOLECULE/RESIDUE slots by their effective SMILES and, when a group has exactly
+    one distinct inferred orientation, propagates it to every otherwise
+    unconstrained recurrence — the unconstrained scenes had no partner to aim at,
+    so adopting the constrained pose is free and makes the row read consistently.
+
+    Curly drivers take priority in reconciliation: if the recurring molecule's
+    *curly*-derived poses agree on one pose, it is applied to **every** instance —
+    overriding an H-bond-derived pose in some other scene — so a recurring
+    substrate keeps its reaction pose across the row rather than flipping when one
+    scene's H-bond happens to aim a different atom (the acceptance aspirin case).
+    Only if curly gives no single pose does the full-driver pose fill the
+    unconstrained recurrences. A genuine conflict (different *curly* poses, or
+    different full poses with no curly) is left per-scene; cross-step consistency
+    for a *transforming* scaffold (different SMILES each scene) is the v2-B job.
+    Deterministic: the same scene list yields the same maps, so the size-predictor
+    path and the render path stay in lock-step (the box must match the drawn pose).
+    """
+    per_scene = {sc.id: dict(_scene_orientations(sc)) for sc in scenes}
+    curly_only = {sc.id: dict(_scene_orientations(sc, drivers=(SceneEdgeType.CURLY,)))
+                  for sc in scenes}
+    groups: dict[str, list[tuple[str, str]]] = {}
+    for sc in scenes:
+        for slot in sc.slots:
+            if slot.kind not in (SlotKind.MOLECULE, SlotKind.RESIDUE):
+                continue
+            smi = _slot_eff_smiles(slot)
+            if smi:
+                groups.setdefault(smi, []).append((sc.id, slot.id))
+    for members in groups.values():
+        if len({sid for sid, _ in members}) < 2:
+            continue  # not a recurring structure — nothing to reconcile
+        cur = {curly_only[sid].get(slid) for sid, slid in members}
+        cur.discard(None)
+        if len(cur) == 1:
+            shared = next(iter(cur))
+            for sid, slid in members:
+                per_scene[sid][slid] = shared  # reaction pose wins everywhere
             continue
-        from_slot, _, from_atom = edge.from_anchor.partition(".")
-        to_slot, _, to_atom = edge.to_anchor.partition(".")
-        if not from_atom or not to_atom or from_slot == to_slot:
+        distinct = {per_scene[sid].get(slid) for sid, slid in members}
+        distinct.discard(None)
+        if len(distinct) == 1:
+            shared = next(iter(distinct))
+            for sid, slid in members:
+                # fill only the unconstrained recurrences; a slot that already
+                # carries an orientation keeps it (it equals ``shared`` here).
+                per_scene[sid].setdefault(slid, shared)
+        # otherwise genuine per-scene facing conflict: leave as-is.
+    return per_scene
+
+
+# orientation-v2 B thresholds. A molecule must have at least this many atoms to be
+# a scaffold-series candidate (excludes water / tiny fragments); the shared MCS
+# must have at least this many atoms AND cover at least this fraction of the
+# smallest member, so a trivial common group (a lone carboxyl) never triggers
+# alignment of two otherwise-unrelated species.
+_SCAFFOLD_MIN_ATOMS = 6
+_SCAFFOLD_MIN_MCS = 6
+_SCAFFOLD_MIN_FRACTION = 0.5
+
+
+def _resolve_tier_scaffold(
+    scenes: list[Scene],
+    tier_orients: dict[str, dict[str, tuple[str, str]]],
+) -> dict[str, dict[str, "object"]]:
+    """Per-scene ``{slot_id: (ref_mol, mcs_pattern)}`` alignment specs so a
+    *transforming* scaffold keeps one pose across a step row (orientation-v2 B).
+
+    β-lactamase's ``sub→ti→acyl→prod`` are different SMILES that share a penicillin
+    bicyclic core; D6-v1 poses each independently, so the conserved core visibly
+    rotates panel-to-panel. This pass finds the series (MOLECULE slots across ≥2
+    scenes with *different* SMILES — identical SMILES is v2-A), computes their
+    maximum common substructure, and aligns every non-template member's depiction
+    to a shared reference on that MCS, so only the reacting atoms move.
+
+    Template = the *most-constrained* member (per the chosen policy): the series
+    SMILES whose instances carry a v1 orientation (earliest scene wins), so the
+    shared pose already satisfies the common partner-facing; the rest align to it
+    and drop their own facing. Falls back to the first member when none is
+    constrained. Returns ``{}`` (no alignment) when there is no transforming
+    series or the MCS is too small to be a real shared scaffold — leaving v1/v2-A
+    untouched. Deterministic, so the size predictor and renderer agree."""
+    from rdkit.Chem import rdFMCS  # noqa: PLC0415
+    from rdkit import Chem  # noqa: PLC0415
+    from rdkit.Chem import rdDepictor  # noqa: PLC0415
+
+    scene_order = {sc.id: i for i, sc in enumerate(scenes)}
+    by_smiles: dict[str, list[tuple[str, str, Slot]]] = {}
+    for sc in scenes:
+        for slot in sc.slots:
+            if slot.kind != SlotKind.MOLECULE:
+                continue  # residues recur with one SMILES → handled by v2-A
+            smi = _slot_eff_smiles(slot)
+            if smi:
+                by_smiles.setdefault(smi, []).append((sc.id, slot.id, slot))
+    if len(by_smiles) < 2:
+        return {}  # no transforming series (one species, or none)
+
+    mols: dict[str, "Chem.Mol"] = {}
+    for smi in by_smiles:
+        try:
+            m = _smiles_to_mol(smi)
+        except Exception:
             continue
-        att = next(
-            (a for a in scene.attach
-             if a.parent is not None
-             and {a.parent, a.child} == {from_slot, to_slot}),
-            None,
-        )
-        if att is None or att.edge.value not in _EDGE_TO_DIRECTION:
-            continue  # no direct attach, or center/cavity edge -> no facing
-        atom_of = {from_slot: from_atom, to_slot: to_atom}
-        out.setdefault(
-            att.parent, (atom_of[att.parent], _EDGE_TO_DIRECTION[att.edge.value]))
-        out.setdefault(
-            att.child,
-            (atom_of[att.child], _EDGE_TO_DIRECTION[_OPPOSITE_EDGE[att.edge.value]]))
+        if m is not None and m.GetNumAtoms() >= _SCAFFOLD_MIN_ATOMS:
+            mols[smi] = m
+    if len(mols) < 2:
+        return {}
+
+    res = rdFMCS.FindMCS(
+        list(mols.values()), timeout=5,
+        atomCompare=rdFMCS.AtomCompare.CompareElements,
+        bondCompare=rdFMCS.BondCompare.CompareOrder,
+        ringMatchesRingOnly=True, completeRingsOnly=True,
+    )
+    smallest = min(m.GetNumAtoms() for m in mols.values())
+    if (res.canceled or res.numAtoms < _SCAFFOLD_MIN_MCS
+            or res.numAtoms < _SCAFFOLD_MIN_FRACTION * smallest):
+        return {}
+    patt = Chem.MolFromSmarts(res.smartsString)
+    if patt is None:
+        return {}
+
+    def _first_scene(smi: str) -> int:
+        return min(scene_order[sid] for sid, _slid, _s in by_smiles[smi])
+
+    # Template = a constrained series member if any (so the shared pose carries the
+    # common facing), else the earliest member.
+    constrained = [
+        smi for smi in mols
+        if any(tier_orients.get(sid, {}).get(slid) is not None
+               for sid, slid, _s in by_smiles[smi])
+    ]
+    template_smi = min(constrained or list(mols), key=_first_scene)
+
+    tref_sid, tref_slid, tref_slot = min(
+        by_smiles[template_smi], key=lambda t: scene_order[t[0]])
+    ref_mol = _smiles_to_mol(template_smi)
+    t_orient = tier_orients.get(tref_sid, {}).get(tref_slid)
+    names = {int(k): v
+             for k, v in (tref_slot.style or {}).get("anchor_names", {}).items()}
+    if t_orient is not None:
+        # Same rotation (and deadband) the template scene will apply, so the
+        # reference's relative pose equals the template's drawn pose.
+        _orient_conformer(ref_mol, t_orient[0], t_orient[1], names,
+                          deadband_deg=_ORIENT_DEADBAND_DEG)
+    else:
+        rdDepictor.Compute2DCoords(ref_mol)
+
+    out: dict[str, dict[str, "object"]] = {}
+    for smi, insts in by_smiles.items():
+        if smi == template_smi or smi not in mols:
+            continue
+        if not mols[smi].HasSubstructMatch(patt):
+            continue
+        for sid, slid, _s in insts:
+            out.setdefault(sid, {})[slid] = (ref_mol, patt)
     return out
 
 
@@ -825,6 +1023,8 @@ def _layout_scene(
     *,
     base_style: dict[str, Any] | None = None,
     tier_style: dict[str, Any] | None = None,
+    orient_map: dict[str, tuple[str, str]] | None = None,
+    align_map: dict[str, "object"] | None = None,
 ) -> list[LayoutEntry]:
     """Render a scene's slots into ``rect``, publish anchors, emit connect edges.
 
@@ -863,9 +1063,18 @@ def _layout_scene(
     # D6: infer per-slot orientation (reactive atom -> facing direction) from the
     # scene's curly edges + attaches BEFORE sizing, so the predicted box matches
     # the box the *posed* molecule will draw (the solve depends on it).
-    orient_map = _scene_orientations(scene)
-    slot_extents = {s.id: _slot_bbox_size(s, (sw, sh), params, orient_map.get(s.id))
-                    for s in scene.slots}
+    # orientation-v2 A/B: prefer the tier-reconciled per-scene pose map (a
+    # recurring molecule keeps one pose across the row) and the scaffold alignment
+    # map (a transforming series shares its conserved-core pose); fall back to
+    # per-scene inference on the direct-call path so a standalone scene is
+    # byte-identical to v1.
+    if orient_map is None:
+        orient_map = _scene_orientations(scene)
+    align_map = align_map or {}
+    slot_extents = {
+        s.id: _slot_bbox_size(s, (sw, sh), params,
+                              orient_map.get(s.id), align_map.get(s.id))
+        for s in scene.slots}
     # B3 caption-reservation: the caption stacks BELOW the content, so centring the
     # content on the band midline wastes the top half (a caption of height K needs
     # ~2K of band to clear). Reserve the caption block at the bottom of the cell
@@ -942,7 +1151,8 @@ def _layout_scene(
                     str(smiles), size=size_arg, center=center, anchor_names=names,
                     style_dict=mol_style or None, target_bond_px=target_bp,
                     size_pad=mol_pad, orient_to=o_to, orient_direction=o_dir,
-                    orient_deadband_deg=_ORIENT_DEADBAND_DEG)
+                    orient_deadband_deg=_ORIENT_DEADBAND_DEG,
+                    align_to=align_map.get(slot.id))
             # center= baked the placement → anchors are already absolute.
             registry.publish(scoped, ag.anchors)
             entries.append(LayoutEntry(
@@ -1301,6 +1511,7 @@ def _glyph_natural_box(
 def _slot_drawn_size(
     slot: Slot, slot_size: tuple[float, float], params: dict[str, Any],
     orient: tuple[str, str] | None = None,
+    align: "object | None" = None,
 ) -> tuple[float, float]:
     """The ``(w, h)`` a slot's glyph actually draws at — the ink, not the cell.
 
@@ -1331,7 +1542,7 @@ def _slot_drawn_size(
                 return molecule_natural_size(
                     str(smi), tbp, float(params["tier_mol_pad"]),
                     orient_to=o_to, orient_direction=o_dir, anchor_names=names,
-                    orient_deadband_deg=_ORIENT_DEADBAND_DEG)
+                    orient_deadband_deg=_ORIENT_DEADBAND_DEG, align_to=align)
             except Exception:
                 pass
         return (sw * scale, sh * scale)
@@ -1344,6 +1555,7 @@ def _slot_drawn_size(
 def _slot_bbox(
     slot: Slot, center: tuple[float, float], slot_size: tuple[float, float],
     params: dict[str, Any], orient: tuple[str, str] | None = None,
+    align: "object | None" = None,
 ) -> tuple[float, float, float, float]:
     """Absolute ``(minx, miny, maxx, maxy)`` a slot occupies around its centre.
 
@@ -1359,7 +1571,7 @@ def _slot_bbox(
         return (cxc - w / 2.0, cyc - half_h, cxc + w / 2.0, cyc + half_h)
     if slot.kind in (SlotKind.MOLECULE, SlotKind.RESIDUE, SlotKind.BLOB,
                      SlotKind.GLYPH):
-        w, h = _slot_drawn_size(slot, slot_size, params, orient)
+        w, h = _slot_drawn_size(slot, slot_size, params, orient, align)
         return (cxc - w / 2.0, cyc - h / 2.0, cxc + w / 2.0, cyc + h / 2.0)
     return (cxc, cyc, cxc, cyc)
 
@@ -1367,6 +1579,7 @@ def _slot_bbox(
 def _slot_bbox_size(
     slot: Slot, slot_size: tuple[float, float], params: dict[str, Any],
     orient: tuple[str, str] | None = None,
+    align: "object | None" = None,
 ) -> tuple[float, float]:
     """The ``(w, h)`` a slot occupies (P5.4 Nit-1).
 
@@ -1375,7 +1588,8 @@ def _slot_bbox_size(
     at a neutral origin, so a TEXT parent reports its measured width rather than
     the full molecule slot size. *orient* (D6) measures the box on the posed
     molecule so the solve uses the same extent the renderer will draw."""
-    minx, miny, maxx, maxy = _slot_bbox(slot, (0.0, 0.0), slot_size, params, orient)
+    minx, miny, maxx, maxy = _slot_bbox(
+        slot, (0.0, 0.0), slot_size, params, orient, align)
     return (maxx - minx, maxy - miny)
 
 
@@ -1418,7 +1632,11 @@ def _ink_relative_standoff(
     return edge_dist + base
 
 
-def _scene_content_width(scene: Scene, params: dict[str, Any]) -> float:
+def _scene_content_width(
+    scene: Scene, params: dict[str, Any],
+    orient_map: dict[str, tuple[str, str]] | None = None,
+    align_map: dict[str, "object"] | None = None,
+) -> float:
     """The intrinsic drawn width of a scene's content (max−min x of its solved
     slot boxes). Pub-grade containment: cells were sized for a *single* slot, so
     a scene that spreads several slots horizontally (e.g. ``enz`` right of
@@ -1426,28 +1644,41 @@ def _scene_content_width(scene: Scene, params: dict[str, Any]) -> float:
     scene. Sizing the column to the widest scene's content keeps each step inside
     its own cell. For a single-root scene the span is offset-driven and so
     independent of the rect; multi-root scenes spread across the neutral rect, so
-    they report a sensible (generous) width rather than a circular one."""
+    they report a sensible (generous) width rather than a circular one.
+
+    ``orient_map`` is the tier-reconciled pose map (orientation-v2 A); when given,
+    the predicted width uses the same pose the renderer will draw (a propagated
+    rotation changes a molecule's width), so the cell sizing and the draw agree."""
     slots = scene.slots
     if not slots:
         return 0.0
     sw, sh = params["tier_slot_size"]
-    orient_map = _scene_orientations(scene)
-    slot_extents = {s.id: _slot_bbox_size(s, (sw, sh), params, orient_map.get(s.id))
-                    for s in slots}
+    if orient_map is None:
+        orient_map = _scene_orientations(scene)
+    align_map = align_map or {}
+    slot_extents = {
+        s.id: _slot_bbox_size(s, (sw, sh), params,
+                              orient_map.get(s.id), align_map.get(s.id))
+        for s in slots}
     neutral = (0.0, 0.0, float(sw) * max(1, len(slots)), float(sh))
     try:
         centers = _solve_slot_centers(scene, neutral, (sw, sh),
                                       slot_extents=slot_extents)
     except Exception:
         return neutral[2]
-    boxes = [_slot_bbox(s, centers[s.id], (sw, sh), params, orient_map.get(s.id))
+    boxes = [_slot_bbox(s, centers[s.id], (sw, sh), params,
+                        orient_map.get(s.id), align_map.get(s.id))
              for s in slots if s.id in centers]
     if not boxes:
         return 0.0
     return max(b[2] for b in boxes) - min(b[0] for b in boxes)
 
 
-def _scene_content_height(scene: Scene, params: dict[str, Any]) -> float:
+def _scene_content_height(
+    scene: Scene, params: dict[str, Any],
+    orient_map: dict[str, tuple[str, str]] | None = None,
+    align_map: dict[str, "object"] | None = None,
+) -> float:
     """The intrinsic drawn height of a scene's content (max−min y of its solved
     slot boxes) — the vertical mirror of :func:`_scene_content_width` (B3 auto-fit).
 
@@ -1459,21 +1690,31 @@ def _scene_content_height(scene: Scene, params: dict[str, Any]) -> float:
     measures short — so the canvas/band sizer can size each band to its content
     instead of one error compensating for another. The neutral rect's height does
     not constrain the span (the solver places relative to the centre and may
-    extend past the rect); it is offset-driven for a single-root scene."""
+    extend past the rect); it is offset-driven for a single-root scene.
+
+    ``orient_map`` / ``align_map`` are the tier-reconciled pose + scaffold-alignment
+    maps (orientation-v2); when given, the height is measured on the same pose the
+    renderer draws (a propagated rotation or core alignment changes the box), so the
+    band-height sizing matches the figure that lands on the page."""
     slots = scene.slots
     if not slots:
         return 0.0
     sw, sh = params["tier_slot_size"]
-    orient_map = _scene_orientations(scene)
-    slot_extents = {s.id: _slot_bbox_size(s, (sw, sh), params, orient_map.get(s.id))
-                    for s in slots}
+    if orient_map is None:
+        orient_map = _scene_orientations(scene)
+    align_map = align_map or {}
+    slot_extents = {
+        s.id: _slot_bbox_size(s, (sw, sh), params,
+                              orient_map.get(s.id), align_map.get(s.id))
+        for s in slots}
     neutral = (0.0, 0.0, float(sw) * max(1, len(slots)), float(sh))
     try:
         centers = _solve_slot_centers(scene, neutral, (sw, sh),
                                       slot_extents=slot_extents)
     except Exception:
         return float(sh)
-    boxes = [_slot_bbox(s, centers[s.id], (sw, sh), params, orient_map.get(s.id))
+    boxes = [_slot_bbox(s, centers[s.id], (sw, sh), params,
+                        orient_map.get(s.id), align_map.get(s.id))
              for s in slots if s.id in centers]
     if not boxes:
         return 0.0
@@ -1500,8 +1741,12 @@ def _tier_cell_width(tier: Tier, params: dict[str, Any]) -> float:
     """The cell width a SCENE_ROW tier needs: its widest scene's drawn content
     (floored at one slot) plus horizontal cell padding each side."""
     sw, _sh = params["tier_slot_size"]
+    scenes = tier_rendered_scenes(tier)
+    tier_orients = _resolve_tier_orientations(scenes)
+    tier_align = _resolve_tier_scaffold(scenes, tier_orients)
     content = max(
-        (_scene_content_width(sc, params) for sc in tier_rendered_scenes(tier)),
+        (_scene_content_width(sc, params, tier_orients.get(sc.id),
+                              tier_align.get(sc.id)) for sc in scenes),
         default=0.0,
     )
     return max(float(sw), content) + 2 * float(params["tier_cell_pad_x"])
@@ -1787,6 +2032,16 @@ def layout_tiers(
             # under tier.style; the structural channel (edges) takes tier.style
             # alone (no preset, so bare preset stroke can't recolour edges).
             content_base = merge_style(style_dict, tier.style)
+            # orientation-v2 A: reconcile poses across the whole rendered scene
+            # set (row + overlays) ONCE, so a molecule recurring across panels
+            # keeps one pose and the same map drives both the cell sizing
+            # (_tier_cell_width) and the per-scene render below.
+            tier_orients = _resolve_tier_orientations(tier_rendered_scenes(tier))
+            # orientation-v2 B: detect a transforming scaffold series and align
+            # each member's depiction to a shared reference (conserved core keeps
+            # one pose). Same map drives the cell sizing and the render below.
+            tier_align = _resolve_tier_scaffold(
+                tier_rendered_scenes(tier), tier_orients)
             # Overlays (gutter/free scenes) share the band: when present, the
             # main row takes the top (1 - frac) and the overlays a bottom gutter
             # strip. Carving only when overlays exist keeps every overlay-free
@@ -1810,7 +2065,9 @@ def layout_tiers(
                 with registry.layer():
                     scene_entries = _layout_scene(
                         scene, cell, registry, params,
-                        base_style=content_base, tier_style=tier.style)
+                        base_style=content_base, tier_style=tier.style,
+                        orient_map=tier_orients.get(scene.id),
+                        align_map=tier_align.get(scene.id))
                 entries.extend(scene_entries)
 
             # Overlay scenes in the gutter strip — same layout path + cascade,
@@ -1818,8 +2075,9 @@ def layout_tiers(
             # registry for transition resolution below.
             if gutter_rect is not None:
                 ocell_w = max(
-                    (_scene_content_width(sc, params) + 2 * float(
-                        params["tier_cell_pad_x"]) for sc in tier.overlays),
+                    (_scene_content_width(sc, params, tier_orients.get(sc.id),
+                                          tier_align.get(sc.id))
+                     + 2 * float(params["tier_cell_pad_x"]) for sc in tier.overlays),
                     default=float(params["tier_slot_size"][0]))
                 ocols = _row_cell_rects(
                     gutter_rect, len(tier.overlays), gutter, ocell_w)
@@ -1827,7 +2085,9 @@ def layout_tiers(
                     with registry.layer():
                         overlay_entries = _layout_scene(
                             scene, cell, registry, params,
-                            base_style=content_base, tier_style=tier.style)
+                            base_style=content_base, tier_style=tier.style,
+                            orient_map=tier_orients.get(scene.id),
+                            align_map=tier_align.get(scene.id))
                     entries.extend(overlay_entries)
 
             # Rails: resolve a fraction of the tier extent to an absolute scalar.

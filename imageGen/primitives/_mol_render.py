@@ -464,6 +464,7 @@ def molecule_natural_size(
     orient_reflect: bool = False,
     orient_deadband_deg: float = 30.0,
     anchor_names: dict[int, str] | None = None,
+    align_to: "tuple[Chem.Mol, Chem.Mol] | None" = None,
 ) -> tuple[int, int]:
     """The ``(w, h)`` pixel box a SMILES occupies rendered at ``target_bond_px``
     bond length — the pre-render size predictor the tier solver needs before it
@@ -474,9 +475,18 @@ def molecule_natural_size(
     the predictor orients its (independent, but deterministic and identical) pose
     too, so the predicted box matches the box the rotated molecule will actually
     occupy — otherwise a rotated-to-tall molecule would be sized as if still
-    wide. The rotation is deterministic, so predictor and renderer agree."""
+    wide. The rotation is deterministic, so predictor and renderer agree.
+
+    orientation-v2 B: when ``align_to`` ``(ref_mol, ref_patt)`` is given the
+    predictor aligns to the same scaffold reference the renderer will use (and
+    skips the rotation), so the box of the constrained depiction matches the
+    drawn one. Both rebuild the same aligned conformer from the shared reference,
+    so they stay in lock-step."""
     mol = _smiles_to_mol(smiles)
-    if orient_to is not None and orient_direction is not None:
+    aligned = False
+    if align_to is not None:
+        aligned = _align_to_reference(mol, align_to[0], align_to[1])
+    if not aligned and orient_to is not None and orient_direction is not None:
         _orient_conformer(
             mol, orient_to, orient_direction, anchor_names,
             reflect=orient_reflect, deadband_deg=orient_deadband_deg,
@@ -600,6 +610,32 @@ def _orient_conformer(
         )
 
 
+def _align_to_reference(
+    mol: "Chem.Mol", ref_mol: "Chem.Mol | None", ref_patt: "Chem.Mol | None",
+) -> bool:
+    """Align *mol*'s 2D depiction onto *ref_mol*'s coords over the shared
+    substructure *ref_patt* (orientation-v2 B — cross-step scaffold consistency).
+
+    Lays *mol* out so its atoms matching *ref_patt* take the same coordinates the
+    reference assigned them, then depicts the rest around that fixed core — so a
+    *transforming* species (a different SMILES each scene) keeps its conserved
+    scaffold posed identically panel-to-panel while only the reacting part moves.
+    Like :func:`_orient_conformer` this runs before the box is measured and the
+    molecule is drawn, so box + depiction + anchors all derive from the one aligned
+    conformer. No-op-safe: returns ``False`` (caller falls back to canonical /
+    ``_orient_conformer``) if there is no reference, no shared match, or RDKit
+    can't build the constrained depiction — never raises into the render path."""
+    if ref_mol is None or ref_patt is None or mol.GetNumAtoms() == 0:
+        return False
+    try:
+        if not (mol.HasSubstructMatch(ref_patt) and ref_mol.HasSubstructMatch(ref_patt)):
+            return False
+        rdDepictor.GenerateDepictionMatching2DStructure(mol, ref_mol, refPatt=ref_patt)
+        return True
+    except Exception:
+        return False
+
+
 def render_molecule_anchored(
     smiles: str,
     size: tuple[int, int] = (200, 150),
@@ -616,6 +652,7 @@ def render_molecule_anchored(
     orient_direction: str | None = None,
     orient_reflect: bool = False,
     orient_deadband_deg: float = 30.0,
+    align_to: "tuple[Chem.Mol, Chem.Mol] | None" = None,
 ) -> AnchoredGroup:
     """Render a molecule AND publish per-atom anchor points (V3 scene chassis).
 
@@ -681,7 +718,14 @@ def render_molecule_anchored(
     # rotated bbox, the drawn depiction, and the published anchors all derive from
     # this one transformed conformer. Tier path only -- the target_bond_px=None
     # leaf/panel path skips this and stays byte-identical.
-    if (target_bond_px is not None and orient_to is not None
+    # orientation-v2 B: a tier scaffold series aligns each transforming species to
+    # a shared reference (the conserved core keeps one pose) INSTEAD of the v1
+    # per-scene rotation; alignment falling through (no match / no reference) keeps
+    # the v1 behaviour. Tier path only (target_bond_px set), like _orient_conformer.
+    aligned = False
+    if target_bond_px is not None and align_to is not None:
+        aligned = _align_to_reference(mol, align_to[0], align_to[1])
+    if (not aligned and target_bond_px is not None and orient_to is not None
             and orient_direction is not None):
         _orient_conformer(
             mol, orient_to, orient_direction, anchor_names,

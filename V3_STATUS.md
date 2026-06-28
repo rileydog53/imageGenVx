@@ -7,7 +7,7 @@ are closed.
 > **Tomorrow's work + the active plan live in [`HANDOFF.md`](HANDOFF.md). Read
 > that first.**
 
-**Suite:** 1235 passing (2026-06-27). This file is the lean status header; the
+**Suite:** 1239 passing (2026-06-28). This file is the lean status header; the
 per-commit landed records were pruned 2026-06-26 (they live in git history).
 
 > **2026-06-27:** β-lactamase mechanism rebuilt (4 real species-scenes) + three
@@ -54,9 +54,10 @@ chemical-correctness + figure polish on the β-lactamase figure. **Full plan in
   + betalactamase mechanism rows are authored scenes for this reason).
 - Overlay `TierEdge` → step_sequence `base.id` has no laid-out scene (fails loud);
   overlay gutter fraction (`tier_overlay_gutter_frac` = 0.3) is a first-cut heuristic.
-- Orientation v2: H-bond/dashed edges as drivers; reflection tie-break; cross-step
-  scaffold consistency; collision-aware orientation (lets the 80° deadband tighten).
-  Rationale: `D6_ORIENTATION_SCOPE.md`.
+- Orientation v2 — cross-step consistency (identical-SMILES + MCS scaffold) and
+  H-bond/dashed drivers LANDED 2026-06-28. Still deferred: reflection tie-break
+  (no driving case) and collision-aware orientation (lets the 80° deadband
+  tighten). Rationale: `D6_ORIENTATION_SCOPE.md`.
 - Leader residual: a label with no whitespace anywhere in its band still overlaps
   (band-height limit, dims 1/5).
 - Archetype aspect-ratio capping (run10 critique #3) — tier-level concern.

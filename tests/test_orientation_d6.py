@@ -266,3 +266,71 @@ def test_deadband_separates_control_from_fixed_targets():
         assert theta >= _ORIENT_DEADBAND_DEG, (
             f"{rel_path} substrate needs only {theta:.1f}° (< deadband) — "
             "it would not be fixed")
+
+
+# --------------------------------------------------------------------------
+# orientation-v2 — cross-step consistency + H-bond drivers (landed 2026-06-28).
+# See D6_ORIENTATION_SCOPE.md → "v2 — LANDED".
+# --------------------------------------------------------------------------
+from imageGen.layout.tier_layout import (  # noqa: E402
+    _resolve_tier_orientations,
+    _resolve_tier_scaffold,
+    tier_rendered_scenes,
+)
+
+
+def _mech_scenes(rel_path):
+    """The rendered scenes of a figure's first SCENE_ROW tier with scenes."""
+    fig = Figure.model_validate(json.loads((_ROOT / rel_path).read_text()))
+    for tier in fig.tiers:
+        if tier.role.value == "scene_row" and (tier.scenes or tier.step_sequence):
+            return tier_rendered_scenes(tier)
+    raise AssertionError(f"no scene_row tier in {rel_path}")
+
+
+def test_v2a_recurring_molecule_shares_one_pose():
+    # v2-A: aspirin's `asp` (same SMILES in s1/s2/s3) posed canonical/rotated/
+    # canonical under v1 and visibly flipped. The reconciled map must give it ONE
+    # non-None orientation across every scene it appears in.
+    scenes = _mech_scenes("showcase/aspirin_cox1_v3_acceptance.json")
+    resolved = _resolve_tier_orientations(scenes)
+    poses = {sc.id: resolved[sc.id].get("asp")
+             for sc in scenes if any(s.id == "asp" for s in sc.slots)}
+    assert len(poses) >= 3, f"expected asp in >=3 scenes, got {poses}"
+    distinct = set(poses.values())
+    assert distinct == {("carbonylC", "up")}, (
+        f"asp should share one inferred pose across scenes, got {poses}")
+
+
+def test_v2b_transforming_scaffold_aligns_non_template_members():
+    # v2-B: beta-lactamase sub->ti->acyl->prod share a bicyclic core (different
+    # SMILES). The non-template members get an alignment spec; the template (sub,
+    # the constrained earliest member) does not.
+    scenes = _mech_scenes("showcase/corpus/11_betalactamase_mechanism.json")
+    orients = _resolve_tier_orientations(scenes)
+    align = _resolve_tier_scaffold(scenes, orients)
+    aligned = {slid for m in align.values() for slid in m}
+    assert {"ti", "acyl", "prod"} <= aligned, f"core members not aligned: {aligned}"
+    assert "sub" not in aligned, "template `sub` should not be self-aligned"
+    # the spec is (reference_mol, mcs_pattern) and the pattern is a real shared core
+    ref_mol, patt = align["s2"]["ti"]
+    assert ref_mol.GetNumConformers() == 1
+    assert patt.GetNumAtoms() >= 6
+
+
+def test_v2b_water_and_unrelated_species_not_aligned():
+    # Guard: a tiny fragment (water in s3) must never be pulled into the scaffold
+    # series, and a single unique molecule has nothing to align to.
+    scenes = _mech_scenes("showcase/corpus/11_betalactamase_mechanism.json")
+    align = _resolve_tier_scaffold(scenes, _resolve_tier_orientations(scenes))
+    assert "wat" not in align.get("s3", {}), "water should be excluded (too small)"
+
+
+def test_drivers_hbond_orients_without_curly():
+    # drivers: a binding step with only an H-bond edge (no curly) between two
+    # directly-attached slots now aims donor/acceptor at each other.
+    scene = _load_scene("showcase/corpus/01_aspirin_cox1_acetylation.json", "s1")
+    assert not any(e.type.value == "curly" for e in scene.connect)
+    om = _scene_orientations(scene)
+    assert om, "H-bond-only step should now infer an orientation"
+    assert om.get("asp") and om.get("ser"), f"donor/acceptor not posed: {om}"
