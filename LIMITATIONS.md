@@ -51,13 +51,28 @@ imageGen draws 2D schematic primitives only. Protein structures, ribbon
 diagrams, and 3D molecular renderings are out of scope — a planned v2
 stretch goal is a PyMOL handoff.
 
-## Superscript / special-glyph coverage
+## Special-glyph coverage (arbitrary Unicode)
 
-Entity labels are rendered with the system font via cairo. Characters the
-font lacks render as a missing-glyph box (tofu). Notably **superscript minus
-(U+207B)** — common in mechanism labels like `Nu⁻` / `LG⁻` — is not covered;
-the en-dash (U+2013) and most common scientific symbols are. Prefer ASCII
-(`Nu-`, `LG-`) or a covered Unicode minus where possible.
+Labels are rendered with the system font via cairo, so a character the font
+lacks renders as a missing-glyph box (tofu).
+
+**Superscript charges / exponents are handled.** Precomposed superscript code
+points (`⁻` U+207B, `⁺` U+207A, `²`/`³`/`⁰`–`⁹`, `ⁿ`, `ⁱ`, …) are no longer
+sent to the font: each is mapped to a base glyph the font is guaranteed to have
+and rendered raised + smaller via a `tspan` (the same cairosvg-safe `dy`
+technique the chemical subscripts use). So `Nu⁻` / `LG⁻` / `Ca²⁺` typeset
+correctly and font-independently — see `imageGen/primitives/_text.py`
+(`superscript_runs` / `_emit_shifted_text`) and `tests/test_tier_superscript.py`.
+The subscript rule stays confined to chemistry's `formula_text`, so a protein
+name like `p53` is never mis-subscripted in a general label.
+
+**Residual — arbitrary symbols still depend on font coverage.** A symbol that is
+*neither* a superscript nor a chemical subscript (e.g. a literal `→`/`⇌` typed
+into label text) still tofus if the system font lacks it, and a broad fallback
+font in the family chain does not reliably back-fill it through cairo/fontconfig.
+This is a font-bundling problem, not a rendering bug. In practice, draw reaction
+arrows with the arrow **primitives** (not as text), and prefer ASCII or a known
+covered glyph in label strings.
 
 ## Reaction schemes are composite
 

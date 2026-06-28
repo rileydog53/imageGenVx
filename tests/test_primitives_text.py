@@ -13,14 +13,17 @@ from imageGen.primitives._text import (
     AVG_CHAR_RATIO,
     FONT_FLOOR,
     SUBSCRIPT_SIZE_FACTOR,
+    SUPERSCRIPT_SIZE_FACTOR,
     FitResult,
     centered_label,
     chemical_runs,
     estimate_text_width,
     fit_label,
     formula_text,
+    has_superscript,
     label_for_fit,
     multiline_label,
+    superscript_runs,
 )
 
 STYLE = {
@@ -255,3 +258,66 @@ def test_formula_text_uses_start_anchor_for_subscripts_cairosvg_safe():
     assert 'text-anchor="middle"' not in xml
     # x is shifted left of the requested centre by ~half the text width.
     assert float(el.attribs["x"]) < 100.0
+
+
+# ---------------------------------------------------------------------------
+# Superscript charges / exponents (font-independent typesetting)
+#
+# The system font may lack the precomposed superscript glyphs (U+207B '⁻',
+# U+00B2 '²', …) and render them as tofu boxes, so charge notation in mechanism
+# labels is synthesized from base glyphs raised via tspans instead.
+# ---------------------------------------------------------------------------
+
+def test_superscript_runs_maps_precomposed_to_base_glyphs():
+    # ⁻ → '-', ² → '2', ⁺ → '+', each as a raised 'super' run.
+    assert superscript_runs("Nu⁻") == [("Nu", "base"), ("-", "super")]
+    assert superscript_runs("Ca²⁺") == [("Ca", "base"), ("2+", "super")]
+
+
+def test_superscript_runs_leaves_ascii_and_baseline_digits_alone():
+    # No precomposed superscript → one base run (digits are NOT subscripted here,
+    # so a protein name like "p53" and an ASCII charge "NAD+" are untouched).
+    assert superscript_runs("p53") == [("p53", "base")]
+    assert superscript_runs("NAD+") == [("NAD+", "base")]
+    assert superscript_runs("reflux") == [("reflux", "base")]
+
+
+def test_superscript_runs_roundtrips_with_glyph_substitution():
+    for s in ("Nu⁻", "Ca²⁺", "e⁻ transfer", "x²", "R⁺ then OH⁻"):
+        rebuilt = "".join(seg for seg, _ in superscript_runs(s))
+        # base segments verbatim; superscripts swapped for their base glyph.
+        assert "⁻" not in rebuilt and "²" not in rebuilt and "⁺" not in rebuilt
+
+
+def test_has_superscript():
+    assert has_superscript("Nu⁻")
+    assert has_superscript("Ca²⁺")
+    assert not has_superscript("NAD+")
+    assert not has_superscript("p53")
+
+
+def test_centered_label_superscript_emits_raised_tspan():
+    el = centered_label("Nu⁻", 50.0, 20.0, STYLE)
+    xml = el.tostring()
+    assert xml.count("<tspan") == 1
+    # raised run is smaller and lifts (negative dy); the precomposed glyph is gone.
+    assert f'font-size="{11 * SUPERSCRIPT_SIZE_FACTOR}"' in xml
+    assert "⁻" not in xml
+    assert 'dy="-' in xml
+    import xml.etree.ElementTree as ET
+    assert "".join(ET.fromstring(xml).itertext()) == "Nu-"
+
+
+def test_centered_label_plain_label_is_byte_identical():
+    # No superscript → the exact pre-change centered_label element.
+    a = centered_label("p53", 30.0, 15.0, STYLE).tostring()
+    assert "<tspan" not in a and ">p53<" in a
+
+
+def test_formula_text_handles_superscript_charge():
+    el = formula_text("Ca²⁺", (100.0, 20.0), font_size=12, anchor="middle",
+                      **FORMULA_STYLE)
+    xml = el.tostring()
+    assert "<tspan" in xml and "²" not in xml
+    import xml.etree.ElementTree as ET
+    assert "".join(ET.fromstring(xml).itertext()) == "Ca2+"

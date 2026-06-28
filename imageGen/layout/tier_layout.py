@@ -76,6 +76,11 @@ from imageGen.primitives._mol_render import (
 )
 from imageGen.primitives.primitive_specs import PRIMITIVE_REGISTRY, PRIMITIVE_TO_BBOX
 from imageGen.primitives.proteins import protein_blob
+from imageGen.primitives._text import (
+    _emit_shifted_text,
+    has_superscript as _text_has_superscript,
+    superscript_runs as _text_superscript_runs,
+)
 from imageGen.styles.loader import merge_style
 
 
@@ -1431,6 +1436,16 @@ def _text_group(text: str, pos: tuple[float, float], size: int, color: str,
     """A Group wrapping one Text element — keeps every entry's primitive
     returning a Group (the LayoutEntry contract / _tag_group target)."""
     g = svgwrite.container.Group()
+    # A tier label/caption with a precomposed superscript charge (Nu⁻, Ca²⁺) is
+    # typeset via raised tspans (font-independent, no tofu); plain labels keep the
+    # byte-identical flat <text> below.
+    if _text_has_superscript(text):
+        g.add(_emit_shifted_text(
+            _text_superscript_runs(text), pos, font_family=family,
+            font_size=float(size), fill=color, anchor=anchor,
+            weight=weight, italic=italic,
+        ))
+        return g
     g.add(svgwrite.text.Text(
         text, insert=pos, font_size=size, fill=color, font_family=family,
         text_anchor=anchor,

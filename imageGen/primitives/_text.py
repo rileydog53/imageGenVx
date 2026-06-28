@@ -90,6 +90,149 @@ def estimate_text_width(text: str, font_size: float) -> float:
 SUBSCRIPT_SIZE_FACTOR = 0.75  # subscript digits render at 75% of the base size
 SUBSCRIPT_DROP_FACTOR = 0.22  # subscript baseline drops 22% of the base size
 
+# Superscripts (charges / exponents). The system font may lack the *precomposed*
+# Unicode superscript glyphs (U+207B '⁻', U+00B2 '²', …) and render them as tofu
+# boxes, so a mechanism label like "Nu⁻" / "Ca²⁺" silently loses its charge
+# (LIMITATIONS V3-S "Superscript / special-glyph coverage"). The fix never asks
+# the font for those glyphs: each precomposed superscript code point is mapped to
+# a base glyph the font is guaranteed to have (a digit, '+', '-', …) and rendered
+# raised + smaller via a ``tspan`` — the same cairosvg-safe ``dy`` technique the
+# subscripts use — so charge notation is font-independent. ASCII '+' / '-' stand
+# in for the signs (universally present; they read as plus/minus at this size).
+SUPERSCRIPT_SIZE_FACTOR = 0.72   # raised glyphs render at 72% of the base size
+SUPERSCRIPT_RISE_FACTOR = 0.40   # raised baseline lifts 40% of the base size
+_SUPERSCRIPT_MAP: dict[str, str] = {
+    "⁰": "0", "¹": "1", "²": "2", "³": "3", "⁴": "4",
+    "⁵": "5", "⁶": "6", "⁷": "7", "⁸": "8", "⁹": "9",
+    "⁺": "+", "⁻": "-", "⁼": "=", "⁽": "(", "⁾": ")",
+    "ⁿ": "n", "ⁱ": "i",
+}
+
+
+def _typeset_runs(text: str, *, subscripts: bool) -> list[tuple[str, str]]:
+    """Split *text* into ``(segment, kind)`` runs, ``kind`` ∈ {base, sub, super}.
+
+    A run of precomposed superscript code points is always pulled out as a
+    ``super`` run with its glyphs mapped to safe base equivalents
+    (:data:`_SUPERSCRIPT_MAP`). When ``subscripts`` is set, the chemistry
+    formula rule additionally marks a digit run that immediately follows a letter
+    as ``sub`` (so ``"H2SO4"`` subscripts but locants like ``"2-DG"`` do not).
+    Concatenating the segments reproduces *text* with superscript code points
+    replaced by their base glyphs. ``subscripts=False`` (the general-label path)
+    leaves digits on the baseline, so a protein name like ``"p53"`` is never
+    mis-subscripted."""
+    runs: list[tuple[str, str]] = []
+    i, n = 0, len(text)
+    while i < n:
+        if text[i] in _SUPERSCRIPT_MAP:
+            j = i
+            buf: list[str] = []
+            while j < n and text[j] in _SUPERSCRIPT_MAP:
+                buf.append(_SUPERSCRIPT_MAP[text[j]])
+                j += 1
+            runs.append(("".join(buf), "super"))
+            i = j
+        elif subscripts and text[i].isdigit() and i > 0 and text[i - 1].isalpha():
+            j = i
+            while j < n and text[j].isdigit():
+                j += 1
+            runs.append((text[i:j], "sub"))
+            i = j
+        else:
+            j = i + 1
+            while j < n:
+                if text[j] in _SUPERSCRIPT_MAP:
+                    break
+                if subscripts and text[j].isdigit() and text[j - 1].isalpha():
+                    break
+                j += 1
+            runs.append((text[i:j], "base"))
+            i = j
+    return runs
+
+
+def superscript_runs(text: str) -> list[tuple[str, str]]:
+    """``(segment, kind)`` runs marking only precomposed superscripts (no
+    subscript heuristic) — the general-label typesetting view."""
+    return _typeset_runs(text, subscripts=False)
+
+
+def has_superscript(text: str) -> bool:
+    """True when *text* carries a precomposed Unicode superscript glyph."""
+    return any(ch in _SUPERSCRIPT_MAP for ch in text)
+
+
+def _emit_shifted_text(
+    runs: list[tuple[str, str]],
+    insert: tuple[float, float],
+    *,
+    font_family: str,
+    font_size: float,
+    fill: str,
+    anchor: str = "start",
+    central: bool = False,
+    weight: str = "normal",
+    italic: bool = False,
+) -> svgwrite.text.Text:
+    """Render mixed base/sub/super ``runs`` as one cairosvg-safe ``<text>``.
+
+    The leading run is the ``<text>`` body; each later run is a ``<tspan>`` with a
+    relative ``dy`` to its target baseline (down for ``sub``, up for ``super``,
+    back to 0 for ``base``) and a reduced ``font-size`` for shifted runs. As in
+    :func:`formula_text`, the requested ``anchor`` is emulated by pre-offsetting x
+    and emitting a ``start``-anchored element, because cairosvg only lays a
+    multi-``tspan`` ``<text>`` out correctly under ``text-anchor="start"``.
+    Callers pass ``runs`` that already contain a shifted run (the no-shift case
+    keeps each caller's byte-identical plain-text fast path)."""
+    def _fs(kind: str) -> float:
+        if kind == "sub":
+            return font_size * SUBSCRIPT_SIZE_FACTOR
+        if kind == "super":
+            return font_size * SUPERSCRIPT_SIZE_FACTOR
+        return font_size
+
+    def _target(kind: str) -> float:
+        if kind == "sub":
+            return font_size * SUBSCRIPT_DROP_FACTOR
+        if kind == "super":
+            return -font_size * SUPERSCRIPT_RISE_FACTOR
+        return 0.0
+
+    total_w = sum(estimate_text_width(seg, _fs(kind)) for seg, kind in runs)
+    ix, iy = insert
+    if anchor == "middle":
+        x0 = ix - total_w / 2.0
+    elif anchor == "end":
+        x0 = ix - total_w
+    else:
+        x0 = ix
+
+    seg0, kind0 = runs[0]
+    t = svgwrite.text.Text(
+        seg0, insert=(x0, iy), font_family=font_family,
+        font_size=font_size, fill=fill,
+    )
+    t._parameter.debug = False
+    t["text-anchor"] = "start"
+    if central:
+        t["dominant-baseline"] = "central"
+    if weight != "normal":
+        t["font-weight"] = weight
+    if italic:
+        t["font-style"] = "italic"
+    if kind0 != "base":
+        t["font-size"] = _fs(kind0)
+    current = _target(kind0)
+    for seg, kind in runs[1:]:
+        target = _target(kind)
+        span = svgwrite.text.TSpan(seg, dy=[target - current])
+        if kind != "base":
+            span._parameter.debug = False
+            span["font-size"] = _fs(kind)
+        t.add(span)
+        current = target
+    return t
+
 
 def chemical_runs(text: str) -> list[tuple[str, bool]]:
     """Split *text* into ``(segment, is_subscript)`` runs by the formula rule.
@@ -126,7 +269,8 @@ def formula_text(
     fill: str,
     anchor: str = "middle",
 ) -> svgwrite.text.Text:
-    """A ``<text>`` for *text* with chemical numeric subscripts rendered.
+    """A ``<text>`` for *text* with chemical numeric subscripts (and any
+    precomposed superscript charges/exponents) rendered.
 
     When *text* has no subscript digits the result is a plain ``<text>`` node,
     byte-identical to a direct ``svgwrite.text.Text`` (so non-formula labels and
@@ -149,51 +293,20 @@ def formula_text(
     the layout/legibility code uses), counting subscript runs at their reduced
     size, so a centred formula sits visually centred.
     """
-    runs = chemical_runs(text)
-    has_sub = any(sub for _seg, sub in runs)
-    if not has_sub:
+    runs = _typeset_runs(text, subscripts=True)
+    if all(kind == "base" for _seg, kind in runs):
         t = svgwrite.text.Text(
             text, insert=insert, font_family=font_family,
             font_size=font_size, fill=fill,
         )
         t["text-anchor"] = anchor
         return t
-
-    # Emulate the anchor with start positioning (see docstring).
-    total_w = sum(
-        estimate_text_width(
-            seg, font_size * (SUBSCRIPT_SIZE_FACTOR if sub else 1.0)
-        )
-        for seg, sub in runs
+    # Subscript and/or superscript runs present — emit via the shared shifted
+    # typesetter (start-anchor emulation + relative dy), cairosvg-safe.
+    return _emit_shifted_text(
+        runs, insert, font_family=font_family, font_size=font_size,
+        fill=fill, anchor=anchor,
     )
-    ix, iy = insert
-    if anchor == "middle":
-        x0 = ix - total_w / 2.0
-    elif anchor == "end":
-        x0 = ix - total_w
-    else:
-        x0 = ix
-
-    # Leading baseline run as the <text> body; remaining runs as tspans. ``dy``
-    # is relative, so track the current vertical offset and emit the delta to
-    # reach each run's target (drop for subscripts, 0 for baseline). debug off so
-    # svgwrite's strict validator accepts the float font-size on the tspans.
-    t = svgwrite.text.Text(
-        runs[0][0], insert=(x0, iy), font_family=font_family,
-        font_size=font_size, fill=fill,
-    )
-    t._parameter.debug = False
-    drop = font_size * SUBSCRIPT_DROP_FACTOR
-    current = 0.0
-    for seg, sub in runs[1:]:
-        target = drop if sub else 0.0
-        span = svgwrite.text.TSpan(seg, dy=[target - current])
-        if sub:
-            span._parameter.debug = False
-            span["font-size"] = font_size * SUBSCRIPT_SIZE_FACTOR
-        t.add(span)
-        current = target
-    return t
 
 
 def _best_two_line_split(label: str) -> Optional[tuple[str, str]]:
@@ -333,6 +446,19 @@ def centered_label(
         ``dominant-baseline: central`` so callers only need to supply the
         centre-point — no manual offset arithmetic required.
     """
+    # A label carrying a precomposed superscript charge/exponent (Nu⁻, Ca²⁺) is
+    # typeset via raised tspans so it renders font-independently rather than as a
+    # tofu box. Only the superscript rule fires here — digits stay on the baseline
+    # (no "p53" mis-subscript). Labels without one keep the byte-identical path
+    # below, so every existing golden is unchanged.
+    if has_superscript(text):
+        fs = float(size_override or style["label_font_size"])
+        return _emit_shifted_text(
+            superscript_runs(text), (cx, cy),
+            font_family=style["label_font_family"], font_size=fs,
+            fill=color or style["label_font_color"],
+            anchor="middle", central=True, weight=weight,
+        )
     t = svgwrite.text.Text(
         text,
         insert=(cx, cy),
