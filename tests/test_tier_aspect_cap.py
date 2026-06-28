@@ -157,6 +157,41 @@ def test_corpus_is_untouched_by_the_cap(path):
     assert w / h <= CAP + 1e-6
 
 
+def test_cross_row_transition_routes_orthogonally_not_diagonally():
+    # #7: a transition chained across the wrap seam is drawn as an orthogonal
+    # polyline through the inter-row gap, not a single diagonal line.
+    from imageGen.layout.tier_layout import _seam_route
+    # The route is a Z: drop into the gap, across, drop in — 4 collinear-segment
+    # points, every segment axis-aligned.
+    pts = _seam_route((100.0, 50.0), (20.0, 200.0))
+    assert len(pts) == 4
+    for a, b in zip(pts, pts[1:]):
+        assert a[0] == b[0] or a[1] == b[1], "every seam segment must be axis-aligned"
+    # The horizontal run sits in the gap between the two rows.
+    assert pts[1][1] == pts[2][1] == (50.0 + 200.0) / 2.0
+
+    scenes = [{"id": f"s{i}", "badge": str(i + 1), "label": f"s{i}",
+               "slots": [{"id": "m", "kind": "molecule", "label": "x",
+                          "style": {"smiles": "CCO"}}]} for i in range(6)]
+    trans = [{"from_ref": f"s{i}@right", "to_ref": f"s{i+1}@left",
+              "type": "transition"} for i in range(5)]
+    fig = Figure.model_validate({
+        "archetype": "mechanism_cartoon",
+        "tiers": [
+            {"id": "t", "role": "title", "height_frac": 0.12, "label": "wrap"},
+            {"id": "row", "role": "scene_row", "height_frac": 0.88,
+             "scenes": scenes, "transitions": trans},
+        ],
+    })
+    assert _tier_wrap_map(fig, TIER_DEFAULT_PARAMS)["row"] >= 2
+    entries = layout_tiers(fig)
+    # The seam transition (the one spanning row 0 -> row 1 when wrapped 3+3)
+    # renders as an orthogonal <polyline>; within-row transitions stay <line>s.
+    svgs = "".join(e.primitive(*e.args, **e.kwargs).tostring() for e in entries)
+    assert "<polyline" in svgs, "expected an orthogonal seam polyline"
+    assert "<line" in svgs, "within-row transitions should still be straight lines"
+
+
 def test_wrapped_figure_still_passes_all_three_verifiers(tmp_path):
     # A reflowed figure is still a well-formed figure — the wrap must not strand
     # an anchor or co-locate slots. Render + run the tier-aware verifiers (each

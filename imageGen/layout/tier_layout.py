@@ -431,14 +431,33 @@ def _arrow_head(p0: tuple[float, float], p1: tuple[float, float], color: str,
 def _edge_group(
     p0: tuple[float, float], p1: tuple[float, float], edge_type: SceneEdgeType,
     edge_style: dict[str, Any] | None,
+    waypoints: list[tuple[float, float]] | None = None,
 ) -> svgwrite.container.Group:
-    """Draw one edge p0->p1 per its type (dashed/curved line, arrow, or both)."""
+    """Draw one edge p0->p1 per its type (dashed/curved line, arrow, or both).
+
+    When ``waypoints`` is given the edge is drawn as an orthogonal polyline
+    through those points instead of a straight/curved shaft (the wrap-seam route,
+    #7) — the arrowhead is aimed along the final segment."""
     spec = _EDGE_DEFAULTS.get(edge_type.value, _EDGE_DEFAULTS["generic"])
     stroke = str((edge_style or {}).get("stroke", spec["stroke"]))
     # Per-type default width from spec (e.g. hbond is thinner at 1.5); caller
     # can still override via edge_style["stroke_width"].
     width = float((edge_style or {}).get("stroke_width", spec.get("stroke_width", 2.0)))
     g = svgwrite.container.Group()
+    if waypoints:
+        pts = [(round(x, 2), round(y, 2)) for x, y in waypoints]
+        poly = svgwrite.shapes.Polyline(
+            points=pts, fill="none", stroke=stroke, stroke_width=width)
+        poly["stroke-linejoin"] = "round"
+        poly["stroke-linecap"] = "round"
+        if spec["dash"]:
+            poly["stroke-dasharray"] = spec["dash"]
+        g.add(poly)
+        if spec["arrow"]:
+            head_w = float(
+                (edge_style or {}).get("head_width", spec.get("head_w", 0.5)))
+            g.add(_arrow_head(waypoints[-2], waypoints[-1], stroke, width_frac=head_w))
+        return g
     if (edge_style or {}).get("partial"):
         # P7.3b: a transition-state partial bond — a thin, finely-dashed straight
         # stub between two atom anchors (a breaking/forming half-bond). An
@@ -1936,6 +1955,26 @@ def _wrapped_cell_rects(
     return out
 
 
+def _seam_route(
+    p0: tuple[float, float], p1: tuple[float, float],
+) -> list[tuple[float, float]]:
+    """Orthogonal Z-route for a transition that spans two wrapped rows (#7).
+
+    Drops from ``p0`` into the inter-row gap, runs horizontally across the gap
+    (empty space between the stacked rows), then drops into ``p1`` — so a chained
+    step that crosses the wrap seam reads as a clean reading-order connector
+    instead of a long diagonal slashing over the scenes between them."""
+    (x0, y0), (x1, y1) = p0, p1
+    mid_y = (y0 + y1) / 2.0
+    return [(x0, y0), (x0, mid_y), (x1, mid_y), (x1, y1)]
+
+
+def _scene_of_ref(ref: str) -> str:
+    """The scene id a TierEdge endpoint ref names ('s1@right' / 's1.slot.atom'
+    -> 's1')."""
+    return _ref_to_key(ref).split(".", 1)[0]
+
+
 def _ref_to_key(ref: str) -> str:
     """Translate a TierEdge ref into a registry key: 'scene@edge' -> 'scene.edge';
     'scene.slot.anchor' is already a key."""
@@ -2212,9 +2251,18 @@ def layout_tiers(
             else:
                 main_rect, gutter_rect = rect, None
             cell_w = _tier_cell_width(tier, params)
+            wrap_k = wrap_map.get(tier.id, 1)
             cols = _wrapped_cell_rects(
-                main_rect, len(row_scenes), wrap_map.get(tier.id, 1),
+                main_rect, len(row_scenes), wrap_k,
                 gutter, float(params["tier_band_gap"]), cell_w)
+            # Aspect-cap wrap (#7): which wrap-row each scene landed on, so a
+            # transition spanning two rows can be routed orthogonally through the
+            # inter-row gap instead of slashing diagonally across the scenes.
+            _cpr, _ = _wrap_grid(len(row_scenes), wrap_k)
+            scene_row_of = {
+                sc.id: (i // _cpr if _cpr else 0)
+                for i, sc in enumerate(row_scenes)
+            }
             for scene, cell in zip(row_scenes, cols):
                 # P5.1: solve + publish each scene inside a registry layer so a
                 # mid-scene failure rolls back its partial anchor publishes
@@ -2291,18 +2339,34 @@ def layout_tiers(
                 )
                 # Structural cascade: tier ⊕ this transition's style (no preset).
                 te_style = merge_style(tier.style, te.style)
+                # #7: when the two endpoints sit on different wrap rows, route the
+                # arrow orthogonally through the inter-row gap rather than as a
+                # diagonal. Only wrapped tiers (wrap_k > 1) can span rows.
+                waypoints = None
+                if wrap_k > 1:
+                    ra = scene_row_of.get(_scene_of_ref(te.from_ref))
+                    rb = scene_row_of.get(_scene_of_ref(te.to_ref))
+                    if ra is not None and rb is not None and ra != rb:
+                        waypoints = _seam_route(p0, p1)
                 entries.append(LayoutEntry(
-                    (lambda a=p0, b=p1, t=te.type, s=te_style: _edge_group(a, b, t, s)),
+                    (lambda a=p0, b=p1, t=te.type, s=te_style, w=waypoints:
+                        _edge_group(a, b, t, s, waypoints=w)),
                     (), {}, (0.0, 0.0), ir_id=te.ir_id))
                 # D4: a TierEdge label was silently dropped — only the arrow drew.
                 # Place it just above the shaft midpoint (perpendicular offset) so
                 # the transition reads "<label>" over its arrow rather than the
                 # text crossing the shaft. A near-vertical arrow offsets to the
-                # right instead (no "above" to speak of).
+                # right instead (no "above" to speak of). A routed (wrap-seam) edge
+                # carries its label at the horizontal mid-segment in the gap.
                 if te.label:
                     lfs = int(params["tier_caption_font_size"])
-                    lpos = _transition_label_pos(
-                        p0, p1, float(params["tier_transition_label_gap"]) + lfs / 2.0)
+                    if waypoints is not None:
+                        lpos = ((waypoints[1][0] + waypoints[2][0]) / 2.0,
+                                waypoints[1][1] - float(params["tier_transition_label_gap"]))
+                    else:
+                        lpos = _transition_label_pos(
+                            p0, p1,
+                            float(params["tier_transition_label_gap"]) + lfs / 2.0)
                     lcol = str(te_style.get("label_font_color", params["tier_text_color"]))
                     lfam = str(te_style.get("label_font_family", params["tier_font_family"]))
                     entries.append(LayoutEntry(

@@ -38,12 +38,31 @@ wide pathway becomes a wide, short image). `--crop-keep-aspect` keeps the
 canvas proportions but, because layouts fill a full dimension, usually crops
 little.
 
-## Straight pathway arrows only
+## Arrow routing — covered; residual is dense-band lane exhaustion
 
-Pathway relations are drawn as straight arrows between entity bbox edges.
-There is no orthogonal routing or curved-arrow avoidance, so an arrow can
-cross an unrelated entity in a busy layout. Curved/routed arrows are a v2
-item.
+*(v1.0 said "straight arrows only, no orthogonal routing" — that is stale.)*
+Pathway relations are now routed, not drawn straight:
+
+- **Ports + fan-out** spread co-sided arrows to distinct edge points and draw a
+  shared Y-trunk for one source driving many targets (`_assign_ports`,
+  `_route_fanout`).
+- **Same-band arches** — a relation whose straight shaft would cross an
+  intervening entity (or its label footprint) arches over the row instead, with
+  a left-edge **lane** sweep so overlapping arches don't collapse onto one
+  corridor (`_route_same_band_arrows` / `_arch_waypoints`).
+- **Cross-band orthogonal corridors** — inter-compartment arrows route through
+  the band gutter as elbows and lift off the membrane line
+  (`_orthogonal_waypoints` / `_lift_corridor_off_membrane`).
+
+Covered by `tests/test_layout_pathway.py` (`test_same_band_skip_arrow_arches`,
+`test_overlapping_arches_get_distinct_lanes`, `test_cross_band_arrow_still_uses_corridor`)
+and, for the tier engine's wrap seam, `test_cross_row_transition_routes_orthogonally_not_diagonally`.
+
+**Residual.** Routing is orthogonal arches/elbows, not smooth-bezier
+obstacle avoidance, and a *very* dense band can exhaust the alternating arch
+lanes (the band has finite height) — at which point two arches may share a
+corridor. The layered-DAG layout mitigates this by spreading nodes across rows
+first. Smooth routed/curved avoidance remains a future polish item.
 
 ## No 3D structures
 
@@ -81,14 +100,15 @@ per-element ids. The `convention_check` verifier therefore skips per-entity
 shape checks for reactions, and `semantic_check` verifies the single
 composite anchor rather than each molecule.
 
-## Aspect-cap wrap seam (cross-row transition arrows)
+## Aspect-cap wrap seam (cross-row transition arrows) — routed
 
 The archetype aspect-ratio cap (`tier_aspect_max`, default 4.0) reflows an
-over-wide `SCENE_ROW` onto multiple rows. Cross-cell transition arrows resolve
-from the `AnchorRegistry`, so they follow scenes to their wrapped positions —
-but a transition chained **across the wrap seam** (e.g. the step 3 → step 4 arrow
-when a 6-step row wraps 3+3) draws as a single long diagonal rather than snaking.
-Within-row arrows are unaffected. The cap is a guard for pathologically wide
-rows; for an authored multi-row mechanism, prefer not to chain a transition over
-the seam (or wrap deliberately in the JSON). Boustrophedon / orthogonal seam
-routing is a future item.
+over-wide `SCENE_ROW` onto multiple rows. A transition chained **across the wrap
+seam** (e.g. the step 3 → step 4 arrow when a 6-step row wraps 3+3) is now routed
+**orthogonally** through the inter-row gap — a Z that drops from the upper anchor
+into the empty gap, runs horizontally across it, then drops into the lower anchor
+(`_seam_route` / `_edge_group(..., waypoints=…)`) — instead of slashing
+diagonally across the scenes between them. Within-row arrows stay straight.
+Residual: the route is a simple Z (not a margin-hugging boustrophedon sweep), so
+on a very wide wrapped row its horizontal run is long; acceptable for what is a
+guard against pathologically wide auto-laid rows.

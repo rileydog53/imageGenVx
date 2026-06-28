@@ -65,9 +65,9 @@ chemical-correctness + figure polish on the β-lactamase figure. **Full plan in
   **wrapped** onto `ceil(N/k)` columns × k rows (`_tier_wrap_map`, resolved once
   and shared by `tier_canvas`/`_tier_rects`/`layout_tiers`); a residual
   height-raise pins the cap when nothing can wrap. Corpus untouched (widest ~3.7:1
-  < cap); proven on synthetic wide figures (`tests/test_tier_aspect_cap.py`). Known
-  cost: a transition chained across the wrap seam draws as a diagonal (see
-  `LIMITATIONS.md`). (Auto-fit / balanced reflow — B3 band dead-space — landed
+  < cap); proven on synthetic wide figures (`tests/test_tier_aspect_cap.py`). A
+  transition chained across the wrap seam is routed orthogonally through the
+  inter-row gap (`_seam_route`), not as a diagonal. (Auto-fit / balanced reflow — B3 band dead-space — landed
   2026-06-27: SCENE_ROW naturals measure real content via the scene solver;
   `height_frac` is now soft — naturals are floors, surplus splits by frac.)
 - Render-critic (optional) — a vision-scored pub-grade rubric; corpus-first.
