@@ -1,10 +1,10 @@
 # D6 / Orientation — rationale of record
 
-> **Status: IMPLEMENTED & CLOSED 2026-06-25** (pub-grade dim 3). Retained as the
-> rationale-of-record because shipped code cites it
+> **Status: v1 IMPLEMENTED & CLOSED 2026-06-25** (pub-grade dim 3); **v2
+> (cross-step consistency + H-bond drivers) LANDED 2026-06-28** — see *v2 — LANDED*
+> below. Retained as the rationale-of-record because shipped code cites it
 > (`primitives/_mol_render.py`, `layout/tier_layout.py`). The full scoping doc was
-> pruned to git history 2026-06-26; deferred-v2 items are tracked in
-> `PUBGRADE_ROADMAP.md`.
+> pruned to git history 2026-06-26; remaining deferred items are below.
 
 ## What shipped
 
@@ -28,15 +28,34 @@ threads it into both the size predictor and the renderer so the posed box matche
   tight deadband re-posed 05 into a caption collision. 80° sits in the gap.)
 - **Angle sign:** mind RDKit y-up vs SVG y-down (handled in `_orient_conformer`).
 
-## Deferred to v2 (tracked in `PUBGRADE_ROADMAP.md`)
+## v2 — LANDED 2026-06-28 (orientation-v2 branch)
 
-- H-bond / dashed edges as orientation drivers (v1 = curly only; fig 01-s1, 08-s1
-  still pose the H-bond step canonically).
-- Reflection (mirror) tie-break when rotation alone can't aim the atom.
-- Cross-step scaffold consistency — keep a shared substrate posed the same across
-  a step sequence (fig 01 s1-vs-s2 drift).
-- Collision-aware orientation — a taller re-posed molecule can overrun its caption
-  (the fig-05 containment finding); would let the deadband tighten.
+- **Cross-step consistency — DONE.** Two cases: (A) a molecule recurring with the
+  *same* SMILES across scenes now shares one pose — `_resolve_tier_orientations`
+  groups by SMILES and propagates the single inferred orientation to unconstrained
+  recurrences (aspirin `asp` no longer flips s1↔s2↔s3). (B) a *transforming*
+  scaffold (different SMILES each scene) keeps its conserved core posed identically
+  — `_resolve_tier_scaffold` finds the series' MCS and aligns each member's
+  depiction to a shared reference via `GenerateDepictionMatching2DStructure`
+  (`_align_to_reference`), threaded through both the size predictor and the renderer
+  (β-lactamase thiazolidine core stable across s1–s4). Template = the
+  most-constrained member, so the shared pose carries the common partner-facing.
+- **H-bond / dashed drivers — DONE.** `_scene_orientations` drives off CURLY first,
+  then HBOND / DASHED as a fallback, so a no-curly binding step aims its donor /
+  acceptor (fig 01-s1). Still needs a direct parent-child Attach between the edge
+  slots, so a pair bridged only through a shared substrate (fig 08-s1) stays
+  canonical.
+
+## Still deferred
+
+- **Reflection (mirror) tie-break.** No driving case: a 2-D rotation always aims a
+  single atom, and the inference is single-atom per slot, so there is no mirror
+  ambiguity to resolve in the current corpus. The `reflect=` plumbing in
+  `_orient_conformer` / `molecule_natural_size` is left in place for when a real
+  2-point / wrong-mirror case appears. (Decided 2026-06-28.)
+- **Collision-aware orientation** — a taller re-posed molecule can overrun its
+  caption (the fig-05 containment finding); would let the 80° deadband tighten.
+  The genuinely valuable remaining piece; distinct from reflection.
 
 Tests: `tests/test_orientation_d6.py` (+15, incl. a geometric end-to-end check +
 a deadband-window guard).

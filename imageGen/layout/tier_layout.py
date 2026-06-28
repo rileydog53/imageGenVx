@@ -455,7 +455,12 @@ _OPPOSITE_EDGE = {"top": "bottom", "bottom": "top", "left": "right", "right": "l
 _ORIENT_DEADBAND_DEG = 80.0
 
 
-def _scene_orientations(scene: Scene) -> dict[str, tuple[str, str]]:
+_ORIENT_DRIVERS = (SceneEdgeType.CURLY, SceneEdgeType.HBOND, SceneEdgeType.DASHED)
+
+
+def _scene_orientations(
+    scene: Scene, drivers: tuple[SceneEdgeType, ...] = _ORIENT_DRIVERS,
+) -> dict[str, tuple[str, str]]:
     """Per-slot ``(reactive_atom_token, direction)`` so each reactant is posed to
     face its partner — the D6 orientation inference (see ``D6_ORIENTATION_SCOPE.md``).
 
@@ -475,8 +480,10 @@ def _scene_orientations(scene: Scene) -> dict[str, tuple[str, str]]:
     left alone."""
     out: dict[str, tuple[str, str]] = {}
     # Priority order: a reaction's curly arrow drives first; H-bond/dashed edges
-    # only fill slots a curly didn't already constrain.
-    for driver in (SceneEdgeType.CURLY, SceneEdgeType.HBOND, SceneEdgeType.DASHED):
+    # only fill slots a curly didn't already constrain. ``drivers`` restricts the
+    # set (the cross-scene reconciliation passes ``(CURLY,)`` to find the primary,
+    # consistency-preferred pose before falling back to H-bond-derived ones).
+    for driver in drivers:
         for edge in scene.connect:
             if edge.type != driver:
                 continue
@@ -517,13 +524,21 @@ def _resolve_tier_orientations(
     unconstrained recurrence — the unconstrained scenes had no partner to aim at,
     so adopting the constrained pose is free and makes the row read consistently.
 
-    A genuine conflict (two scenes demand *different* poses of the same structure)
-    is left per-scene — v1 partner-facing wins, and cross-step consistency for a
-    *transforming* scaffold (different SMILES each scene) is the separate v2-B job.
+    Curly drivers take priority in reconciliation: if the recurring molecule's
+    *curly*-derived poses agree on one pose, it is applied to **every** instance —
+    overriding an H-bond-derived pose in some other scene — so a recurring
+    substrate keeps its reaction pose across the row rather than flipping when one
+    scene's H-bond happens to aim a different atom (the acceptance aspirin case).
+    Only if curly gives no single pose does the full-driver pose fill the
+    unconstrained recurrences. A genuine conflict (different *curly* poses, or
+    different full poses with no curly) is left per-scene; cross-step consistency
+    for a *transforming* scaffold (different SMILES each scene) is the v2-B job.
     Deterministic: the same scene list yields the same maps, so the size-predictor
     path and the render path stay in lock-step (the box must match the drawn pose).
     """
     per_scene = {sc.id: dict(_scene_orientations(sc)) for sc in scenes}
+    curly_only = {sc.id: dict(_scene_orientations(sc, drivers=(SceneEdgeType.CURLY,)))
+                  for sc in scenes}
     groups: dict[str, list[tuple[str, str]]] = {}
     for sc in scenes:
         for slot in sc.slots:
@@ -535,6 +550,13 @@ def _resolve_tier_orientations(
     for members in groups.values():
         if len({sid for sid, _ in members}) < 2:
             continue  # not a recurring structure — nothing to reconcile
+        cur = {curly_only[sid].get(slid) for sid, slid in members}
+        cur.discard(None)
+        if len(cur) == 1:
+            shared = next(iter(cur))
+            for sid, slid in members:
+                per_scene[sid][slid] = shared  # reaction pose wins everywhere
+            continue
         distinct = {per_scene[sid].get(slid) for sid, slid in members}
         distinct.discard(None)
         if len(distinct) == 1:
@@ -543,7 +565,7 @@ def _resolve_tier_orientations(
                 # fill only the unconstrained recurrences; a slot that already
                 # carries an orientation keeps it (it equals ``shared`` here).
                 per_scene[sid].setdefault(slid, shared)
-        # len(distinct) > 1 → genuine per-scene facing conflict: leave as-is.
+        # otherwise genuine per-scene facing conflict: leave as-is.
     return per_scene
 
 
