@@ -21,22 +21,32 @@ leader lines remain a v2+ stretch (BACKLOG L2, L14).
 *Workaround for a cluttered result:* render `--no-labels`, reduce entity
 count, or split across panels.
 
-## Large figures: dynamic canvas + band wrapping (v2)
+## Large figures: dynamic canvas + wrapping (v2)
 
-The old ~20-entity ceiling is lifted. A band that holds more than
-`pathway_max_per_row` entities (default 6) now **wraps to multiple rows**
-instead of cramming into one line, and the canvas auto-sizes to fit the
-content (clamped to an 800×600 floor so small figures are unchanged). Pin a
-size with `--canvas WxH` if needed. Very large figures (dozens of entities,
-many compartments) still read better split across panels, but they no longer
-degrade into an unreadable single row.
+The old ~20-entity ceiling is lifted, on **both** layout axes:
 
-Small figures still render on the 800×600 floor and so can sit in whitespace
-(the floor preserves golden-image stability). To remove that margin, render
-with `--crop`: it writes a `*_cropped` sibling reframed onto the content (a
-wide pathway becomes a wide, short image). `--crop-keep-aspect` keeps the
-canvas proportions but, because layouts fill a full dimension, usually crops
-little.
+- **Sibling wrap (within a band):** a band holding more than
+  `pathway_max_per_row` entities (default 6) wraps to multiple rows instead of
+  cramming into one line.
+- **Column sizing (the DAG/rank axis):** a compartment-free graph is placed a
+  column per topological rank, so the canvas is sized to the **real layered
+  column count** (`_layered_grid_shape`), not the `min(len, max_per_row)`
+  envelope. A deep chain (e.g. 30 nodes) used to squeeze 30 columns into
+  6-columns-of-width and overlap the boxes; it now gets a column per rank and a
+  single-row band height (no dead vertical padding). Covered by
+  `tests/test_dynamic_canvas.py` (`test_deep_chain_sizes_canvas_to_columns_no_overlap`,
+  `test_deep_chain_does_not_pad_vertical_whitespace`).
+
+The canvas auto-sizes to fit content (clamped to an 800×600 floor so small
+figures are unchanged); pin a size with `--canvas WxH`.
+
+**Residual.** A very deep chain still produces a wide strip (it is not yet
+*reflowed* onto multiple rows the way the tier engine's aspect-cap wraps a wide
+scene row — that serpentine wrap is future work for this engine). The figure is
+readable and non-overlapping, but for dozens of nodes a hand-authored **panel**
+split (`Figure.panels`) still reads better; there is no automatic paneling.
+Small figures render on the 800×600 floor and can sit in whitespace; `--crop`
+reframes onto the content (`--crop-keep-aspect` keeps proportions).
 
 ## Arrow routing — covered; residual is dense-band lane exhaustion
 

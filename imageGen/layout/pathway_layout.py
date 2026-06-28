@@ -117,6 +117,7 @@ from imageGen.layout._pathway_bands import (
     _bbox_exit_point,
     _compute_bands,
     _graph_positions,
+    _layered_grid_shape,
     _left_label_extent,
     _RECEPTOR_LABEL_GAP,
     _resolve_compartments,
@@ -277,6 +278,15 @@ def compute_pathway_canvas(
     for e in figure.entities:
         by_band.setdefault(location_map[e.id], []).append(e)
 
+    # #2: a compartment-free DAG is placed by topological rank — a column per
+    # rank, with at most ``layered_rows`` nodes stacked in any one rank. The
+    # band-wrap model (rows of ``max_per_row``) disagrees with that on both axes,
+    # so size from the real layered grid for the implicit-single-band case.
+    implicit_single = (len(compartments) == 1
+                       and compartments[0].id == _IMPLICIT_COMPARTMENT_ID)
+    layered_cols, _layered_rows = (
+        _layered_grid_shape(figure) if implicit_single else (0, 0))
+
     heights = _compute_band_heights(
         compartments, by_band,
         max_per_row=max_per_row,
@@ -286,11 +296,19 @@ def compute_pathway_canvas(
 
     # L20: for single-implicit-band figures, ensure the band is tall enough
     # to vertically spread the widest sibling group without overlap.
-    if len(compartments) == 1 and compartments[0].id == _IMPLICIT_COMPARTMENT_ID:
+    if implicit_single:
         max_sibs = _max_topo_siblings(figure)
         if max_sibs > 1:
             l20_h = max_sibs * (max_entity_h + row_v_gap) + _LABEL_MARGIN + 2 * edge_margin
             heights = [max(heights[0], l20_h)]
+        # #2: a deep single-file chain (one node per rank) needs ONE row, not the
+        # ``ceil(N/max_per_row)`` rows the band-wrap height assumed — that padded
+        # the figure with dead vertical space. Shrink to one row for that case
+        # only (cols > max_per_row AND every rank a singleton), so hubs and small
+        # figures are untouched.
+        elif layered_cols > max_per_row and _layered_rows == 1:
+            chain_h = (max_entity_h + row_v_gap) + _LABEL_MARGIN + 2 * edge_margin
+            heights = [max(_BAND_BASELINE, min(heights[0], chain_h))]
 
     # L21: required width = widest row across all bands.
     # Each row of n_cols entities needs: 2*padding + n_cols*entity_w
@@ -300,6 +318,8 @@ def compute_pathway_canvas(
     required_w = float(min_w)
     for ents in by_band.values():
         n_cols = min(len(ents), max_per_row)
+        if layered_cols > n_cols:
+            n_cols = layered_cols
         if n_cols < 1:
             continue
         row_w = 2.0 * padding + n_cols * max_entity_w + (n_cols - 1) * inter_gap
@@ -423,6 +443,12 @@ def layout_pathway(
         for e in figure.entities:
             by_band_for_heights.setdefault(location_map[e.id], []).append(e)
         max_entity_h = max(effective_bbox[e.type][1] for e in figure.entities)
+        # #2: size from the real layered grid (cols = ranks, rows = max nodes per
+        # rank) for the compartment-free case — mirrors compute_pathway_canvas.
+        implicit_single = (len(compartments) == 1
+                           and compartments[0].id == _IMPLICIT_COMPARTMENT_ID)
+        layered_cols, _lrows = (
+            _layered_grid_shape(figure) if implicit_single else (0, 0))
         per_band_heights = _compute_band_heights(
             compartments, by_band_for_heights,
             max_per_row=int(params["pathway_max_per_row"]),
@@ -430,12 +456,17 @@ def layout_pathway(
             max_entity_h=max_entity_h,
         )
         # L20: grow single-implicit-band height for hub/branch topologies.
-        if len(compartments) == 1 and compartments[0].id == _IMPLICIT_COMPARTMENT_ID:
+        if implicit_single:
             max_sibs = _max_topo_siblings(figure)
             if max_sibs > 1:
                 l20_h = (max_sibs * (max_entity_h + float(params["pathway_row_v_gap"]))
                          + _LABEL_MARGIN + 2.0 * float(params["pathway_edge_margin"]))
                 per_band_heights = [max(per_band_heights[0], l20_h)]
+            # #2: a deep single-file chain needs one row, not the band-wrap rows.
+            elif layered_cols > int(params["pathway_max_per_row"]) and _lrows == 1:
+                chain_h = ((max_entity_h + float(params["pathway_row_v_gap"]))
+                           + _LABEL_MARGIN + 2.0 * float(params["pathway_edge_margin"]))
+                per_band_heights = [max(_BAND_BASELINE, min(per_band_heights[0], chain_h))]
         total_h = max(canvas[1], sum(per_band_heights))
         # L21: grow width to fit the widest entity row (mirrors compute_pathway_canvas).
         max_entity_w = max(effective_bbox[e.type][0] for e in figure.entities)
@@ -443,6 +474,8 @@ def layout_pathway(
         required_w = canvas[0]
         for ents_list in by_band_for_heights.values():
             n_cols = min(len(ents_list), int(params["pathway_max_per_row"]))
+            if layered_cols > n_cols:
+                n_cols = layered_cols
             if n_cols < 1:
                 continue
             row_w = (2.0 * float(params["pathway_band_padding"])

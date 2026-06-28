@@ -86,6 +86,37 @@ def _compute_bands(
     return result
 
 
+def _layered_grid_shape(figure: Figure) -> tuple[int, int]:
+    """The ``(columns, max_rows)`` the layered-DAG placement will occupy.
+
+    Columns = ``max topological rank + 1`` (the x axis ``_graph_positions``
+    spreads nodes across); ``max_rows`` = the largest number of nodes sharing one
+    rank (the y axis the rank-order spread stacks). Returns ``(0, 0)`` when the
+    graph has no edges to rank. Used to size the canvas (#2) so a deep chain or a
+    wide DAG gets a column per rank instead of being squeezed into a
+    ``max_per_row``-wide envelope and overlapping — mirrors the exact ranking the
+    layered branch of :func:`_graph_positions` runs, so width/height match the
+    placement."""
+    if not figure.relations:
+        return (0, 0)
+    DG = nx.DiGraph()
+    for e in figure.entities:
+        DG.add_node(e.id)
+    for r in figure.relations:
+        DG.add_edge(r.source, r.target)
+    if DG.number_of_edges() == 0:
+        return (0, 0)
+    dag = _feedback_arc_dag(DG)
+    ranks = tighten_ranks(dag, rank_nodes(dag))
+    if not ranks:
+        return (0, 0)
+    cols = max(ranks.values()) + 1
+    per_rank: dict[int, int] = {}
+    for rk in ranks.values():
+        per_rank[rk] = per_rank.get(rk, 0) + 1
+    return (cols, max(per_rank.values()))
+
+
 def _graph_positions(
     figure: Figure,
     bands: dict[str, tuple[float, float]],

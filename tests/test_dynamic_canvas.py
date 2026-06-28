@@ -207,6 +207,50 @@ def test_graph_positions_wraps_to_multiple_rows(simple_figure_15_entities: Figur
     assert len(distinct_y_coords) >= 3, "Expected at least 3 distinct y-coordinates for wrapped layout."
 
 
+def test_deep_chain_sizes_canvas_to_columns_no_overlap():
+    """#2: a deep DAG chain is placed a column per topological rank, so the
+    canvas width must fit every column. Previously it was sized for
+    ``min(len, max_per_row)=6`` columns, squeezing N boxes into 6-wide and
+    overlapping them."""
+    n = 20
+    ents = [(f"e{i}", "protein", f"N{i}") for i in range(n)]
+    rels = [(f"e{i}", "activates", f"e{i+1}") for i in range(n - 1)]
+    fig = build("pathway", entities=ents, relations=rels)
+
+    w, h = _compute_pathway_canvas(fig)
+    ew, _eh = max_entity_bbox(fig)
+    # Width fits a column per node (far beyond the old 6-column envelope)...
+    assert w >= n * ew, f"canvas width {w} too small for {n} columns of {ew}px"
+    # ...and grows with chain depth.
+    short = build("pathway",
+                  entities=[(f"e{i}", "protein", f"N{i}") for i in range(5)],
+                  relations=[(f"e{i}", "activates", f"e{i+1}") for i in range(4)])
+    assert w > _compute_pathway_canvas(short)[0]
+
+    # Placement: consecutive rank columns are separated by at least a box width,
+    # so the boxes never overlap.
+    bands = {"__implicit__": (0.0, h)}
+    location_map = {e.id: "__implicit__" for e in fig.entities}
+    positions = _graph_positions(fig, bands, location_map, (w, h), (0.0, 0.0), 40.0, 42)
+    xs = sorted(p[0] for p in positions.values())
+    min_gap = min(b - a for a, b in zip(xs, xs[1:]))
+    assert min_gap >= ew, f"columns overlap: min centre gap {min_gap:.1f} < box width {ew}"
+
+
+def test_deep_chain_does_not_pad_vertical_whitespace():
+    """#2: a single-file chain uses one row, so its band is one row tall — not the
+    ``ceil(N/max_per_row)`` rows the band-wrap height assumed (dead whitespace)."""
+    n = 20
+    chain = build("pathway",
+                  entities=[(f"e{i}", "protein", f"N{i}") for i in range(n)],
+                  relations=[(f"e{i}", "activates", f"e{i+1}") for i in range(n - 1)])
+    # A no-relation set of the same size wraps to ceil(20/6)=4 rows (tall);
+    # the chain places one row, so its canvas is much shorter.
+    loose = build("pathway",
+                  entities=[(f"e{i}", "protein", f"N{i}") for i in range(n)])
+    assert _compute_pathway_canvas(chain)[1] < _compute_pathway_canvas(loose)[1]
+
+
 def test_graph_positions_preserves_old_layout_for_small_n():
     """3 entities, no relations -> positions[0].y == positions[1].y == positions[2].y (single row)."""
     fig = build('pathway', entities=[
