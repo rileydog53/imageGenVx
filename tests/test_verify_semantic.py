@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from imageGen.ir import Figure
-from imageGen.ir.schema import Relation, RelationType
+from imageGen.ir.schema import Archetype, Entity, EntityType, Relation, RelationType
 from imageGen.render.compositor import render_figure
 from imageGen.verify.semantic_check import SemanticCheckError, semantic_check
 from tests._helpers import load_fixture
@@ -62,6 +62,29 @@ def test_panel_figure_passes(tmp_path):
     svg = tmp_path / "fig.svg"
     ir = _render(WORKFLOW, svg)
     semantic_check(ir, svg)  # no exception
+
+
+def test_pathway_fallback_reaction_passes(tmp_path):
+    """P0c.3 regression: a non-linear multi-step REACTION_SCHEME (branching /
+    convergence / cycle) rendered with `pathway_fallback=True` is coerced to
+    PATHWAY at draw time — per-entity boxes, no `reaction_0` group. The `ir`
+    handed to `semantic_check` (exactly as the CLI's `--verify` does) still
+    reports `archetype=REACTION_SCHEME`; semantic_check must recognise the
+    same coercion condition `render_figure` used, or it always demands a
+    `reaction_0` anchor that was never drawn and FAILs an otherwise-correct
+    render."""
+    svg = tmp_path / "fig.svg"
+    entities = [Entity(id=f"e{i}", type=EntityType.METABOLITE, label=f"M{i}") for i in range(4)]
+    relations = [
+        Relation(source="e0", target="e2", type=RelationType.GENERIC),
+        Relation(source="e1", target="e2", type=RelationType.GENERIC),
+        Relation(source="e2", target="e3", type=RelationType.GENERIC),
+    ]
+    ir = Figure(archetype=Archetype.REACTION_SCHEME, entities=entities, relations=relations)
+    smiles = {e.id: "C" for e in ir.entities}
+    with pytest.warns(UserWarning, match="SMILES structures will not be drawn"):
+        render_figure(ir, svg, smiles_map=smiles, pathway_fallback=True)
+    semantic_check(ir, svg)  # no exception — ir is still archetype=REACTION_SCHEME
 
 
 # ---------------------------------------------------------------------------
