@@ -41,9 +41,9 @@ from pathlib import Path
 from typing import Literal
 
 from imageGen.ir.schema import Archetype, Figure, SlotKind
-from imageGen.layout.reaction_layout import REACTION_GROUP_IR_ID
+from imageGen.layout.reaction_layout import REACTION_GROUP_IR_ID, is_linear_chain_reaction
 from imageGen.layout.tier_layout import tier_rendered_scenes
-from imageGen.render.compositor import scoped_id
+from imageGen.render.compositor import _is_multistep_reaction, scoped_id
 
 _Kind = Literal["entity", "compartment", "relation", "reaction", "annotation", "slot"]
 
@@ -77,7 +77,25 @@ def _expected_ids(
     nested elements get the same prefix the compositor applies. A
     REACTION_SCHEME (sub-)figure contributes a single ``reaction_0``
     anchor instead of per-entity ids — see module docstring.
+
+    A top-level REACTION_SCHEME that ``render_figure`` would coerce to
+    PATHWAY under ``pathway_fallback`` (a non-linear multi-step reaction —
+    branching / convergence / cycle) is re-checked as PATHWAY here too: if
+    the render succeeded at all, that coercion is exactly what got drawn
+    (uncoerced, a non-linear multi-step REACTION_SCHEME fails loud before
+    reaching an SVG), so expecting the pre-coercion ``reaction_0`` anchor
+    would always miss. `pathway_fallback` only ever coerces the outer
+    figure (never per-panel content), so this check is gated on
+    ``not panel_chain``.
     """
+    if (
+        not panel_chain
+        and figure.archetype == Archetype.REACTION_SCHEME
+        and _is_multistep_reaction(figure)
+        and not is_linear_chain_reaction(figure)
+    ):
+        figure = figure.model_copy(update={"archetype": Archetype.PATHWAY})
+
     expected: list[tuple[str, _Kind, str]] = []
     if figure.archetype == Archetype.REACTION_SCHEME:
         expected.append(
